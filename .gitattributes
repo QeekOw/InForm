@@ -1,0 +1,2 @@
+# Normalize line endings so Windows/macOS/Linux collaborators don't churn diffs.
+* text=auto
