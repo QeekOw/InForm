@@ -11,3 +11,7 @@ Default label vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-h
 ### Domain docs
 
 Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Ponytail (minimal-code plugin)
+
+Enabled project-wide via `.claude/settings.json` (`enabledPlugins`). Prefers the smallest correct solution (YAGNI → reuse → stdlib → native platform → existing dep → one-liner → custom code) before writing code. One-time setup per machine: `/plugin marketplace add DietrichGebert/ponytail`, then `/plugin install ponytail@ponytail`.
