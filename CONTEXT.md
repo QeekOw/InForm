@@ -2,7 +2,8 @@
 
 The ubiquitous language for the **InBody AI Fitness Assistant** (concept paper:
 *"Multimodal AI for Precision Fitness: A Deterministic Pipeline for InBody-Driven
-Nutritional and Corrective Exercise Planning,"* Antonie / Sutanto / Yung, BINUS).
+Nutritional and Corrective Exercise Planning,"* BINUS —
+[full text](docs/paper/STRIVE_ConceptPaper.pdf)).
 
 CERA is a **deterministic four-stage pipeline**. Human-interpretable medical logic stays
 deterministic; generative AI is confined to linguistic synthesis. This glossary is the
