@@ -12,6 +12,13 @@ dependencies = [
 dev = [
     "pytest>=8",
 ]
+# Heavy (GPU-oriented) deps for Donut fine-tuning — kept out of the base
+# install so the extraction seam (Module 1's runtime path) stays light.
+training = [
+    "torch>=2.4",
+    "transformers>=4.40",
+    "accelerate>=1.1",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
