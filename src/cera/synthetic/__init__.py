@@ -138,6 +138,8 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
                 _find_browser(),
                 "--headless",
                 "--disable-gpu",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
                 f"--screenshot={png_path}",
                 f"--window-size={_WINDOW_SIZE[device]}",
                 "--hide-scrollbars",
