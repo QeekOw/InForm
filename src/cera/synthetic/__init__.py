@@ -147,6 +147,7 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
             ],
             check=True,
             capture_output=True,
+            timeout=30,
         )
         return Image.open(png_path).convert("RGB").copy()
 
