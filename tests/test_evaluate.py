@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from cera.errors import NotAnInBodySheetError
 from cera.evaluate import evaluate
 from cera.inbody import InBodyPayload, SegmentalLean
 
@@ -85,6 +86,16 @@ def test_wrong_optional_field_does_not_zero_whole_sheet_accuracy():
 
     assert report.per_field_accuracy["visceral_fat_level"] == 0.0
     assert report.whole_sheet_accuracy == 1.0
+
+
+def test_fail_closed_refusal_scores_as_whole_sheet_miss():
+    def refusing_engine(image_path):
+        raise NotAnInBodySheetError()
+
+    report = evaluate(refusing_engine, [(_IMAGE, _TRUTH)])
+
+    assert report.whole_sheet_accuracy == 0.0
+    assert all(rate == 0.0 for rate in report.per_field_accuracy.values())
 
 
 def test_averages_per_field_rate_across_multiple_sheets():

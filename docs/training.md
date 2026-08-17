@@ -37,6 +37,27 @@ Needs a GPU in practice — `donut-base` fine-tuning on CPU is not
 practical at this dataset size. Produces a checkpoint directory loadable via
 `cera.training.train.load_checkpoint`.
 
+## 3. Score Donut vs. the VLM baseline
+
+Once a checkpoint exists, run the head-to-head on a held-out set of
+`generate_dataset()` png/json pairs (ADR-0002 / ADR-0006):
+
+```
+python -m cera.compare \
+  --data-dir data/holdout \
+  --donut-checkpoint checkpoints/donut-inbody/checkpoint-1250
+```
+
+Both engines are scored through the full `extract_inbody` seam, so the
+cross-check gate and fail-closed handling apply identically (a refusal counts
+as a whole-sheet miss). Prints per-field, critical-field, and whole-sheet
+accuracy side by side. Run once per ground-truth source (synthetic hold-out,
+real hold-out) and report each separately — the synthetic→real gap is the
+honest number. `--skip-vlm` scores Donut only (no OpenAI calls / cost).
+
+To plug the fine-tuned engine into the production seam instead of the VLM
+default: `extract_inbody(img, engine=donut.load_engine(checkpoint))`.
+
 ## What this session verified vs. what it didn't
 
 This pipeline (dataset generation, task-token setup, the training loop, and
@@ -44,7 +65,8 @@ checkpoint save/reload) is exercised end-to-end by
 `tests/test_training.py`, but against a tiny public test-fixture model
 (`optimum-internal-testing/tiny-random-VisionEncoderDecoderModel-donut`) and
 a handful of sheets — not the real `donut-base` checkpoint or the full
-~5,000-sheet set. That full run needs GPU compute this environment doesn't
-have; it hasn't been executed, and no trained checkpoint exists yet. Issue
-#8 (integrate into `extract_inbody` + score vs. the VLM baseline) is blocked
-until someone runs this on GPU hardware and a real checkpoint exists.
+~5,000-sheet set. The real fine-tune has since been run on GPU (Colab T4); a
+`donut-base` checkpoint exists. The `cera.compare` integration + scoring path
+(step 3) is code-complete and unit-tested (`tests/test_donut.py`); the actual
+head-to-head numbers come from running step 3 against that checkpoint on a
+held-out set.

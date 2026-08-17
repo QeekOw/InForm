@@ -11,8 +11,14 @@ from PIL import Image
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
-from cera.training.dataset import generate_dataset  # noqa: E402
+from cera.engines.donut import TASK_TOKEN as _ENGINE_TASK_TOKEN  # noqa: E402
+from cera.training.dataset import TASK_TOKEN, generate_dataset  # noqa: E402
 from cera.training.train import load_checkpoint, train  # noqa: E402
+
+
+def test_engine_task_token_matches_training_token():
+    # donut.py duplicates the literal to stay torch-free; they must not drift.
+    assert _ENGINE_TASK_TOKEN == TASK_TOKEN
 
 _TINY_MODEL = "optimum-internal-testing/tiny-random-VisionEncoderDecoderModel-donut"
 

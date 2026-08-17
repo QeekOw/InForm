@@ -3,6 +3,7 @@ from typing import Callable
 
 from pydantic import BaseModel
 
+from cera.errors import InBodyExtractionError
 from cera.inbody import InBodyPayload
 
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
@@ -33,6 +34,20 @@ class AccuracyReport(BaseModel):
     whole_sheet_accuracy: float
 
 
+def load_labeled_set(data_dir: Path) -> LabeledSet:
+    """Read a generate_dataset() output dir (png + ground-truth json pairs)
+    into a LabeledSet — the held-out set an engine is scored against."""
+    pairs: LabeledSet = []
+    for image_path in sorted(Path(data_dir).glob("*.png")):
+        expected = InBodyPayload.model_validate_json(
+            image_path.with_suffix(".json").read_text(encoding="utf-8")
+        )
+        pairs.append((image_path, expected))
+    if not pairs:
+        raise ValueError(f"No labeled .png/.json pairs found in {data_dir}")
+    return pairs
+
+
 def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -> AccuracyReport:
     """Score `engine` against known ground truth (ADR-0006).
 
@@ -48,7 +63,16 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
     whole_sheet_matches: list[bool] = []
 
     for image_path, expected in labeled_set:
-        predicted = engine(image_path)
+        try:
+            predicted = engine(image_path)
+        except InBodyExtractionError:
+            # A fail-closed refusal (unreadable field, cross-check breach,
+            # non-InBody input) scores as every field wrong — an engine that
+            # refuses is not credited for the fields it declined to read.
+            for field in field_matches:
+                field_matches[field].append(False)
+            whole_sheet_matches.append(False)
+            continue
         sheet_matches: list[bool] = []
 
         for field in _REQUIRED_NUMERIC_FIELDS:
