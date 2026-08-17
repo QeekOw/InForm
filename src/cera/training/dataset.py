@@ -22,20 +22,10 @@ def generate_dataset(output_dir: Path, n_per_device: int = 2500, seed_start: int
     seed = seed_start
     for device in ("inbody_270", "inbody_570"):
         for _ in range(n_per_device):
-            # ponytail: one retry then skip, so a single flaky headless-browser
-            # invocation (crash, transient hang) can't abort an hours-long batch.
-            for attempt in range(2):
-                try:
-                    image_bytes, payload = generate_sheet(device, seed)
-                    break
-                except Exception as exc:
-                    if attempt == 1:
-                        print(f"Skipping {device} seed={seed} after 2 failed attempts: {exc}")
-                        image_bytes = None
-            if image_bytes is not None:
-                stem = f"{device}_{seed:06d}"
-                (output_dir / f"{stem}.png").write_bytes(image_bytes)
-                (output_dir / f"{stem}.json").write_text(payload.model_dump_json(), encoding="utf-8")
+            image_bytes, payload = generate_sheet(device, seed)
+            stem = f"{device}_{seed:06d}"
+            (output_dir / f"{stem}.png").write_bytes(image_bytes)
+            (output_dir / f"{stem}.json").write_text(payload.model_dump_json(), encoding="utf-8")
             seed += 1
 
 
