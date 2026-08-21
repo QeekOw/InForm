@@ -1,4 +1,4 @@
-# Strive Repo Scaffolding — Design
+# CERA Repo Scaffolding — Design
 
 **Date:** 2026-08-09
 **Status:** Approved (design), pending implementation plan
@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-Stand up the `Strive` repo for the **InBody AI Fitness Assistant** described in the concept
+Stand up the `CERA` repo for the **InBody AI Fitness Assistant** described in the concept
 paper *"Multimodal AI for Precision Fitness: A Deterministic Pipeline for InBody-Driven
 Nutritional and Corrective Exercise Planning."*
 
@@ -39,7 +39,7 @@ any deterministic number (enforced by validation — see §6).
 ## 3. Folder structure
 
 ```
-Strive/
+CERA/
 ├── CLAUDE.md                       (exists)
 ├── README.md                       (exists — expand with project overview + layout)
 ├── CONTEXT.md                      (NEW — domain model + glossary)
@@ -50,7 +50,7 @@ Strive/
 │   ├── adr/
 │   │   └── 0001-katch-mcardle-over-mifflin.md   (NEW — seed ADR)
 │   └── agents/                     (exists)
-├── src/strive/
+├── src/cera/
 │   ├── __init__.py
 │   ├── schemas/                    ← Pydantic contracts (backbone)
 │   │   ├── __init__.py

@@ -1,0 +1,33 @@
+# Ponytail plugin — installed per-machine via the plugin marketplace, not vendored here.
+# Enablement is committed in .claude/settings.json; see CLAUDE.md for the one-time setup.
+ponytail/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+graphify-out/
