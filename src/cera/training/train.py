@@ -40,7 +40,7 @@ def train(
     output_dir: Path,
     model_name_or_path: str = DEFAULT_MODEL,
     num_train_epochs: int = 3,
-    per_device_train_batch_size: int = 2,
+    per_device_train_batch_size: int = 1,
     learning_rate: float = 3e-5,
     max_target_length: int = 512,
     resume: bool = False,

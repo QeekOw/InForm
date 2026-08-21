@@ -54,6 +54,10 @@ def _to_payload(decoded: str) -> InBodyPayload:
     # Donut has no "not an InBody sheet" signal (it only ever saw sheets in
     # training), so a garbled/incomplete generation is a misread, not a
     # rejection: fail closed on the required fields rather than fabricate.
+    # This is the deliberate per-engine difference recorded in ADR-0008 §3 —
+    # the fail-closed *guarantee* matches the VLM, only the error type differs
+    # (non-InBody input surfaces here as MissingRequiredFields, or downstream
+    # via the cross-check gate, never as a fabricated value).
     try:
         data = json.loads(decoded.replace(TASK_TOKEN, "").strip())
     except json.JSONDecodeError:

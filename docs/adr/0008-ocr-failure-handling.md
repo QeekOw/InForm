@@ -23,7 +23,14 @@ path is therefore load-bearing for the core claim.
    tolerance, or printed `BMR` disagrees with the Katch–McArdle recompute, flag the sheet as a
    likely misread and block/queue it rather than pass it downstream (uses ADR-0003 checks).
 3. **Reject non-InBody input.** Detect images that are not InBody sheets (low field-match / a
-   validation check) and reject cleanly.
+   validation check) and reject cleanly. The *mechanism* is engine-specific: the VLM has a
+   direct signal (`is_inbody_sheet=false` → `NotAnInBodySheetError`); the fine-tuned Donut,
+   having only ever seen InBody sheets in training, has no such signal, so a non-sheet surfaces
+   as unparseable/invalid output → `MissingRequiredFieldsError`, or as parseable-but-incoherent
+   output caught by the cross-check gate (§2) → the flag path. The *guarantee* is identical
+   across engines — both fail closed and neither fabricates a number; only the error type
+   differs. "Fail-closed applies to Donut exactly as to the VLM" (issue #8) is satisfied at the
+   level of the guarantee, not the error taxonomy.
 4. **Missing *optional* field is not a failure.** An absent `visceral_fat_level` on a 270 is
    expected `None` (ADR-0004), not an error — only *required* fields trigger the refuse path.
 

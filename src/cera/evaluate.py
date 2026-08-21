@@ -4,24 +4,20 @@ from typing import Callable
 from pydantic import BaseModel
 
 from cera.errors import InBodyExtractionError
-from cera.inbody import InBodyPayload
+from cera.inbody import OPTIONAL_FIELDS, REQUIRED_FIELDS, SEGMENTAL_FIELDS, InBodyPayload
 
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
 _FIELD_TOLERANCE = 0.1
 
-_REQUIRED_NUMERIC_FIELDS = (
-    "weight_kg",
-    "lean_body_mass_kg",
-    "percent_body_fat",
-    "skeletal_muscle_mass_kg",
-    "basal_metabolic_rate_kcal",
-)
-# Optional per ADR-0004 (absent on the InBody 270) — reported per-field but
-# excluded from whole_sheet_accuracy, which only gates on required fields
-# (ADR-0006: "% of sheets with every required field correct").
-_OPTIONAL_NUMERIC_FIELDS = ("visceral_fat_level",)
+# Field names come from the schema (cera.inbody); only their *match semantics*
+# are an eval concern: categorical fields compare by equality, numeric ones by
+# tolerance. Optional fields (per ADR-0004, absent on the 270) are reported
+# per-field but excluded from whole_sheet_accuracy, which gates on required
+# fields only (ADR-0006: "% of sheets with every required field correct").
 _CATEGORICAL_FIELDS = ("source_device",)
-_SEGMENTAL_FIELDS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg")
+_REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in _CATEGORICAL_FIELDS)
+_OPTIONAL_NUMERIC_FIELDS = OPTIONAL_FIELDS
+_SEGMENTAL_FIELDS = SEGMENTAL_FIELDS
 _CRITICAL_FIELDS = ("lean_body_mass_kg",) + tuple(f"segmental_lean.{f}" for f in _SEGMENTAL_FIELDS)
 
 LabeledSet = list[tuple[Path, InBodyPayload]]
@@ -67,10 +63,17 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
             predicted = engine(image_path)
         except InBodyExtractionError:
             # A fail-closed refusal (unreadable field, cross-check breach,
-            # non-InBody input) scores as every field wrong — an engine that
-            # refuses is not credited for the fields it declined to read.
+            # non-InBody input) reads no value, so every required and
+            # segmental field scores wrong — an engine that refuses is not
+            # credited for the fields it declined to read. The OPTIONAL
+            # visceral field is scored against truth the same way as on the
+            # success path: a refusal on a 270 (truth None) is not a visceral
+            # miss (ADR-0004; matches _numeric_matches(None, None)).
             for field in field_matches:
-                field_matches[field].append(False)
+                if field in _OPTIONAL_NUMERIC_FIELDS:
+                    field_matches[field].append(_numeric_matches(None, getattr(expected, field)))
+                else:
+                    field_matches[field].append(False)
             whole_sheet_matches.append(False)
             continue
         sheet_matches: list[bool] = []
