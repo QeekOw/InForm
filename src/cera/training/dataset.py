@@ -1,26 +1,43 @@
 import argparse
 from pathlib import Path
 
-import torch
 from PIL import Image
-from torch.utils.data import Dataset
 
 from cera.synthetic import generate_sheet
 
+# Generation (generate_dataset / the CLI) is torch-free — it only renders sheets.
+# torch is needed solely by DonutInBodyDataset, so tolerate its absence and let
+# the light (torch-free) venv generate datasets without pulling in torch.
+try:
+    import torch
+    from torch.utils.data import Dataset
+except ModuleNotFoundError:  # pragma: no cover - exercised only in the torch-free venv
+    torch = None
+    Dataset = object
+
 TASK_TOKEN = "<s_inbody>"
 
+_DEVICES = ("inbody_270", "inbody_570")
 
-def generate_dataset(output_dir: Path, n_per_device: int = 2500, seed_start: int = 0) -> None:
-    """Render the full synthetic training set to disk (ADR-0007's ~5,000-sheet target).
+
+def generate_dataset(
+    output_dir: Path,
+    n_per_device: int = 2500,
+    seed_start: int = 0,
+    devices: tuple[str, ...] = _DEVICES,
+) -> None:
+    """Render a synthetic InBody dataset to disk (ADR-0007).
 
     One PNG + one ground-truth JSON per sheet, seeded so the run is
     reproducible. Sequential and slow (~1s/sheet via headless-browser
-    rendering — see cera.synthetic); the full 5,000-sheet set takes on the
-    order of an hour.
+    rendering — see cera.synthetic). Pass a single-element `devices` (e.g.
+    `("inbody_270",)`) for a device-specific set — issue #13 retrains 270-only.
+    Seeds run `seed_start .. seed_start + len(devices)*n_per_device - 1`; use a
+    disjoint `seed_start` for a held-out set so it never overlaps the train set.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     seed = seed_start
-    for device in ("inbody_270", "inbody_570"):
+    for device in devices:
         for _ in range(n_per_device):
             image_bytes, payload = generate_sheet(device, seed)
             stem = f"{device}_{seed:06d}"
@@ -82,8 +99,14 @@ def _main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--n-per-device", type=int, default=2500)
     parser.add_argument("--seed-start", type=int, default=0)
+    parser.add_argument(
+        "--device", choices=_DEVICES, help="Generate only this device (default: both)."
+    )
     args = parser.parse_args()
-    generate_dataset(args.output_dir, n_per_device=args.n_per_device, seed_start=args.seed_start)
+    devices = (args.device,) if args.device else _DEVICES
+    generate_dataset(
+        args.output_dir, n_per_device=args.n_per_device, seed_start=args.seed_start, devices=devices
+    )
 
 
 if __name__ == "__main__":
