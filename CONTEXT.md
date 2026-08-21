@@ -27,7 +27,10 @@ only — it must never mutate a deterministic number (enforced by validation).
 
 - **LBM (Lean Body Mass)** — total body mass minus fat mass. The **authoritative** input to
   the Katch–McArdle BMR formula. Read directly off the InBody sheet; cross-checked against
-  `weight × (1 − PBF/100)`. See [ADR-0003](docs/adr/0003-extract-lbm-directly.md).
+  `weight × (1 − PBF/100)`. See [ADR-0003](docs/adr/0003-extract-lbm-directly.md). **On a real
+  InBody result sheet this quantity is labeled "Fat Free Mass" (Research Parameters), not "Lean
+  Body Mass"** — InBody uses the two interchangeably, so `lean_body_mass_kg` is read from the
+  FFM row (issue #13 / ADR-0007).
 - **SMM (Skeletal Muscle Mass)** — the mass of skeletal muscle specifically. **Distinct from
   LBM** (LBM also includes water, organs, bone mineral). Katch–McArdle uses LBM, *not* SMM.
   Do not conflate them.
@@ -39,15 +42,16 @@ only — it must never mutate a deterministic number (enforced by validation).
   determinism). Katch–McArdle chosen over Mifflin–St Jeor — see ADR-0001 (reserved).
 - **TDEE (Total Daily Energy Expenditure)** — `BMR × activity_multiplier`. Basis for calorie
   targets.
-- **Visceral Fat Level** — abdominal-organ fat rating. **Not printed by the InBody 270**, and
-  a *programmable* (sometimes absent) output on the 570. Therefore modeled as optional. See
+- **Visceral Fat Level** — abdominal-organ fat rating. Printed by **both** the InBody 270 and
+  570 (confirmed on two real 270 sheets — ADR-0004 correction, issue #13), but a *programmable*
+  output that may be absent on some configs, so still modeled as optional (`int | None`). See
   [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
 - **Segmental Lean Analysis** — per-segment lean mass for the five body segments: left arm,
   right arm, left leg, right leg, trunk. Basis for bilateral-asymmetry detection.
 - **Bilateral asymmetry** — a lean-mass deviation between a left/right limb pair. A deviation
   **> 5%** triggers targeted unilateral corrective exercises (Module 3).
-- **InBody 270 / InBody 570** — the two device layouts in scope. The 270 is entry-level and
-  does not report Visceral Fat Level; the 570 reports more, but BMR and Visceral Fat are
+- **InBody 270 / InBody 570** — the two device layouts in scope. Both report Visceral Fat Level
+  (ADR-0004 correction, issue #13); the 570 reports more, and BMR / Visceral Fat are
   programmable outputs. See [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
 - **Master JSON (`MasterPayload`)** — the consolidated deterministic output of Modules 1–3;
   the sole input to Module 4.
