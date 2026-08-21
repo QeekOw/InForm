@@ -67,10 +67,17 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
             predicted = engine(image_path)
         except InBodyExtractionError:
             # A fail-closed refusal (unreadable field, cross-check breach,
-            # non-InBody input) scores as every field wrong — an engine that
-            # refuses is not credited for the fields it declined to read.
+            # non-InBody input) reads no value, so every required and
+            # segmental field scores wrong — an engine that refuses is not
+            # credited for the fields it declined to read. The OPTIONAL
+            # visceral field is scored against truth the same way as on the
+            # success path: a refusal on a 270 (truth None) is not a visceral
+            # miss (ADR-0004; matches _numeric_matches(None, None)).
             for field in field_matches:
-                field_matches[field].append(False)
+                if field in _OPTIONAL_NUMERIC_FIELDS:
+                    field_matches[field].append(_numeric_matches(None, getattr(expected, field)))
+                else:
+                    field_matches[field].append(False)
             whole_sheet_matches.append(False)
             continue
         sheet_matches: list[bool] = []

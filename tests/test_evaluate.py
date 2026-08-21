@@ -98,6 +98,22 @@ def test_fail_closed_refusal_scores_as_whole_sheet_miss():
     assert all(rate == 0.0 for rate in report.per_field_accuracy.values())
 
 
+def test_refusal_on_270_does_not_penalize_absent_visceral_fat():
+    # A refusal reads nothing, so required fields score wrong — but the
+    # OPTIONAL visceral field is scored against truth like the success path:
+    # on a 270 (truth None) a refusal is not a visceral miss (ADR-0004).
+    truth_270 = _TRUTH.model_copy(update={"source_device": "inbody_270", "visceral_fat_level": None})
+
+    def refusing_engine(image_path):
+        raise NotAnInBodySheetError()
+
+    report = evaluate(refusing_engine, [(_IMAGE, truth_270)])
+
+    assert report.per_field_accuracy["visceral_fat_level"] == 1.0
+    assert report.per_field_accuracy["weight_kg"] == 0.0
+    assert report.whole_sheet_accuracy == 0.0
+
+
 def test_averages_per_field_rate_across_multiple_sheets():
     wrong = _TRUTH.model_copy(update={"weight_kg": 999.0})
 
