@@ -78,14 +78,45 @@ python -m cera.compare --data-dir <holdout-dir> --donut-checkpoint <checkpoint-d
 pairs); `--donut-checkpoint` is a directory containing `model.safetensors` + the
 processor. Add `--skip-vlm` to score Donut alone (no OpenAI key / cost).
 
+## Real-photo test (n=1, illustrative)
+
+A single real **InBody 270** phone photo was hand-labeled and run through Donut
+(1-epoch checkpoint), self-hosted and offline:
+
+| Engine | Whole-sheet on the real photo |
+|---|---|
+| Donut (1-epoch) | **0% — complete failure, but a safe fail-closed refusal** |
+
+The raw generation was malformed pseudo-JSON. The model attended to *some* real
+content (it emitted the height `172cm` and the InBody score `80/100`) but could
+not produce valid structured output — the real sheet's layout is far
+out-of-distribution from the clean synthetic sheets. The parser rejected the
+output → `MissingRequiredFieldsError` (ADR-0008). **Crucially, Donut did not
+fabricate plausible-but-wrong numbers — it refused.** The "no hallucination at
+the front door" guarantee held under total domain shift; the synthetic→real gap
+manifests as a *safe refusal*, not a silent misread.
+
+**Why the gap is total:** the current synthetic generator renders a minimal,
+clean sheet (weight / LBM / PBF / SMM / BMR + segmental lean, black-on-white, no
+distractors). A real InBody 270 sheet carries far more: gym/clinic branding, an
+ID/barcode, body-composition-history tables, obesity analysis, segmental *fat*
+analysis, an impedance table, a calorie-expenditure list — plus phone-capture
+glare and rotation. Donut trained only on the minimal look, so a real photo is
+unrecognizable to it. This is the motivation for the *realistic synthetic data*
+objective (see Future Work).
+
+> n=1 is anecdotal, not a statistic — treat this as an existence proof of the
+> domain gap and of safe failure, not a measured real-world accuracy.
+
 ## Future Work
 
-- **Real-photo hold-out.** The core remaining honesty gap: a small hand-labeled
-  set of real InBody 270/570 photos to measure the synthetic→real domain gap for
-  both engines. Neither number above reflects real-world glare, blur, or
-  perspective.
-- **Synthetic augmentation → real fidelity.** Stronger photo-realistic
-  augmentation (the generator already does blur/rotation/perspective/lighting +
-  JPEG noise) to close that gap without needing many real sheets.
+- **Realistic synthetic sheets.** The highest-leverage next step: overhaul the
+  generator's HTML/CSS templates to closely mimic *real* InBody 270/570 sheet
+  layout (branding, history tables, obesity/segmental-fat sections, impedance,
+  ID), then re-train Donut. The n=1 test suggests the current visual gap is the
+  dominant failure cause, not model capacity.
+- **Larger real-photo hold-out.** A hand-labeled set of real InBody 270/570
+  photos (>1) to turn the anecdote above into a measured synthetic→real gap for
+  both engines.
 - **Beam-search decoding** for Donut — may recover some refusals with no
   retrain; untested.
