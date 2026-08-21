@@ -29,3 +29,5 @@ env/
 Thumbs.db
 .idea/
 .vscode/
+
+graphify-out/
