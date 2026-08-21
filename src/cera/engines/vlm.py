@@ -7,7 +7,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from cera.errors import MissingRequiredFieldsError, NotAnInBodySheetError
-from cera.inbody import InBodyPayload, SegmentalLean
+from cera.inbody import REQUIRED_FIELDS, SEGMENTAL_FIELDS, InBodyPayload, SegmentalLean
 
 _MODEL = "gpt-4o-2024-08-06"
 
@@ -23,17 +23,6 @@ _SYSTEM_PROMPT = (
     "sometimes omits it; leave visceral_fat_level unset when the sheet does "
     "not print it — that is expected, not a misread."
 )
-
-_REQUIRED_FIELDS = (
-    "weight_kg",
-    "lean_body_mass_kg",
-    "percent_body_fat",
-    "skeletal_muscle_mass_kg",
-    "basal_metabolic_rate_kcal",
-    "source_device",
-)
-_REQUIRED_SEGMENTS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg")
-
 
 class _RawSegmentalLean(BaseModel):
     left_arm_kg: float | None = None
@@ -88,13 +77,13 @@ def _to_payload(raw: _RawExtraction) -> InBodyPayload:
     if not raw.is_inbody_sheet:
         raise NotAnInBodySheetError()
 
-    missing = [field for field in _REQUIRED_FIELDS if getattr(raw, field) is None]
+    missing = [field for field in REQUIRED_FIELDS if getattr(raw, field) is None]
     if raw.segmental_lean is None:
-        missing.extend(f"segmental_lean.{field}" for field in _REQUIRED_SEGMENTS)
+        missing.extend(f"segmental_lean.{field}" for field in SEGMENTAL_FIELDS)
     else:
         missing.extend(
             f"segmental_lean.{field}"
-            for field in _REQUIRED_SEGMENTS
+            for field in SEGMENTAL_FIELDS
             if getattr(raw.segmental_lean, field) is None
         )
     if missing:

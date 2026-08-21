@@ -4,24 +4,20 @@ from typing import Callable
 from pydantic import BaseModel
 
 from cera.errors import InBodyExtractionError
-from cera.inbody import InBodyPayload
+from cera.inbody import OPTIONAL_FIELDS, REQUIRED_FIELDS, SEGMENTAL_FIELDS, InBodyPayload
 
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
 _FIELD_TOLERANCE = 0.1
 
-_REQUIRED_NUMERIC_FIELDS = (
-    "weight_kg",
-    "lean_body_mass_kg",
-    "percent_body_fat",
-    "skeletal_muscle_mass_kg",
-    "basal_metabolic_rate_kcal",
-)
-# Optional per ADR-0004 (absent on the InBody 270) — reported per-field but
-# excluded from whole_sheet_accuracy, which only gates on required fields
-# (ADR-0006: "% of sheets with every required field correct").
-_OPTIONAL_NUMERIC_FIELDS = ("visceral_fat_level",)
+# Field names come from the schema (cera.inbody); only their *match semantics*
+# are an eval concern: categorical fields compare by equality, numeric ones by
+# tolerance. Optional fields (per ADR-0004, absent on the 270) are reported
+# per-field but excluded from whole_sheet_accuracy, which gates on required
+# fields only (ADR-0006: "% of sheets with every required field correct").
 _CATEGORICAL_FIELDS = ("source_device",)
-_SEGMENTAL_FIELDS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg")
+_REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in _CATEGORICAL_FIELDS)
+_OPTIONAL_NUMERIC_FIELDS = OPTIONAL_FIELDS
+_SEGMENTAL_FIELDS = SEGMENTAL_FIELDS
 _CRITICAL_FIELDS = ("lean_body_mass_kg",) + tuple(f"segmental_lean.{f}" for f in _SEGMENTAL_FIELDS)
 
 LabeledSet = list[tuple[Path, InBodyPayload]]
