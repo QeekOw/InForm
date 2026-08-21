@@ -1,6 +1,8 @@
-from inform.inbody import InBodyPayload, SegmentalLean
-from inform.master import MasterPayload
+import pytest
+from pydantic import ValidationError
 
+from inform.inbody import InBodyPayload, SegmentalLean
+from inform.master import DailyPlan, MasterPayload
 from tests.test_exercise import _plan
 from tests.test_nutrition import _targets
 from tests.test_user import _user
@@ -53,3 +55,28 @@ def test_master_payload_round_trips_through_json():
     original = _master()
     restored = MasterPayload.model_validate_json(original.model_dump_json())
     assert restored == original
+
+
+def test_valid_daily_plan():
+    plan = DailyPlan(
+        narrative_text="Here is your coaching plan for today...",
+        target_calories_kcal=2015.3,
+        protein_g=145.0,
+        carbs_g=210.0,
+        fats_g=55.0,
+        fiber_g=28.0,
+    )
+    assert plan.target_calories_kcal == 2015.3
+    assert plan.protein_g == 145.0
+
+
+def test_daily_plan_rejects_negative_calories():
+    with pytest.raises(ValidationError):
+        DailyPlan(
+            narrative_text="Negative calories invalid",
+            target_calories_kcal=-100.0,
+            protein_g=145.0,
+            carbs_g=210.0,
+            fats_g=55.0,
+            fiber_g=28.0,
+        )
