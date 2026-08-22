@@ -151,12 +151,63 @@ graded on the 270 too.
 > 570 is unchanged (270-first). Mirroring this to the 570 and a both-device
 > retrain is the remaining follow-up.
 
+## Adult 570 clone + both-device retrain (2026-08-23)
+
+The remaining follow-up above is done. The 570 template was overhauled into a full
+adult-570 clone (nested Body Composition table, muscle-fat / obesity / segmental-lean
+bar rows, ECW/TBW, body-composition history; right column Body Fat–LBM control,
+segmental fat, BMR, visceral-fat gauge, results-interpretation text, impedance), built
+in metric (kg), with LBM labeled "Lean Body Mass" (the 570's real label; same
+`$lean_body_mass_kg` placeholder). Distractors derive coherently from the ground truth
+so the sheet cross-adds (ICW+ECW=TBW, TBW+Dry Lean=LBM, LBM+Body Fat=Weight). Donut was
+re-trained fresh from `donut-base`, **1 epoch, both devices** (2,500 × 270 + 2,500 × 570)
+on Kaggle → checkpoint `donut-both-v3`. `InBodyPayload` contract unchanged.
+
+**Held-out synthetic** (400 sheets = 200 × 270 + 200 × 570, disjoint seeds):
+
+| Slice | Whole-sheet | Per-field | Critical mean |
+| --- | --- | --- | --- |
+| Combined | 46.0% | ~47–48% | 47.5% |
+| inbody_270 | 48.0% | — | — |
+| inbody_570 | 44.0% | — | — |
+
+The 570 extractor works (44% vs 270's 48% — the denser layout is modestly harder, not
+broken, not dragging 270 down). Failure signature stays safe (per-field ≈ whole-sheet →
+misses are clean fail-closed refusals). On synthetic, health-correct sheets also get the
+device right (per-device health-only == full whole-sheet).
+
+**Real InBody 270 photo (n=1):**
+
+| Field group | Result |
+| --- | --- |
+| All 11 health fields (weight 82.0, LBM 63.2, PBF 22.9, SMM, BMR, visceral, 5× segmental) | **100% — every value exact** |
+| `source_device` | ✗ predicted `inbody_570` (truth `inbody_270`) |
+| Whole-sheet (metric counts `source_device`) | **0%** |
+
+Health extraction on the real 270 is **as good as the 270-only model** (still 100%). The
+one regression is the *device label*: having learned both layouts, the model calls the
+phone-captured (out-of-distribution) 270 a 570. This is a much softer error than a misread
+number — but the whole-sheet metric weights every required field equally, so it zeroes the
+sheet. Reported honestly rather than masked (`source_device` kept in the metric per
+ADR-0006); the health-field read is the number that matters for the product.
+
+**570 validation is synthetic-only** — no real *metric* 570 phone photo exists (the build
+reference is an imperial clean render, not a phone capture). Getting a real metric 570
+photo is the outstanding real-transfer lever for the 570.
+
+> Combined 46% vs the issue-#13 270-only 53.5% is not a regression: it is a different
+> (harder, two-device) held-out set and a model splitting one epoch of capacity across two
+> layouts — not directly comparable.
+
 ## Future Work
 
-- **Realistic 570 sheets + both-device retrain.** Mirror the issue-#13 270
-  overhaul (done above) to the 570 template, then re-train on both devices. The
-  270 result shows the approach works; the 570 has no real photo to validate
-  against yet.
+- **Real *metric* 570 photo.** The adult 570 clone + both-device retrain is done
+  (see above); 570 is synthetic-validated only because no real metric 570 phone
+  photo exists yet. One hand-labeled real 570 would validate transfer as the 270
+  photo did.
+- **Device-label robustness on real photos.** The both-device model reads real 270
+  health fields perfectly but misclassifies `source_device` on the out-of-distribution
+  photo. Worth a real-photo-aware fix (more real captures, or device-agnostic scoring).
 - **Larger real-photo hold-out.** A hand-labeled set of real InBody 270/570
   photos (>1) to turn the anecdote above into a measured synthetic→real gap for
   both engines.
