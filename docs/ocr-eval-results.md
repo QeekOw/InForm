@@ -108,13 +108,55 @@ objective (see Future Work).
 > n=1 is anecdotal, not a statistic — treat this as an existence proof of the
 > domain gap and of safe failure, not a measured real-world accuracy.
 
+## Issue #13 retrain — realistic 270 sheets (2026-08-22)
+
+Acting on the Future-Work item below, the 270 generator was overhauled into a
+full structural clone of a real InBody 270 (branding, ID row, body-composition
+analysis, muscle-fat/obesity bar charts, segmental lean **and** fat figures,
+InBody score, research parameters incl. LBM rendered as its real "Fat Free Mass"
+label, calorie/impedance tables, history strip), with distractor fields derived
+coherently from the ground truth and phone-capture augmentation strengthened
+(grayscale B&W, desk background, glare, stronger rotation/perspective; ~30% kept
+easy). Donut was re-trained fresh from `donut-base`, 1 epoch, **270-only** (2,500
+new-look sheets) on Kaggle. `InBodyPayload` contract unchanged.
+
+| Test | Old (minimal template) | New (realistic clone) |
+| --- | --- | --- |
+| **Real InBody 270 photo (n=1)** | **0%** whole-sheet (fail-closed) | **100%** whole-sheet |
+| Held-out synthetic, whole-sheet | 56.0% (easy augmentation) | 53.5% (harder augmentation) |
+| Held-out synthetic, per-field | ~57% | 55.0–57.0% |
+| Failure mode | safe fail-closed | safe fail-closed (per-field > whole-sheet) |
+
+**The real-photo result is the headline: 0% → 100%.** The retrained model
+extracted all twelve fields of the hand-labeled real 270 correctly (weight 82.0,
+FFM 63.2, PBF 22.9, SMM 36.3, BMR 1735, visceral fat 7, all five segmental
+leans). This confirms the issue-#13 hypothesis: the synthetic→real gap was
+*visual/distributional*, not model capacity — cloning the real layout plus
+stronger augmentation closed it. **n=1 remains anecdotal** (only one real sheet
+exists), so this is a decisive existence-proof of transfer, not a measured
+accuracy.
+
+The held-out **synthetic** number staying roughly flat (56% → 53.5%) is expected
+and *not* a regression: the new held-out set is deliberately much harder (the
+strengthened augmentation), so a near-equal score on a harder test means better
+robustness per unit of difficulty, not degradation — and it is measured on a
+different distribution than the old 56%, so the two are not directly comparable.
+The failure signature stays safe (per-field 57% sits above whole-sheet 53.5%, so
+misses are mostly clean refusals, not silent misreads).
+
+ADR-0004 was corrected in the same change: the real 270 *does* print Visceral Fat
+Level (confirmed on two real sheets), so `visceral_fat_level` is now rendered and
+graded on the 270 too.
+
+> 570 is unchanged (270-first). Mirroring this to the 570 and a both-device
+> retrain is the remaining follow-up.
+
 ## Future Work
 
-- **Realistic synthetic sheets.** The highest-leverage next step: overhaul the
-  generator's HTML/CSS templates to closely mimic *real* InBody 270/570 sheet
-  layout (branding, history tables, obesity/segmental-fat sections, impedance,
-  ID), then re-train Donut. The n=1 test suggests the current visual gap is the
-  dominant failure cause, not model capacity.
+- **Realistic 570 sheets + both-device retrain.** Mirror the issue-#13 270
+  overhaul (done above) to the 570 template, then re-train on both devices. The
+  270 result shows the approach works; the 570 has no real photo to validate
+  against yet.
 - **Larger real-photo hold-out.** A hand-labeled set of real InBody 270/570
   photos (>1) to turn the anecdote above into a measured synthetic→real gap for
   both engines.

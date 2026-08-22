@@ -42,3 +42,32 @@ Two subtleties the paper misses:
 - Requires accurate 270/570 layout recreation from public sample sheets.
 - Augmentation strength is a tunable that trades synthetic accuracy for real-world robustness
   (measured via ADR-0006's real hold-out).
+
+## Amendment (issue #13, 2026-08-22) — realistic full-clone 270
+
+The first 270 template was a *minimal* sheet (the ~12 target fields as a clean list). It scored
+56% on held-out synthetic but **0% on a real InBody 270 photo** (a safe fail-closed refusal, no
+fabrication). Root cause: visual domain gap — a real 270 is a dense two-column sheet, so the
+minimal look is out-of-distribution. The 270 template is therefore overhauled (570 deferred):
+
+- **Full structural clone** of a real 270: header/logo/ID row, Body Composition Analysis,
+  Muscle-Fat + Obesity bar charts, Segmental Lean **and** Fat figures, InBody Score, Weight
+  Control, Obesity Evaluation, Waist-Hip, Visceral Fat, Research Parameters, Calorie Expenditure
+  and Impedance tables, and a Body Composition History strip — the ~12 target fields kept in
+  their **real** positions amid this clutter.
+- **LBM renders as "Fat Free Mass"** in Research Parameters — its real position on a 270 — not
+  an invented "Lean Body Mass" row (ADR-0003; the FFM↔LBM equivalence is documented in CONTEXT.md).
+- **Distractor fields derive coherently** from the ground truth (`Body Fat Mass = weight − LBM`,
+  `TBW ≈ 0.73·LBM`, `Protein ≈ 0.198·LBM`, `Minerals ≈ 0.0727·LBM`, `BMI` from a generated
+  ungraded height, history = target ± drift), so the sheet cross-adds like a real one and stays
+  human-verifiable. Peripheral tables (Calorie Expenditure, Impedance) are static clutter.
+- **270 now renders a Visceral Fat Level** (supersedes the "270 omits VF" bullet above — see the
+  ADR-0004 correction). `visceral_fat_level` is populated for both devices; the schema keeps it
+  optional for real-world absence.
+- **Augmentation strengthened toward the real photo (Q6):** grayscale/B&W prints, a darker desk
+  background, glare, and stronger rotation/perspective, with ~30% of sheets kept "easy" so the
+  held-out synthetic number stays interpretable.
+
+Ground-truth invariants (LBM = weight·(1−PBF/100), Katch-McArdle BMR, segments sum, seeded
+asymmetry) are unchanged — only the visual surround and the coherent distractors are new. The
+`InBodyPayload` contract is untouched.

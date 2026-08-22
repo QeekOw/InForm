@@ -42,3 +42,24 @@ extractor to hallucinate, violating the anti-hallucination thesis.
 - Schema honestly represents device capability; no fabricated visceral-fat values.
 - Module 3 gains a required branch for the no-visceral-fat case.
 - Synthetic generation (ADR-0007) must render 270 sheets *without* a visceral-fat field.
+
+## Correction (issue #13, 2026-08-22) — the InBody 270 *does* print Visceral Fat Level
+
+The Context table above (sourced from InBody-Canada 270**S** marketing material) claims the 270
+does not report Visceral Fat Level. **Real hardware disproves this.** Two real InBody 270 result
+sheets — the hand-labeled phone hold-out (`D:\cera\data\real_holdout`, Visceral Fat Level 7) and
+a clean official 270 sample (Level 11), both tagged `[InBody270]` — print it plainly. Empirical
+sheets beat the doc citation.
+
+Revised decision:
+
+- **The 270 prints Visceral Fat Level; extract it.** `visceral_fat_level` is now populated for
+  **both** devices (synthetic 270 sheets render it — ADR-0007 amendment).
+- `visceral_fat_level: int | None` **stays optional** — some 270 configs may still omit it, and
+  it remains programmable/absent on the 570 — so the anti-hallucination guarantee (ADR-0008 §4:
+  a missing *optional* field is expected `None`, not a failure) is unchanged.
+- **Module 3 gains 270 users for the visceral-fat HIIT rule** (§3.1.3.2), which this ADR had
+  previously denied them. The `None` fallback branch is still required for the absent case.
+
+Net: the field is now *available on both devices* rather than *270-never*, but its **optionality
+is preserved** — no fabricated value is ever emitted.
