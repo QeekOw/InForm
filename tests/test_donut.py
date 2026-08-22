@@ -1,12 +1,13 @@
 # The Donut engine's model inference needs a GPU + real checkpoint (covered by
-# the training smoke test + the Colab run); these tests exercise the parsing /
-# fail-closed logic that turns a decoded sequence into a payload, which is the
-# only non-trivial branch and runs without torch.
-import pytest
+# the training smoke test + the Colab run); these tests exercise the parsing
+# logic that turns a decoded sequence into a PartialInBody, which is the only
+# non-trivial branch and runs without torch. Partial extraction (ADR-0008
+# amended): a garbled/incomplete generation yields an empty/partial read (all or
+# some fields None), never a fabricated value — the seam decides floor-reject.
+import json
 
-from cera.engines.donut import TASK_TOKEN, _to_payload
-from cera.errors import MissingRequiredFieldsError
-from cera.inbody import InBodyPayload
+from cera.engines.donut import TASK_TOKEN, _to_partial
+from cera.inbody import InBodyPayload, PartialInBody
 
 _GOOD = InBodyPayload(
     weight_kg=70.0,
@@ -19,27 +20,42 @@ _GOOD = InBodyPayload(
     ),
     source_device="inbody_570",
 )
+_GOOD_PARTIAL = PartialInBody.model_validate(_GOOD.model_dump())
 
 
 def test_parses_clean_generation():
-    assert _to_payload(_GOOD.model_dump_json()) == _GOOD
+    assert _to_partial(_GOOD.model_dump_json()) == _GOOD_PARTIAL
 
 
 def test_tolerates_residual_task_token():
     # skip_special_tokens normally removes it, but be robust if it lingers.
-    assert _to_payload(TASK_TOKEN + _GOOD.model_dump_json()) == _GOOD
+    assert _to_partial(TASK_TOKEN + _GOOD.model_dump_json()) == _GOOD_PARTIAL
 
 
-def test_garbled_json_fails_closed_not_fabricated():
-    with pytest.raises(MissingRequiredFieldsError):
-        _to_payload("{weight_kg: 70, ...truncated")
+def test_garbled_json_is_empty_read_not_fabricated():
+    partial = _to_partial("{weight_kg: 70, ...truncated")
+    assert partial == PartialInBody()  # all None — nothing fabricated
 
 
-def test_missing_field_is_named():
-    partial = _GOOD.model_dump()
-    del partial["lean_body_mass_kg"]
-    import json
+def test_missing_field_is_left_unread():
+    data = _GOOD.model_dump()
+    del data["lean_body_mass_kg"]
 
-    with pytest.raises(MissingRequiredFieldsError) as excinfo:
-        _to_payload(json.dumps(partial))
-    assert "lean_body_mass_kg" in excinfo.value.fields
+    partial = _to_partial(json.dumps(data))
+
+    assert partial.lean_body_mass_kg is None  # unread
+    assert partial.weight_kg == 70.0  # the rest is still read
+    assert partial.segmental_lean.trunk_kg == 24.5
+
+
+def test_bad_typed_field_is_dropped_but_others_kept():
+    # Valid JSON, one non-coercible value: keep the good keys, drop only the bad
+    # one (spec: keep whatever parses). Nothing fabricated.
+    data = _GOOD.model_dump()
+    data["weight_kg"] = "n/a"
+
+    partial = _to_partial(json.dumps(data))
+
+    assert partial.weight_kg is None  # the bad field is dropped -> unread
+    assert partial.lean_body_mass_kg == 58.0  # the rest survives
+    assert partial.segmental_lean.trunk_kg == 24.5

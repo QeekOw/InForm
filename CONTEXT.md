@@ -61,8 +61,9 @@ only — it must never mutate a deterministic number (enforced by validation).
 
 ## Module 1 (OCR) — the two engines
 
-Module 1 fills one seam: `extract_inbody(image_path) -> InBodyPayload`. Exactly one *engine*
-plugs into that seam at a time. They are swappable alternatives, not layers:
+Module 1 fills one seam: `extract_inbody(image_path) -> InBodyExtraction` (the read values plus
+`unread`/`flagged` lists; `.as_payload()` promotes a clean, complete read to an `InBodyPayload`).
+Exactly one *engine* plugs into that seam at a time. They are swappable alternatives, not layers:
 
 - **VLM engine** — a general vision-language model (OpenAI, zero/few-shot, Structured
   Outputs) used as the **phase-1 baseline** and permanent **evaluation oracle**. No training.
