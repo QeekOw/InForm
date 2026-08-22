@@ -7,7 +7,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from cera.errors import NotAnInBodySheetError
-from cera.inbody import PartialInBody, PartialSegmentalLean
+from cera.inbody import PartialInBody
 
 _MODEL = "gpt-4o-2024-08-06"
 
@@ -77,20 +77,8 @@ def _to_partial(raw: _RawExtraction) -> PartialInBody:
     # A non-sheet is the one hard reject the VLM can signal directly; otherwise
     # return whatever was read (unread fields stay None). The seam decides
     # floor-reject vs partial and applies the cross-check flags (ADR-0008 amended).
+    # PartialInBody shares raw's field names, so model_validate maps it directly
+    # (the extra is_inbody_sheet is ignored; a None segmental validates fine).
     if not raw.is_inbody_sheet:
         raise NotAnInBodySheetError()
-
-    segmental = (
-        None if raw.segmental_lean is None
-        else PartialSegmentalLean(**raw.segmental_lean.model_dump())
-    )
-    return PartialInBody(
-        weight_kg=raw.weight_kg,
-        lean_body_mass_kg=raw.lean_body_mass_kg,
-        percent_body_fat=raw.percent_body_fat,
-        skeletal_muscle_mass_kg=raw.skeletal_muscle_mass_kg,
-        basal_metabolic_rate_kcal=raw.basal_metabolic_rate_kcal,
-        segmental_lean=segmental,
-        visceral_fat_level=raw.visceral_fat_level,
-        source_device=raw.source_device,
-    )
+    return PartialInBody.model_validate(raw.model_dump())

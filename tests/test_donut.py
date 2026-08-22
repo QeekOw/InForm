@@ -46,3 +46,16 @@ def test_missing_field_is_left_unread():
     assert partial.lean_body_mass_kg is None  # unread
     assert partial.weight_kg == 70.0  # the rest is still read
     assert partial.segmental_lean.trunk_kg == 24.5
+
+
+def test_bad_typed_field_is_dropped_but_others_kept():
+    # Valid JSON, one non-coercible value: keep the good keys, drop only the bad
+    # one (spec: keep whatever parses). Nothing fabricated.
+    data = _GOOD.model_dump()
+    data["weight_kg"] = "n/a"
+
+    partial = _to_partial(json.dumps(data))
+
+    assert partial.weight_kg is None  # the bad field is dropped -> unread
+    assert partial.lean_body_mass_kg == 58.0  # the rest survives
+    assert partial.segmental_lean.trunk_kg == 24.5

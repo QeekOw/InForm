@@ -68,5 +68,11 @@ def _to_partial(decoded: str) -> PartialInBody:
         return PartialInBody()
     try:
         return PartialInBody.model_validate(data)
-    except ValidationError:
-        return PartialInBody()
+    except ValidationError as exc:
+        # Keep the keys that DID parse; drop only the invalid ones — a single
+        # bad-typed field must not discard every other correct read (spec: "keep
+        # whatever keys are present"). Never fabricates: dropped keys read unread.
+        # A nested error (e.g. one bad segmental limb) drops the whole segmental
+        # block, which then reads as unread — acceptable, still no guess.
+        bad = {str(error["loc"][0]) for error in exc.errors()}
+        return PartialInBody.model_validate({k: v for k, v in data.items() if k not in bad})

@@ -53,6 +53,12 @@ class PartialInBody(BaseModel):
 
     InBodyPayload stays the complete/validated downstream contract; this holds
     the possibly-incomplete read before the seam decides floor-reject vs return.
+
+    ponytail: a deliberate parallel schema, hand-kept in sync with InBodyPayload.
+    Deriving it (create_model with Optional fields) can't express the nested
+    partial — segmental_lean must accept a PartialSegmentalLean where a single
+    limb is None — so a derived twin ends up more magic than these two boring
+    field lists. If you add a field to InBodyPayload, add it here too.
     """
 
     weight_kg: float | None = None
@@ -81,20 +87,14 @@ class InBodyExtraction(BaseModel):
 
     def as_payload(self) -> InBodyPayload | None:
         """Promote a clean, complete read to a validated InBodyPayload; None if
-        anything is unread or flagged (so downstream can't consume a gappy read)."""
+        anything is unread or flagged (so downstream can't consume a gappy read).
+
+        A complete read has every field non-None, so model_validate reconstructs
+        the strict payload directly (the nested segmental dict coerces to
+        SegmentalLean) — no field-by-field copy needed."""
         if not self.is_complete():
             return None
-        d = self.data
-        return InBodyPayload(
-            weight_kg=d.weight_kg,
-            lean_body_mass_kg=d.lean_body_mass_kg,
-            percent_body_fat=d.percent_body_fat,
-            skeletal_muscle_mass_kg=d.skeletal_muscle_mass_kg,
-            basal_metabolic_rate_kcal=d.basal_metabolic_rate_kcal,
-            segmental_lean=SegmentalLean(**d.segmental_lean.model_dump()),
-            visceral_fat_level=d.visceral_fat_level,
-            source_device=d.source_device,
-        )
+        return InBodyPayload.model_validate(self.data.model_dump())
 
 
 # Every required field named for the partial-extraction seam and eval harness;
