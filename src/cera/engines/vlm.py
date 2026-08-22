@@ -6,8 +6,8 @@ from typing import Literal
 from openai import OpenAI
 from pydantic import BaseModel
 
-from cera.errors import MissingRequiredFieldsError, NotAnInBodySheetError
-from cera.inbody import REQUIRED_FIELDS, SEGMENTAL_FIELDS, InBodyPayload, SegmentalLean
+from cera.errors import NotAnInBodySheetError
+from cera.inbody import PartialInBody, PartialSegmentalLean
 
 _MODEL = "gpt-4o-2024-08-06"
 
@@ -47,7 +47,7 @@ class _RawExtraction(BaseModel):
     source_device: Literal["inbody_270", "inbody_570"] | None = None
 
 
-def extract(image_path: Path) -> InBodyPayload:
+def extract(image_path: Path) -> PartialInBody:
     # POC-only: this cloud VLM call is scoped to synthetic/consented images,
     # never real PHI, until the self-hosted Donut engine lands (ADR-0005).
     client = OpenAI()
@@ -70,32 +70,27 @@ def extract(image_path: Path) -> InBodyPayload:
         ],
         response_format=_RawExtraction,
     )
-    return _to_payload(completion.choices[0].message.parsed)
+    return _to_partial(completion.choices[0].message.parsed)
 
 
-def _to_payload(raw: _RawExtraction) -> InBodyPayload:
+def _to_partial(raw: _RawExtraction) -> PartialInBody:
+    # A non-sheet is the one hard reject the VLM can signal directly; otherwise
+    # return whatever was read (unread fields stay None). The seam decides
+    # floor-reject vs partial and applies the cross-check flags (ADR-0008 amended).
     if not raw.is_inbody_sheet:
         raise NotAnInBodySheetError()
 
-    missing = [field for field in REQUIRED_FIELDS if getattr(raw, field) is None]
-    if raw.segmental_lean is None:
-        missing.extend(f"segmental_lean.{field}" for field in SEGMENTAL_FIELDS)
-    else:
-        missing.extend(
-            f"segmental_lean.{field}"
-            for field in SEGMENTAL_FIELDS
-            if getattr(raw.segmental_lean, field) is None
-        )
-    if missing:
-        raise MissingRequiredFieldsError(missing)
-
-    return InBodyPayload(
+    segmental = (
+        None if raw.segmental_lean is None
+        else PartialSegmentalLean(**raw.segmental_lean.model_dump())
+    )
+    return PartialInBody(
         weight_kg=raw.weight_kg,
         lean_body_mass_kg=raw.lean_body_mass_kg,
         percent_body_fat=raw.percent_body_fat,
         skeletal_muscle_mass_kg=raw.skeletal_muscle_mass_kg,
         basal_metabolic_rate_kcal=raw.basal_metabolic_rate_kcal,
-        segmental_lean=SegmentalLean(**raw.segmental_lean.model_dump()),
+        segmental_lean=segmental,
         visceral_fat_level=raw.visceral_fat_level,
         source_device=raw.source_device,
     )

@@ -4,7 +4,13 @@ from typing import Callable
 from pydantic import BaseModel
 
 from cera.errors import InBodyExtractionError
-from cera.inbody import OPTIONAL_FIELDS, REQUIRED_FIELDS, SEGMENTAL_FIELDS, InBodyPayload
+from cera.inbody import (
+    OPTIONAL_FIELDS,
+    REQUIRED_FIELDS,
+    SEGMENTAL_FIELDS,
+    InBodyExtraction,
+    InBodyPayload,
+)
 
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
 _FIELD_TOLERANCE = 0.1
@@ -44,13 +50,18 @@ def load_labeled_set(data_dir: Path) -> LabeledSet:
     return pairs
 
 
-def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -> AccuracyReport:
-    """Score `engine` against known ground truth (ADR-0006).
+def evaluate(
+    extractor: Callable[[Path], InBodyExtraction], labeled_set: LabeledSet
+) -> AccuracyReport:
+    """Score `extractor` against known ground truth (ADR-0006).
 
-    Exact numeric accuracy, not text similarity: a field counts as correct
-    only within +/-0.1 unit of ground truth. `labeled_set` is homogeneous —
-    call this once per ground-truth source (synthetic, real hold-out) and
-    report the two separately, per ADR-0006's dual-ground-truth protocol.
+    `extractor` returns an InBodyExtraction (ADR-0008 amended: partial reads).
+    Exact numeric accuracy, not text similarity: a field counts as correct only
+    within +/-0.1 unit of ground truth. Partial reads are credited per field —
+    each field read AND correct scores, so a partially-read sheet no longer
+    zeroes its good fields. `whole_sheet` requires every required field read and
+    correct AND no cross-check flags. `labeled_set` is homogeneous — call once
+    per ground-truth source (synthetic, real hold-out) and report separately.
     """
     all_fields = _REQUIRED_NUMERIC_FIELDS + _OPTIONAL_NUMERIC_FIELDS + _CATEGORICAL_FIELDS
     field_matches: dict[str, list[bool]] = {field: [] for field in all_fields}
@@ -60,15 +71,14 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
 
     for image_path, expected in labeled_set:
         try:
-            predicted = engine(image_path)
+            result = extractor(image_path)
         except InBodyExtractionError:
-            # A fail-closed refusal (unreadable field, cross-check breach,
-            # non-InBody input) reads no value, so every required and
-            # segmental field scores wrong — an engine that refuses is not
-            # credited for the fields it declined to read. The OPTIONAL
-            # visceral field is scored against truth the same way as on the
-            # success path: a refusal on a 270 (truth None) is not a visceral
-            # miss (ADR-0004; matches _numeric_matches(None, None)).
+            # A hard reject (non-InBody input, or the floor case where nothing
+            # readable came back) reads no value, so every required and
+            # segmental field scores wrong. The OPTIONAL visceral field is
+            # scored against truth the same way as on the success path: a reject
+            # on a 270 (truth None) is not a visceral miss (ADR-0004; matches
+            # _numeric_matches(None, None)).
             for field in field_matches:
                 if field in _OPTIONAL_NUMERIC_FIELDS:
                     field_matches[field].append(_numeric_matches(None, getattr(expected, field)))
@@ -76,6 +86,8 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
                     field_matches[field].append(False)
             whole_sheet_matches.append(False)
             continue
+
+        predicted = result.data  # PartialInBody: unread fields are None
         sheet_matches: list[bool] = []
 
         for field in _REQUIRED_NUMERIC_FIELDS:
@@ -93,13 +105,17 @@ def evaluate(engine: Callable[[Path], InBodyPayload], labeled_set: LabeledSet) -
             sheet_matches.append(match)
 
         for field in _SEGMENTAL_FIELDS:
-            match = _numeric_matches(
-                getattr(predicted.segmental_lean, field), getattr(expected.segmental_lean, field)
+            predicted_value = (
+                None if predicted.segmental_lean is None
+                else getattr(predicted.segmental_lean, field)
             )
+            match = _numeric_matches(predicted_value, getattr(expected.segmental_lean, field))
             field_matches[f"segmental_lean.{field}"].append(match)
             sheet_matches.append(match)
 
-        whole_sheet_matches.append(all(sheet_matches))
+        # A flagged (cross-check-suspect) sheet is never a whole-sheet success,
+        # even if the flagged values happen to match truth.
+        whole_sheet_matches.append(all(sheet_matches) and not result.flagged)
 
     per_field_accuracy = {field: _match_rate(matches) for field, matches in field_matches.items()}
     return AccuracyReport(

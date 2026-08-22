@@ -41,3 +41,28 @@ path is therefore load-bearing for the core claim.
 - Requires a confidence signal from the engine and a clear re-upload UX (hand-off to the
   fullstack/UI owners).
 - Pydantic validation + the cross-checks form the enforcement layer.
+
+## Amendment (2026-08-23): partial extraction, not all-or-nothing
+
+The original decision discarded the *whole* extraction whenever any single required field was
+unreadable or a cross-check failed. On a real phone photo where one field is glare-washed, that
+threw away every other correctly-read value — poor UX for no safety gain. `extract_inbody` now
+returns an `InBodyExtraction { data, unread, flagged }`: the values that were read, the required
+fields that were not (`unread`), and the fields a cross-check found suspect (`flagged`,
+"verify"). The UI turns `unread`/`flagged` into a user-facing notice (out of Module 1's scope).
+
+**The no-fabrication guarantee is unchanged** — unread fields carry no value; flagged fields are
+real reads marked low-confidence; nothing is ever guessed. What changes:
+
+1. **Unreadable required field → left `unread`, not a whole-sheet refuse.** Other fields are
+   still returned.
+2. **Cross-check breach → `flagged`, not a refuse.** A breach can't isolate the single misread,
+   so every field feeding the check is flagged. `CrossCheckFailedError` is removed.
+3. **Two hard-reject paths remain (still fail closed):** a non-InBody image
+   (`NotAnInBodySheetError`), and the *floor case* where **nothing** readable came back
+   (`MissingRequiredFieldsError`) — partial extraction only applies once some real data is read.
+4. **Eval (ADR-0006) credits partial reads:** each field read *and* correct scores; `whole_sheet`
+   requires all required fields read, all correct, and no flags. This raises per-field numbers
+   vs the old all-or-nothing scoring, so pre-amendment figures are not directly comparable.
+
+Design spec: `docs/superpowers/specs/2026-08-23-partial-inbody-extraction-design.md`.

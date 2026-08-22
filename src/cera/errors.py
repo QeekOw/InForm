@@ -17,15 +17,3 @@ class MissingRequiredFieldsError(InBodyExtractionError):
             "Could not confidently read: " + ", ".join(fields) + ". "
             "Please re-upload a clearer photo."
         )
-
-
-class CrossCheckFailedError(InBodyExtractionError):
-    def __init__(self, check_name: str, expected: float, actual: float, tolerance: float) -> None:
-        self.check_name = check_name
-        self.expected = expected
-        self.actual = actual
-        self.tolerance = tolerance
-        super().__init__(
-            f"Cross-check '{check_name}' failed: expected ~{expected:.1f}, "
-            f"read {actual:.1f} (tolerance {tolerance}). Likely misread — re-upload requested."
-        )

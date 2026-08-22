@@ -29,7 +29,9 @@ def test_extracts_570_sheet_with_visceral_fat(fake_openai, raw_segmental):
 
     result = extract_inbody(FIXTURE)
 
-    assert result == InBodyPayload(
+    assert result.is_complete()
+    assert not result.unread and not result.flagged
+    assert result.as_payload() == InBodyPayload(
         weight_kg=70.0,
         lean_body_mass_kg=58.0,
         percent_body_fat=17.1,
@@ -59,8 +61,9 @@ def test_extracts_270_sheet_without_visceral_fat(fake_openai, raw_segmental):
 
     result = extract_inbody(FIXTURE)
 
-    assert result.visceral_fat_level is None
-    assert result.source_device == "inbody_270"
+    assert result.data.visceral_fat_level is None
+    assert result.data.source_device == "inbody_270"
+    assert result.is_complete()
 
 
 def test_binds_structured_output_schema_and_encodes_image(fake_openai, raw_segmental):
