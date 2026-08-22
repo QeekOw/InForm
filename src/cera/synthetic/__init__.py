@@ -12,9 +12,8 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOp
 from cera.inbody import InBodyPayload, SegmentalLean
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
-# 270 renders a full-page portrait clone (issue #13); 570 keeps its minimal
-# landscape template until it is overhauled too (Q4 — 270 first).
-_WINDOW_SIZE = {"inbody_270": "1060,1320", "inbody_570": "560,460"}
+# Both devices render a full-page portrait clone of a real sheet.
+_WINDOW_SIZE = {"inbody_270": "1060,1320", "inbody_570": "1060,1440"}
 
 # ponytail: fixed physiological ranges/proportions, not learned from data.
 # Tune against real InBody sheets if the synthetic distribution drifts.
@@ -176,6 +175,13 @@ def _derive_render_values(payload: InBodyPayload) -> dict:
     fat_control = round(min(0.0, ideal_weight - weight), 1)
     waist_hip = round(rng.uniform(0.78, 0.95), 2)
 
+    # 570-only body-water split (coherent: ICW + ECW = TBW; TBW + Dry Lean = LBM;
+    # LBM + Body Fat = Weight — the whole Body Composition block cross-adds).
+    ecw_tbw = round(rng.uniform(0.36, 0.39), 3)
+    extracellular_water_l = round(total_body_water_l * ecw_tbw, 1)
+    intracellular_water_l = round(total_body_water_l - extracellular_water_l, 1)
+    dry_lean_mass_kg = round(lbm - total_body_water_l, 1)
+
     return {
         "id": f"{rng.choice('ABCDEFGH')}{rng.randint(1000, 9999)}",
         "height_cm": height_cm,
@@ -210,10 +216,24 @@ def _derive_render_values(payload: InBodyPayload) -> dict:
         # segmental lean percentages / ratings
         "la_pct": la_pct, "ra_pct": ra_pct, "ll_pct": ll_pct, "rl_pct": rl_pct, "trunk_pct": trunk_pct,
         "la_rate": la_rate, "ra_rate": ra_rate, "ll_rate": ll_rate, "rl_rate": rl_rate, "trunk_rate": trunk_rate,
-        # segmental fat (estimated distractor)
+        # segmental-lean bar widths (570 renders these as bar rows, not a figure)
+        "la_bar": _bar_pct(la_pct, 40, 160), "ra_bar": _bar_pct(ra_pct, 40, 160),
+        "ll_bar": _bar_pct(ll_pct, 40, 160), "rl_bar": _bar_pct(rl_pct, 40, 160),
+        "trunk_bar": _bar_pct(trunk_pct, 40, 160),
+        # 570-only body-water split + ECW/TBW (total_body_water_l already above)
+        "intracellular_water_l": intracellular_water_l,
+        "extracellular_water_l": extracellular_water_l,
+        "dry_lean_mass_kg": dry_lean_mass_kg,
+        "ecw_tbw": ecw_tbw,
+        "ecw_tbw_bar": _bar_pct(ecw_tbw, 0.32, 0.45),
+        "ecw_tbw_history": _history_cells(ecw_tbw, 0.0, rng, 3),
+        # segmental fat (estimated distractor); bars are fractions of total body fat
         "fat_la": round(body_fat_mass_kg * 0.04, 1), "fat_ra": round(body_fat_mass_kg * 0.04, 1),
         "fat_ll": round(body_fat_mass_kg * 0.14, 1), "fat_rl": round(body_fat_mass_kg * 0.14, 1),
         "fat_trunk": round(body_fat_mass_kg * 0.44, 1),
+        "fat_la_bar": _bar_pct(0.04, 0, 0.5), "fat_ra_bar": _bar_pct(0.04, 0, 0.5),
+        "fat_ll_bar": _bar_pct(0.14, 0, 0.5), "fat_rl_bar": _bar_pct(0.14, 0, 0.5),
+        "fat_trunk_bar": _bar_pct(0.44, 0, 0.5),
         # history rows
         "weight_history": _history_cells(weight, 0.06, rng, 1),
         "smm_history": _history_cells(smm, -0.05, rng, 1),
@@ -248,12 +268,11 @@ def _graded_fields(payload: InBodyPayload) -> dict:
 
 
 def _fill_template(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> str:
+    # Both devices are now full realistic clones (270 in #13, adult 570 follow-up):
+    # graded target fields sit amid the coherent distractor surround. Each template
+    # pulls the keys it needs from this shared dict; unused keys are ignored.
     template = Template((_TEMPLATE_DIR / f"{device}.html").read_text(encoding="utf-8"))
-    values = _graded_fields(payload)
-    if device == "inbody_270":
-        # 270 is the full realistic clone (issue #13): target fields sit amid the
-        # coherent distractor surround. 570 stays minimal until overhauled (Q4).
-        values |= _derive_render_values(payload)
+    values = _graded_fields(payload) | _derive_render_values(payload)
     return template.substitute(values)
 
 
@@ -295,7 +314,7 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
             capture_output=True,
         )
         image = Image.open(png_path).convert("RGB").copy()
-    return _crop_to_content(image) if device == "inbody_270" else image
+    return _crop_to_content(image)
 
 
 def _crop_to_content(image: Image.Image) -> Image.Image:
