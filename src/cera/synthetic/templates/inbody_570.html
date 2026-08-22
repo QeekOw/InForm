@@ -1,35 +1,237 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
 <style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #ffffff; }
-  .sheet { border: 2px solid #333; width: 460px; padding: 16px; }
-  .title { font-size: 20px; font-weight: bold; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 12px; }
-  .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #ccc; }
-  .label { color: #333; }
-  .value { font-weight: bold; }
-  .segmental { margin-top: 12px; }
-  .segmental .heading { font-weight: bold; margin-bottom: 4px; }
-  .segmental .row { padding-left: 12px; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #ffffff; }
+  body { font-family: Arial, Helvetica, sans-serif; padding: 22px; }
+  .sheet { width: 1000px; background: #fff; margin: 0 auto; padding: 26px 30px 30px; color: #1a1a1a; }
+  .red { color: #b11f24; }
+  .hdr { display: flex; align-items: flex-start; justify-content: space-between; }
+  .logo { font-size: 46px; font-weight: 800; letter-spacing: -1px; line-height: .8; }
+  .model { font-size: 15px; font-weight: 700; color: #333; margin-top: 6px; }
+  .tag { border: 1px solid #444; font-size: 11px; font-weight: 700; color: #333; padding: 6px 10px; }
+  .idrow { display: flex; border: 1px solid #444; margin-top: 8px; font-size: 12px; }
+  .idrow .cell { border-right: 1px solid #444; padding: 3px 8px; }
+  .idrow .cell:last-child { border-right: none; }
+  .idrow .k { color: #555; font-size: 10px; display: block; }
+  .idrow .v { font-weight: 700; }
+  .cols { display: flex; gap: 20px; margin-top: 14px; }
+  .left { width: 600px; } .right { width: 350px; }
+  .sec { margin-top: 12px; }
+  .sec h2 { color: #2a3d66; font-size: 15px; font-weight: 800; border-bottom: 2px solid #2a3d66; padding-bottom: 2px; margin-bottom: 5px; }
+  table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  /* Body Composition Analysis — nested cumulative columns */
+  .bca td { border: 1px solid #b9b9b9; padding: 4px 6px; }
+  .bca .lbl { color: #333; width: 180px; }
+  .bca .lbl i { color: #888; font-style: normal; font-size: 9px; }
+  .bca .head td { background: #6c7f9f; color: #fff; font-weight: 700; font-size: 10px; text-align: center; }
+  .bca .v { font-weight: 700; text-align: right; width: 60px; background: #f2f2f2; }
+  .bca .span { font-weight: 700; text-align: center; vertical-align: middle; background: #eef1f6; width: 78px; }
+  .graph { border: 1px solid #c7c7c7; }
+  .graph .ghead { display: flex; font-size: 9.5px; font-weight: 700; color: #fff; }
+  .graph .ghead .lab { width: 100px; background: #7a8aa6; }
+  .graph .ghead span { flex: 1; text-align: center; padding: 1px 0; }
+  .graph .ghead .u { background: #8f9db6; }
+  .graph .ghead .n { background: #6c7f9f; }
+  .graph .ghead .o { background: #4d6088; flex: 3; }
+  .grow { display: flex; align-items: center; border-top: 1px solid #ddd; }
+  .grow .lab { width: 100px; padding: 3px 5px; font-size: 11px; }
+  .grow .lab b { display: block; font-size: 11px; }
+  .grow .lab i { color: #888; font-style: normal; font-size: 8.5px; }
+  .grow .plot { flex: 1; position: relative; height: 26px; }
+  .ticks { position: absolute; inset: 0; display: flex; font-size: 8px; color: #999; }
+  .ticks span { flex: 1; border-left: 1px solid #eee; padding-left: 1px; }
+  .bar { position: absolute; top: 12px; height: 7px; background: #222; }
+  .bar .bv { position: absolute; right: -30px; top: -15px; font-size: 12px; font-weight: 700; color:#111; background: #fff; padding: 0 2px; box-shadow: 0 0 2px 2px #fff; white-space: nowrap; }
+  .hist td { border: 1px solid #ccc; font-size: 10px; padding: 2px 3px; text-align: center; }
+  .hist .rl { text-align: left; font-weight: 700; width: 70px; }
+  .hist .rl i { display:block; color:#888; font-weight:400; font-size:8px; }
+  .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; border-bottom: 1px solid #eee; }
+  .kv .k { color: #333; } .kv .v { font-weight: 700; }
+  .note { font-size: 8.5px; color: #777; margin-top: 3px; line-height: 1.25; }
+  .big { font-size: 26px; font-weight: 800; }
+  .u { font-size: 12px; color:#555; }
+  .gaugerow { display:flex; align-items:center; gap:6px; }
+  .gaugerow .num { font-size: 15px; font-weight: 800; width: 62px; }
+  .gauge { flex:1; height: 12px; border:1px solid #999; position: relative; font-size: 8px; color:#777; }
+  .gauge .mk { position:absolute; top:-1px; width:2px; height:12px; background:#111; }
+  .gauge .lo { position:absolute; left:2px; top:1px; } .gauge .hi { position:absolute; right:2px; top:1px; }
+  .interp h3 { color:#2a3d66; font-size:11px; margin-top:6px; }
+  .interp p { font-size:9.5px; color:#444; line-height:1.3; }
+  .imp td { font-size: 10px; text-align: center; padding: 1px 3px; border-bottom: 1px solid #eee; }
+  .imp .h { color:#666; font-weight:700; }
+  .foot { border-top: 1px solid #999; margin-top: 14px; padding-top: 3px; font-size: 8px; color: #888; display:flex; justify-content: space-between; }
 </style>
 </head>
 <body>
-  <div class="sheet">
-    <div class="title">InBody 570 Result Sheet</div>
-    <div class="row"><span class="label">Weight</span><span class="value">$weight_kg kg</span></div>
-    <div class="row"><span class="label">Lean Body Mass</span><span class="value">$lean_body_mass_kg kg</span></div>
-    <div class="row"><span class="label">Percent Body Fat</span><span class="value">$percent_body_fat %</span></div>
-    <div class="row"><span class="label">Skeletal Muscle Mass</span><span class="value">$skeletal_muscle_mass_kg kg</span></div>
-    <div class="row"><span class="label">Basal Metabolic Rate</span><span class="value">$basal_metabolic_rate_kcal kcal</span></div>
-    <div class="row"><span class="label">Visceral Fat Level</span><span class="value">$visceral_fat_level</span></div>
-    <div class="segmental">
-      <div class="heading">Segmental Lean Analysis</div>
-      <div class="row"><span class="label">Left Arm</span><span class="value">$left_arm_kg kg</span></div>
-      <div class="row"><span class="label">Right Arm</span><span class="value">$right_arm_kg kg</span></div>
-      <div class="row"><span class="label">Left Leg</span><span class="value">$left_leg_kg kg</span></div>
-      <div class="row"><span class="label">Right Leg</span><span class="value">$right_leg_kg kg</span></div>
-      <div class="row"><span class="label">Trunk</span><span class="value">$trunk_kg kg</span></div>
+<div class="sheet">
+
+  <div class="hdr">
+    <div><div class="logo red">InBody</div><div class="model">[InBody570]</div></div>
+    <div class="tag">SEE WHAT YOU'RE MADE OF</div>
+  </div>
+  <div class="idrow">
+    <div class="cell" style="width:190px"><span class="k">ID</span><span class="v">$id</span></div>
+    <div class="cell" style="width:120px"><span class="k">Height</span><span class="v">${height_cm}cm</span></div>
+    <div class="cell" style="width:70px"><span class="k">Age</span><span class="v">$age</span></div>
+    <div class="cell" style="width:90px"><span class="k">M/F</span><span class="v">$gender</span></div>
+    <div class="cell" style="flex:1"><span class="k">Test Date &amp; Time</span><span class="v">$test_date</span></div>
+  </div>
+
+  <div class="cols">
+    <div class="left">
+
+      <div class="sec">
+        <h2>Body Composition Analysis</h2>
+        <table class="bca">
+          <tr class="head"><td class="lbl"></td><td>Values</td><td>Total Body Water</td><td>Lean Body Mass</td><td>Weight</td></tr>
+          <tr>
+            <td class="lbl">Intracellular Water <i>(L)</i></td><td class="v">$intracellular_water_l</td>
+            <td class="span" rowspan="2">$total_body_water_l</td>
+            <td class="span" rowspan="3">$lean_body_mass_kg</td>
+            <td class="span" rowspan="4">$weight_kg</td>
+          </tr>
+          <tr><td class="lbl">Extracellular Water <i>(L)</i></td><td class="v">$extracellular_water_l</td></tr>
+          <tr><td class="lbl">Dry Lean Mass <i>(kg)</i></td><td class="v">$dry_lean_mass_kg</td></tr>
+          <tr><td class="lbl">Body Fat Mass <i>(kg)</i></td><td class="v">$body_fat_mass_kg</td></tr>
+        </table>
+      </div>
+
+      <div class="sec">
+        <h2>Muscle-Fat Analysis</h2>
+        <div class="graph">
+          <div class="ghead"><span class="lab"></span><span class="u">Under</span><span class="n">Normal</span><span class="o">Over</span></div>
+          <div class="grow"><div class="lab"><b>Weight</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>55</span><span>70</span><span>85</span><span>100</span><span>115</span><span>130</span><span>145</span><span>160</span><span>175</span><span>190</span><span>205 %</span></div>
+            <div class="bar" style="left:0;width:$weight_bar%"><span class="bv">$weight_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>SMM</b><i>Skeletal Muscle Mass (kg)</i></div><div class="plot">
+            <div class="ticks"><span>70</span><span>80</span><span>90</span><span>100</span><span>110</span><span>120</span><span>130</span><span>140</span><span>150</span><span>160</span><span>170 %</span></div>
+            <div class="bar" style="left:0;width:$smm_bar%"><span class="bv">$skeletal_muscle_mass_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Body Fat Mass</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>160</span><span>220</span><span>280</span><span>340</span><span>400</span><span>460</span><span>520 %</span></div>
+            <div class="bar" style="left:0;width:$bfm_bar%"><span class="bv">$body_fat_mass_kg</span></div></div></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>Obesity Analysis</h2>
+        <div class="graph">
+          <div class="ghead"><span class="lab"></span><span class="u">Under</span><span class="n">Normal</span><span class="o">Over</span></div>
+          <div class="grow"><div class="lab"><b>BMI</b><i>Body Mass Index (kg/m²)</i></div><div class="plot">
+            <div class="ticks"><span>10</span><span>15</span><span>18.5</span><span>21</span><span>25</span><span>30</span><span>35</span><span>40</span><span>45</span><span>50</span><span>55</span></div>
+            <div class="bar" style="left:0;width:$bmi_bar%"><span class="bv">$bmi</span></div></div></div>
+          <div class="grow"><div class="lab"><b>PBF</b><i>Percent Body Fat (%)</i></div><div class="plot">
+            <div class="ticks"><span>8</span><span>13</span><span>18</span><span>23</span><span>28</span><span>33</span><span>38</span><span>43</span><span>48</span><span>53</span><span>58</span></div>
+            <div class="bar" style="left:0;width:$pbf_bar%"><span class="bv">$percent_body_fat</span></div></div></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>Segmental Lean Analysis</h2>
+        <div class="graph">
+          <div class="ghead"><span class="lab"></span><span class="u">Under</span><span class="n">Normal</span><span class="o">Over</span></div>
+          <div class="grow"><div class="lab"><b>Right Arm</b><i>(kg) $ra_pct%</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>120</span><span>140</span><span>160</span><span>180</span><span>200</span><span>220</span><span>240 %</span></div>
+            <div class="bar" style="left:0;width:$ra_bar%"><span class="bv">$right_arm_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Left Arm</b><i>(kg) $la_pct%</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>120</span><span>140</span><span>160</span><span>180</span><span>200</span><span>220</span><span>240 %</span></div>
+            <div class="bar" style="left:0;width:$la_bar%"><span class="bv">$left_arm_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Trunk</b><i>(kg) $trunk_pct%</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>110</span><span>120</span><span>130</span><span>140</span><span>150</span><span>160</span><span>170 %</span></div>
+            <div class="bar" style="left:0;width:$trunk_bar%"><span class="bv">$trunk_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Right Leg</b><i>(kg) $rl_pct%</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>110</span><span>120</span><span>130</span><span>140</span><span>150</span><span>160</span><span>170 %</span></div>
+            <div class="bar" style="left:0;width:$rl_bar%"><span class="bv">$right_leg_kg</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Left Leg</b><i>(kg) $ll_pct%</i></div><div class="plot">
+            <div class="ticks"><span>40</span><span>60</span><span>80</span><span>100</span><span>110</span><span>120</span><span>130</span><span>140</span><span>150</span><span>160</span><span>170 %</span></div>
+            <div class="bar" style="left:0;width:$ll_bar%"><span class="bv">$left_leg_kg</span></div></div></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>ECW/TBW Analysis</h2>
+        <div class="graph">
+          <div class="grow"><div class="lab"><b>ECW/TBW</b></div><div class="plot">
+            <div class="ticks"><span>0.320</span><span>0.340</span><span>0.360</span><span>0.380</span><span>0.390</span><span>0.400</span><span>0.410</span><span>0.420</span><span>0.430</span><span>0.440</span><span>0.450</span></div>
+            <div class="bar" style="left:0;width:$ecw_tbw_bar%"><span class="bv">$ecw_tbw</span></div></div></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>Body Composition History</h2>
+        <table class="hist">
+          <tr><td class="rl">Weight<i>(kg)</i></td>$weight_history</tr>
+          <tr><td class="rl">SMM<i>Skeletal Muscle Mass (kg)</i></td>$smm_history</tr>
+          <tr><td class="rl">PBF<i>Percent Body Fat (%)</i></td>$pbf_history</tr>
+          <tr><td class="rl">ECW/TBW</td>$ecw_tbw_history</tr>
+          <tr><td class="rl" style="font-size:8px">Recent</td>$date_history</tr>
+        </table>
+      </div>
+
+    </div>
+
+    <div class="right">
+
+      <div class="sec"><h2>Body Fat-Lean Body Mass Control</h2>
+        <div class="kv"><span class="k">Body Fat Mass</span><span class="v">$fat_control kg</span></div>
+        <div class="kv"><span class="k">Lean Body Mass</span><span class="v">$muscle_control kg</span></div>
+        <div class="note">(+) means to gain fat/lean&nbsp;&nbsp;(−) means to lose fat/lean</div>
+      </div>
+
+      <div class="sec"><h2>Segmental Fat Analysis</h2>
+        <div class="graph">
+          <div class="grow"><div class="lab"><b>Right Arm</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span><span>200</span><span>240</span><span>280</span><span>320</span><span>360</span><span>400 %</span></div>
+            <div class="bar" style="left:0;width:$fat_ra_bar%"><span class="bv">$fat_ra</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Left Arm</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span><span>200</span><span>240</span><span>280</span><span>320</span><span>360</span><span>400 %</span></div>
+            <div class="bar" style="left:0;width:$fat_la_bar%"><span class="bv">$fat_la</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Trunk</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span><span>200</span><span>240</span><span>280</span><span>320</span><span>360</span><span>400 %</span></div>
+            <div class="bar" style="left:0;width:$fat_trunk_bar%"><span class="bv">$fat_trunk</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Right Leg</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span><span>200</span><span>240</span><span>280</span><span>320</span><span>360</span><span>400 %</span></div>
+            <div class="bar" style="left:0;width:$fat_rl_bar%"><span class="bv">$fat_rl</span></div></div></div>
+          <div class="grow"><div class="lab"><b>Left Leg</b><i>(kg)</i></div><div class="plot">
+            <div class="ticks"><span>0</span><span>40</span><span>80</span><span>120</span><span>160</span><span>200</span><span>240</span><span>280</span><span>320</span><span>360</span><span>400 %</span></div>
+            <div class="bar" style="left:0;width:$fat_ll_bar%"><span class="bv">$fat_ll</span></div></div></div>
+        </div>
+      </div>
+
+      <div class="sec"><h2>Basal Metabolic Rate</h2>
+        <div><span class="big">$basal_metabolic_rate_kcal</span> <span class="u">kcal</span></div>
+      </div>
+
+      <div class="sec"><h2>Visceral Fat Level</h2>
+        <div class="gaugerow"><span class="num">Level $visceral_fat_level</span><div class="gauge"><span class="lo">Low</span><span class="hi">High</span><span style="position:absolute;left:47%;top:1px">10</span><span class="mk" style="left:$visceral_bar%"></span></div></div>
+      </div>
+
+      <div class="sec interp"><h2>Results Interpretation</h2>
+        <h3>Obesity Analysis</h3>
+        <p>BMI is an index used to determine obesity by using height and weight. PBF is the percentage of body fat compared to body weight.</p>
+        <h3>Segmental Lean Analysis</h3>
+        <p>Evaluates whether the muscles are adequately developed in the body. In each segment, the top bar shows the comparison of muscle mass to ideal weight and the bottom bar shows that of the current weight.</p>
+        <h3>Body Water Analysis</h3>
+        <p>ECW/TBW is the ratio of Extracellular Water to Total Body Water, which is an important indicator whether the body water is balanced.</p>
+        <h3>Visceral Fat Level</h3>
+        <p>Visceral Fat Level is an indicator based on the estimated amount of fat surrounding internal organs in the abdomen. Maintain a Visceral Fat Level under 10 to stay healthy.</p>
+      </div>
+
+      <div class="sec"><h2>Impedance</h2>
+        <table class="imp">
+          <tr><td class="h">Z(Ω)</td><td class="h"></td><td class="h">RA</td><td class="h">LA</td><td class="h">TR</td><td class="h">RL</td><td class="h">LL</td></tr>
+          <tr><td></td><td class="h">5kHz</td><td>503.3</td><td>521.9</td><td>30.0</td><td>397.3</td><td>386.8</td></tr>
+          <tr><td></td><td class="h">50kHz</td><td>452.0</td><td>470.2</td><td>26.3</td><td>346.4</td><td>338.7</td></tr>
+          <tr><td></td><td class="h">500kHz</td><td>396.7</td><td>414.8</td><td>20.0</td><td>305.0</td><td>300.2</td></tr>
+        </table>
+      </div>
+
     </div>
   </div>
+
+  <div class="foot"><span>Copyright © 1996 by InBody Co., Ltd. All rights reserved.</span><span>BR-English-00-B-131217</span></div>
+</div>
 </body>
 </html>

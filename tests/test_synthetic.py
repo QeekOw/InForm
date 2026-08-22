@@ -113,6 +113,26 @@ def test_270_template_includes_visceral_fat_and_fat_free_mass():
     assert "Fat Free Mass" in html_270
 
 
+def test_570_template_uses_lean_body_mass_not_fat_free_mass():
+    # The adult 570 sheet labels LBM as "Lean Body Mass" (270 uses "Fat Free
+    # Mass"); both map to the same $lean_body_mass_kg placeholder.
+    html_570 = _fill_template("inbody_570", _generate_values("inbody_570", seed=3))
+    assert "Lean Body Mass" in html_570
+    assert "Fat Free Mass" not in html_570
+    assert "Visceral Fat" in html_570
+
+
+def test_570_body_water_split_is_coherent():
+    # The 570 Body Composition block cross-adds like a real sheet:
+    # ICW + ECW = TBW; TBW + Dry Lean = LBM; LBM + Body Fat = Weight.
+    for seed in _SEEDS:
+        payload = _generate_values("inbody_570", seed)
+        d = _derive_render_values(payload)
+        assert abs(d["intracellular_water_l"] + d["extracellular_water_l"] - d["total_body_water_l"]) <= _TOLERANCE
+        assert abs(d["total_body_water_l"] + d["dry_lean_mass_kg"] - payload.lean_body_mass_kg) <= 0.15
+        assert abs(payload.lean_body_mass_kg + d["body_fat_mass_kg"] - payload.weight_kg) <= _TOLERANCE
+
+
 def test_270_ground_truth_matches_rendered_template_values():
     _, payload = generate_sheet("inbody_270", seed=3)
     html = _fill_template("inbody_270", payload)
