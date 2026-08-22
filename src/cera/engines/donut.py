@@ -25,16 +25,21 @@ def load_engine(checkpoint_dir: Path):
     """
     # Lazy: heavy deps (torch/transformers, the training extra) — kept out of
     # module import so the parsing logic below stays importable without them.
+    import torch
     from PIL import Image
 
     from cera.training.train import load_checkpoint
 
     processor, model = load_checkpoint(Path(checkpoint_dir))
     model.eval()
+    # Use the GPU when one is present — donut-base's 2560x1920 canvas is ~10-20x
+    # faster on CUDA than CPU. Falls back to CPU transparently.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
 
     def extract(image_path: Path) -> InBodyPayload:
         image = Image.open(image_path).convert("RGB")
-        pixel_values = processor(image, return_tensors="pt").pixel_values
+        pixel_values = processor(image, return_tensors="pt").pixel_values.to(device)
         outputs = model.generate(
             pixel_values,
             max_new_tokens=_MAX_NEW_TOKENS,
