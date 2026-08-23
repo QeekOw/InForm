@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>InForm pipeline · Architecture</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 0.95rem;
+      color: var(--color-muted);
+      margin-bottom: 1.5rem;
+      max-width: 46rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · InForm</p>
+    <h1>The InForm pipeline</h1>
+    <p class="subtitle">A deterministic core computes every number; the generative layer only writes prose around them.</p>
+
+    <svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="inform-pipeline-title inform-pipeline-desc">
+      <title id="inform-pipeline-title">The InForm pipeline</title>
+      <desc id="inform-pipeline-desc">Architecture diagram showing an InBody scan and a user form flowing through OCR into a fused input, then a deterministic nutrition engine and exercise filter that consolidate into a Master JSON, which a separate generative LLM synthesis stage turns into the final daily plan without changing any number.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- ===== Zones (drawn before arrows and nodes) ===== -->
+      <!-- Deterministic core -->
+      <rect x="176" y="128" width="652" height="240" rx="8"
+            fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="196" y="132" width="132" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="262" y="141" fill="rgba(45,49,66,0.45)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">DETERMINISTIC CORE · 1–3</text>
+
+      <!-- Generative layer (dashed accent boundary) -->
+      <rect x="836" y="128" width="168" height="240" rx="8"
+            fill="rgba(235,108,54,0.04)" stroke="rgba(235,108,54,0.45)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="856" y="132" width="128" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="920" y="141" fill="rgba(235,108,54,0.85)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">GENERATIVE LAYER · 4</text>
+
+      <!-- ===== Arrows (behind boxes) ===== -->
+      <!-- A1 InBody image -> OCR -->
+      <path d="M 152,192 H 164 Q 172,192 172,200 V 248 Q 172,256 180,256 H 192"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A2 OCR -> fused input -->
+      <line x1="312" y1="256" x2="352" y2="256" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A3 User form -> fused input (bottom edge) -->
+      <path d="M 152,320 H 404 Q 412,320 412,312 V 288"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A4 User form -> LLM synthesis (dashed reference, along the bottom) -->
+      <path d="M 92,352 V 384 Q 92,392 100,392 H 912 Q 920,392 920,384 V 288"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <!-- A5 fused -> Nutrition engine -->
+      <path d="M 472,248 H 480 Q 488,248 488,240 V 200 Q 488,192 496,192 H 512"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A6 fused -> Exercise filter -->
+      <path d="M 472,264 H 488 Q 496,264 496,272 V 312 Q 496,320 504,320 H 512"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A7 Nutrition engine -> Master JSON -->
+      <path d="M 652,192 H 660 Q 668,192 668,200 V 242 Q 668,250 676,250 H 692"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A8 Exercise filter -> Master JSON -->
+      <path d="M 652,320 H 668 Q 676,320 676,312 V 270 Q 676,262 684,262 H 692"
+            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A9 Master JSON -> LLM synthesis (the deterministic->generative handoff) -->
+      <line x1="812" y1="256" x2="852" y2="256" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- A10 LLM synthesis -> Daily plan -->
+      <line x1="988" y1="256" x2="1028" y2="256" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <!-- ===== Arrow label ===== -->
+      <rect x="478" y="372" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="500" y="381" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CONTEXT</text>
+
+      <!-- ===== Nodes ===== -->
+      <!-- InBody image (input) -->
+      <rect x="32" y="160" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="32" y="160" width="120" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="40" y="166" width="28" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.45)" stroke-width="0.8"/>
+      <text x="54" y="175" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+      <text x="92" y="196" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">InBody image</text>
+      <text x="92" y="212" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">270 / 570 sheet</text>
+
+      <!-- User form (input) -->
+      <rect x="32" y="288" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="32" y="288" width="120" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="40" y="294" width="28" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.45)" stroke-width="0.8"/>
+      <text x="54" y="303" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">IN</text>
+      <text x="92" y="324" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">User form</text>
+      <text x="92" y="340" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">onboarding</text>
+
+      <!-- OCR (stage 1) -->
+      <rect x="192" y="224" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="192" y="224" width="120" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="200" y="230" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="212" y="239" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">01</text>
+      <text x="304" y="282" fill="rgba(45,49,66,0.06)" font-size="32" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="end">01</text>
+      <text x="252" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">OCR</text>
+      <text x="252" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Donut · VLM</text>
+
+      <!-- Fused input (artifact) -->
+      <rect x="352" y="224" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="352" y="224" width="120" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="360" y="230" width="32" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="376" y="239" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MRG</text>
+      <text x="412" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fused input</text>
+      <text x="412" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">metrics + form</text>
+
+      <!-- Nutrition engine (stage 2) -->
+      <rect x="512" y="160" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="512" y="160" width="140" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="520" y="166" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="532" y="175" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">02</text>
+      <text x="644" y="218" fill="rgba(45,49,66,0.06)" font-size="32" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="end">02</text>
+      <text x="582" y="196" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nutrition engine</text>
+      <text x="582" y="212" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Katch–McArdle</text>
+
+      <!-- Exercise filter (stage 3) -->
+      <rect x="512" y="288" width="140" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="512" y="288" width="140" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="520" y="294" width="24" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="532" y="303" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">03</text>
+      <text x="644" y="346" fill="rgba(45,49,66,0.06)" font-size="32" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="end">03</text>
+      <text x="582" y="324" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Exercise filter</text>
+      <text x="582" y="340" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">&gt;5% asymmetry</text>
+
+      <!-- Master JSON (artifact) -->
+      <rect x="692" y="224" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="692" y="224" width="120" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="700" y="230" width="34" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="717" y="239" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">JSON</text>
+      <text x="752" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Master JSON</text>
+      <text x="752" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">MasterPayload</text>
+
+      <!-- LLM synthesis (stage 4 — inside generative zone) -->
+      <rect x="852" y="224" width="136" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="852" y="224" width="136" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="860" y="230" width="24" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.55)" stroke-width="0.8"/>
+      <text x="872" y="239" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">04</text>
+      <text x="980" y="282" fill="rgba(235,108,54,0.10)" font-size="32" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="end">04</text>
+      <text x="920" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LLM synthesis</text>
+      <text x="920" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">prose only</text>
+
+      <!-- Daily plan (output) -->
+      <rect x="1028" y="224" width="120" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="1028" y="224" width="120" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="1036" y="230" width="30" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.45)" stroke-width="0.8"/>
+      <text x="1051" y="239" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OUT</text>
+      <text x="1088" y="260" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Daily plan</text>
+      <text x="1088" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">nutrition + rehab</text>
+
+      <!-- ===== Legend strip ===== -->
+      <line x1="32" y1="414" x2="1168" y2="414" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="32" y="430" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="32" y="442" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="52" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Pipeline stage</text>
+
+      <rect x="176" y="442" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <text x="196" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Data artifact</text>
+
+      <rect x="316" y="442" width="14" height="10" rx="2" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <text x="336" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Input / output</text>
+
+      <rect x="456" y="442" width="14" height="10" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1"/>
+      <text x="476" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Deterministic core</text>
+
+      <rect x="628" y="442" width="14" height="10" rx="2" fill="rgba(235,108,54,0.04)" stroke="rgba(235,108,54,0.45)" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="648" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Generative layer</text>
+
+      <line x1="792" y1="447" x2="820" y2="447" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="828" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Data flow</text>
+
+      <line x1="924" y1="447" x2="952" y2="447" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="960" y="450" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Reference (read-only)</text>
+    </svg>
+  </div>
+</body>
+</html>
