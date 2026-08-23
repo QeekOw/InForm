@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues live as GitHub Issues in QeekOw/CERA, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub Issues in QeekOw/InForm, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from cera.engines.vlm import _RawExtraction, _RawSegmentalLean
+from inform.engines.vlm import _RawExtraction, _RawSegmentalLean
 
 
 @pytest.fixture
@@ -12,7 +12,7 @@ def fake_openai(monkeypatch):
         completion.choices = [MagicMock(message=MagicMock(parsed=raw))]
         client = MagicMock()
         client.beta.chat.completions.parse.return_value = completion
-        monkeypatch.setattr("cera.engines.vlm.OpenAI", lambda **_: client)
+        monkeypatch.setattr("inform.engines.vlm.OpenAI", lambda **_: client)
         return client
 
     return _install

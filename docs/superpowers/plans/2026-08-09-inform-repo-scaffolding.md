@@ -1,40 +1,40 @@
-# CERA Repo Scaffolding Implementation Plan
+# InForm Repo Scaffolding Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Scaffold the CERA Python backend — package skeleton, Pydantic JSON contracts, stubbed module interfaces, domain docs, and tooling — so each pipeline module can later be implemented in isolation.
+**Goal:** Scaffold the InForm Python backend — package skeleton, Pydantic JSON contracts, stubbed module interfaces, domain docs, and tooling — so each pipeline module can later be implemented in isolation.
 
-**Architecture:** Backend-only Python `src/` layout. `src/cera/` holds one subpackage per pipeline stage (`ocr`, `nutrition`, `recommender`, `synthesis`) plus a central `schemas/` package that defines the JSON contracts between stages and a top-level `pipeline.py` orchestrator. Every module entry function has a typed signature and a docstring describing the paper's intended logic, but raises `NotImplementedError`. The Pydantic schemas are the real deliverable — they lock the inter-module boundaries.
+**Architecture:** Backend-only Python `src/` layout. `src/inform/` holds one subpackage per pipeline stage (`ocr`, `nutrition`, `recommender`, `synthesis`) plus a central `schemas/` package that defines the JSON contracts between stages and a top-level `pipeline.py` orchestrator. Every module entry function has a typed signature and a docstring describing the paper's intended logic, but raises `NotImplementedError`. The Pydantic schemas are the real deliverable — they lock the inter-module boundaries.
 
 **Tech Stack:** Python ≥3.11, Pydantic v2, OpenAI SDK. Optional `ocr` extra (torch + transformers). Dev tooling: pytest, ruff. Hatchling build backend.
 
 **Note on TDD:** This is scaffolding — bodies are stubs and `tests/` stays empty per the spec (§9). The classic red-green rhythm does not apply. Each task instead follows **create files → smoke-check (`python -c` import/instantiation) → commit**. The smoke-check is the verification gate.
 
-**Spec:** `docs/superpowers/specs/2026-08-09-cera-repo-scaffolding-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-09-inform-repo-scaffolding-design.md`
 
 ---
 
 ## File Structure
 
-Created by this plan (all paths relative to repo root `C:\Users\sukse\CERA`):
+Created by this plan (all paths relative to repo root `C:\Users\sukse\InForm`):
 
 | Path | Responsibility |
 | ---- | -------------- |
 | `pyproject.toml` | Project metadata, deps, ruff/pytest config, hatchling build |
 | `.gitignore` | Python ignores |
 | `.env.example` | Documents required env vars (`OPENAI_API_KEY`) |
-| `src/cera/__init__.py` | Package root, `__version__`, module overview |
-| `src/cera/schemas/__init__.py` | Re-exports all contracts |
-| `src/cera/schemas/user.py` | `UserProfile` (onboarding form) |
-| `src/cera/schemas/inbody.py` | `InBodyPayload`, `SegmentalLean` (Module 1 output) |
-| `src/cera/schemas/nutrition.py` | `NutritionTargets` (Module 2 output) |
-| `src/cera/schemas/exercise.py` | `Exercise`, `ExercisePlan`, `MovementType` (Module 3 output) |
-| `src/cera/schemas/master.py` | `MasterPayload` (Module 4 input), `DailyPlan` (final output) |
-| `src/cera/ocr/__init__.py` + `extract.py` | Module 1 stub `extract_inbody` |
-| `src/cera/nutrition/__init__.py` + `engine.py` + `constants.py` | Module 2 stub `compute_targets` + Katch-McArdle constants |
-| `src/cera/recommender/__init__.py` + `filter.py` + `constants.py` | Module 3 stub `recommend_exercises` + asymmetry threshold |
-| `src/cera/synthesis/__init__.py` + `generate.py` + `validate.py` | Module 4 stubs `synthesize_plan`, `validate_no_mutation` |
-| `src/cera/pipeline.py` | Orchestrator stub `run_pipeline` |
+| `src/inform/__init__.py` | Package root, `__version__`, module overview |
+| `src/inform/schemas/__init__.py` | Re-exports all contracts |
+| `src/inform/schemas/user.py` | `UserProfile` (onboarding form) |
+| `src/inform/schemas/inbody.py` | `InBodyPayload`, `SegmentalLean` (Module 1 output) |
+| `src/inform/schemas/nutrition.py` | `NutritionTargets` (Module 2 output) |
+| `src/inform/schemas/exercise.py` | `Exercise`, `ExercisePlan`, `MovementType` (Module 3 output) |
+| `src/inform/schemas/master.py` | `MasterPayload` (Module 4 input), `DailyPlan` (final output) |
+| `src/inform/ocr/__init__.py` + `extract.py` | Module 1 stub `extract_inbody` |
+| `src/inform/nutrition/__init__.py` + `engine.py` + `constants.py` | Module 2 stub `compute_targets` + Katch-McArdle constants |
+| `src/inform/recommender/__init__.py` + `filter.py` + `constants.py` | Module 3 stub `recommend_exercises` + asymmetry threshold |
+| `src/inform/synthesis/__init__.py` + `generate.py` + `validate.py` | Module 4 stubs `synthesize_plan`, `validate_no_mutation` |
+| `src/inform/pipeline.py` | Orchestrator stub `run_pipeline` |
 | `tests/__init__.py` | Empty test tree, ready for later |
 | `CONTEXT.md` | Domain glossary (ubiquitous language) |
 | `docs/adr/0001-katch-mcardle-over-mifflin.md` | Records the formula decision |
@@ -54,7 +54,7 @@ Created by this plan (all paths relative to repo root `C:\Users\sukse\CERA`):
 
 ```toml
 [project]
-name = "cera"
+name = "inform"
 version = "0.1.0"
 description = "InBody AI Fitness Assistant — deterministic multimodal pipeline for nutritional and corrective exercise planning"
 readme = "README.md"
@@ -79,7 +79,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cera"]
+packages = ["src/inform"]
 
 [tool.ruff]
 line-length = 100
@@ -127,7 +127,7 @@ OPENAI_API_KEY=your-api-key-here
 - [ ] **Step 4: Install the package (dev extras) to verify metadata is valid**
 
 Run: `pip install -e ".[dev]"`
-Expected: installs pydantic, openai, pytest, ruff and `cera` (editable) with no error. (Does NOT pull torch — that is the separate `ocr` extra.)
+Expected: installs pydantic, openai, pytest, ruff and `inform` (editable) with no error. (Does NOT pull torch — that is the separate `ocr` extra.)
 
 - [ ] **Step 5: Commit**
 
@@ -141,18 +141,18 @@ git commit -m "chore: add project metadata and hygiene files"
 ## Task 2: Package skeleton (all `__init__.py` + empty test tree)
 
 **Files:**
-- Create: `src/cera/__init__.py`
-- Create: `src/cera/schemas/__init__.py` (placeholder for now; filled in Task 3)
-- Create: `src/cera/ocr/__init__.py`
-- Create: `src/cera/nutrition/__init__.py`
-- Create: `src/cera/recommender/__init__.py`
-- Create: `src/cera/synthesis/__init__.py`
+- Create: `src/inform/__init__.py`
+- Create: `src/inform/schemas/__init__.py` (placeholder for now; filled in Task 3)
+- Create: `src/inform/ocr/__init__.py`
+- Create: `src/inform/nutrition/__init__.py`
+- Create: `src/inform/recommender/__init__.py`
+- Create: `src/inform/synthesis/__init__.py`
 - Create: `tests/__init__.py`
 
-- [ ] **Step 1: Create `src/cera/__init__.py`**
+- [ ] **Step 1: Create `src/inform/__init__.py`**
 
 ```python
-"""CERA — InBody AI Fitness Assistant.
+"""InForm — InBody AI Fitness Assistant.
 
 A deterministic, four-stage multimodal pipeline:
     1. OCR (Donut) — extract InBody biometrics into structured JSON.
@@ -169,31 +169,31 @@ __version__ = "0.1.0"
 
 - [ ] **Step 2: Create the subpackage `__init__.py` files**
 
-`src/cera/schemas/__init__.py` (temporary — replaced in Task 3):
+`src/inform/schemas/__init__.py` (temporary — replaced in Task 3):
 
 ```python
 """Pydantic contracts — the JSON boundaries between pipeline stages."""
 ```
 
-`src/cera/ocr/__init__.py`:
+`src/inform/ocr/__init__.py`:
 
 ```python
 """Module 1 — visual extraction (Donut OCR)."""
 ```
 
-`src/cera/nutrition/__init__.py`:
+`src/inform/nutrition/__init__.py`:
 
 ```python
 """Module 2 — deterministic nutrition engine (Katch-McArdle)."""
 ```
 
-`src/cera/recommender/__init__.py`:
+`src/inform/recommender/__init__.py`:
 
 ```python
 """Module 3 — constraint-based exercise recommender."""
 ```
 
-`src/cera/synthesis/__init__.py`:
+`src/inform/synthesis/__init__.py`:
 
 ```python
 """Module 4 — LLM synthesis and validation."""
@@ -210,13 +210,13 @@ __version__ = "0.1.0"
 
 - [ ] **Step 4: Smoke-check the package imports**
 
-Run: `python -c "import cera; print(cera.__version__)"`
+Run: `python -c "import inform; print(inform.__version__)"`
 Expected: prints `0.1.0`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cera tests
+git add src/inform tests
 git commit -m "feat: add package skeleton and empty test tree"
 ```
 
@@ -225,14 +225,14 @@ git commit -m "feat: add package skeleton and empty test tree"
 ## Task 3: Pydantic schema contracts
 
 **Files:**
-- Create: `src/cera/schemas/user.py`
-- Create: `src/cera/schemas/inbody.py`
-- Create: `src/cera/schemas/nutrition.py`
-- Create: `src/cera/schemas/exercise.py`
-- Create: `src/cera/schemas/master.py`
-- Modify: `src/cera/schemas/__init__.py` (replace placeholder with re-exports)
+- Create: `src/inform/schemas/user.py`
+- Create: `src/inform/schemas/inbody.py`
+- Create: `src/inform/schemas/nutrition.py`
+- Create: `src/inform/schemas/exercise.py`
+- Create: `src/inform/schemas/master.py`
+- Modify: `src/inform/schemas/__init__.py` (replace placeholder with re-exports)
 
-- [ ] **Step 1: Create `src/cera/schemas/user.py`**
+- [ ] **Step 1: Create `src/inform/schemas/user.py`**
 
 ```python
 """User onboarding form — captured at the start of the pipeline."""
@@ -267,7 +267,7 @@ class UserProfile(BaseModel):
     )
 ```
 
-- [ ] **Step 2: Create `src/cera/schemas/inbody.py`**
+- [ ] **Step 2: Create `src/inform/schemas/inbody.py`**
 
 ```python
 """InBody extraction payload — the structured output of Module 1 (Donut OCR)."""
@@ -310,7 +310,7 @@ class InBodyPayload(BaseModel):
     segmental_lean: SegmentalLean
 ```
 
-- [ ] **Step 3: Create `src/cera/schemas/nutrition.py`**
+- [ ] **Step 3: Create `src/inform/schemas/nutrition.py`**
 
 ```python
 """Deterministic nutrition targets — the output of Module 2."""
@@ -335,7 +335,7 @@ class NutritionTargets(BaseModel):
     fiber_g: float = Field(..., ge=0)
 ```
 
-- [ ] **Step 4: Create `src/cera/schemas/exercise.py`**
+- [ ] **Step 4: Create `src/inform/schemas/exercise.py`**
 
 ```python
 """Exercise recommendation output — the output of Module 3."""
@@ -372,17 +372,17 @@ class ExercisePlan(BaseModel):
     )
 ```
 
-- [ ] **Step 5: Create `src/cera/schemas/master.py`**
+- [ ] **Step 5: Create `src/inform/schemas/master.py`**
 
 ```python
 """Master JSON contract and the final daily plan."""
 
 from pydantic import BaseModel, Field
 
-from cera.schemas.exercise import ExercisePlan
-from cera.schemas.inbody import InBodyPayload
-from cera.schemas.nutrition import NutritionTargets
-from cera.schemas.user import UserProfile
+from inform.schemas.exercise import ExercisePlan
+from inform.schemas.inbody import InBodyPayload
+from inform.schemas.nutrition import NutritionTargets
+from inform.schemas.user import UserProfile
 
 
 class MasterPayload(BaseModel):
@@ -410,16 +410,16 @@ class DailyPlan(BaseModel):
     fiber_g: float = Field(..., ge=0)
 ```
 
-- [ ] **Step 6: Replace `src/cera/schemas/__init__.py` with re-exports**
+- [ ] **Step 6: Replace `src/inform/schemas/__init__.py` with re-exports**
 
 ```python
 """Pydantic contracts — the JSON boundaries between pipeline stages."""
 
-from cera.schemas.exercise import Exercise, ExercisePlan, MovementType
-from cera.schemas.inbody import InBodyPayload, SegmentalLean
-from cera.schemas.master import DailyPlan, MasterPayload
-from cera.schemas.nutrition import NutritionTargets
-from cera.schemas.user import UserProfile
+from inform.schemas.exercise import Exercise, ExercisePlan, MovementType
+from inform.schemas.inbody import InBodyPayload, SegmentalLean
+from inform.schemas.master import DailyPlan, MasterPayload
+from inform.schemas.nutrition import NutritionTargets
+from inform.schemas.user import UserProfile
 
 __all__ = [
     "UserProfile",
@@ -439,7 +439,7 @@ __all__ = [
 Run:
 ```bash
 python -c "
-from cera.schemas import (
+from inform.schemas import (
     UserProfile, InBodyPayload, SegmentalLean, NutritionTargets,
     Exercise, ExercisePlan, MasterPayload, DailyPlan,
 )
@@ -463,7 +463,7 @@ Expected: prints `schemas OK {...` with no validation error.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/cera/schemas
+git add src/inform/schemas
 git commit -m "feat: add Pydantic schema contracts for the pipeline"
 ```
 
@@ -472,16 +472,16 @@ git commit -m "feat: add Pydantic schema contracts for the pipeline"
 ## Task 4: Stubbed module interfaces
 
 **Files:**
-- Create: `src/cera/ocr/extract.py`
-- Create: `src/cera/nutrition/constants.py`
-- Create: `src/cera/nutrition/engine.py`
-- Create: `src/cera/recommender/constants.py`
-- Create: `src/cera/recommender/filter.py`
-- Create: `src/cera/synthesis/generate.py`
-- Create: `src/cera/synthesis/validate.py`
-- Create: `src/cera/pipeline.py`
+- Create: `src/inform/ocr/extract.py`
+- Create: `src/inform/nutrition/constants.py`
+- Create: `src/inform/nutrition/engine.py`
+- Create: `src/inform/recommender/constants.py`
+- Create: `src/inform/recommender/filter.py`
+- Create: `src/inform/synthesis/generate.py`
+- Create: `src/inform/synthesis/validate.py`
+- Create: `src/inform/pipeline.py`
 
-- [ ] **Step 1: Create `src/cera/ocr/extract.py`**
+- [ ] **Step 1: Create `src/inform/ocr/extract.py`**
 
 ```python
 """Module 1 — Visual extraction (Donut Document Understanding Transformer).
@@ -493,7 +493,7 @@ traditional OCR step. To be fine-tuned on ~5,000 synthetic InBody sheets
 
 from pathlib import Path
 
-from cera.schemas.inbody import InBodyPayload
+from inform.schemas.inbody import InBodyPayload
 
 
 def extract_inbody(image_path: Path) -> InBodyPayload:
@@ -505,7 +505,7 @@ def extract_inbody(image_path: Path) -> InBodyPayload:
     raise NotImplementedError("Module 1 (Donut extraction) not yet implemented.")
 ```
 
-- [ ] **Step 2: Create `src/cera/nutrition/constants.py`**
+- [ ] **Step 2: Create `src/inform/nutrition/constants.py`**
 
 ```python
 """Constants for the deterministic nutrition engine."""
@@ -515,7 +515,7 @@ KATCH_MCARDLE_BASE: float = 370.0
 KATCH_MCARDLE_LBM_COEFF: float = 21.6
 ```
 
-- [ ] **Step 3: Create `src/cera/nutrition/engine.py`**
+- [ ] **Step 3: Create `src/inform/nutrition/engine.py`**
 
 ```python
 """Module 2 — Deterministic nutrition engine (Katch-McArdle).
@@ -525,9 +525,9 @@ adjusts for the fitness goal, and distributes the caloric target into exact
 macronutrient grams. Contains no generative logic.
 """
 
-from cera.schemas.inbody import InBodyPayload
-from cera.schemas.nutrition import NutritionTargets
-from cera.schemas.user import UserProfile
+from inform.schemas.inbody import InBodyPayload
+from inform.schemas.nutrition import NutritionTargets
+from inform.schemas.user import UserProfile
 
 
 def compute_targets(user: UserProfile, inbody: InBodyPayload) -> NutritionTargets:
@@ -542,7 +542,7 @@ def compute_targets(user: UserProfile, inbody: InBodyPayload) -> NutritionTarget
     raise NotImplementedError("Module 2 (nutrition engine) not yet implemented.")
 ```
 
-- [ ] **Step 4: Create `src/cera/recommender/constants.py`**
+- [ ] **Step 4: Create `src/inform/recommender/constants.py`**
 
 ```python
 """Constants for the constraint-based exercise recommender."""
@@ -551,7 +551,7 @@ def compute_targets(user: UserProfile, inbody: InBodyPayload) -> NutritionTarget
 BILATERAL_ASYMMETRY_THRESHOLD: float = 0.05  # 5%
 ```
 
-- [ ] **Step 5: Create `src/cera/recommender/filter.py`**
+- [ ] **Step 5: Create `src/inform/recommender/filter.py`**
 
 ```python
 """Module 3 — Deterministic constraint-based exercise filtering.
@@ -563,9 +563,9 @@ adaptation modulates selection (hypertrophy -> bilateral compounds; fat loss +
 high visceral fat -> more cardio/HIIT).
 """
 
-from cera.schemas.exercise import ExercisePlan
-from cera.schemas.inbody import InBodyPayload
-from cera.schemas.user import UserProfile
+from inform.schemas.exercise import ExercisePlan
+from inform.schemas.inbody import InBodyPayload
+from inform.schemas.user import UserProfile
 
 
 def recommend_exercises(user: UserProfile, inbody: InBodyPayload) -> ExercisePlan:
@@ -579,7 +579,7 @@ def recommend_exercises(user: UserProfile, inbody: InBodyPayload) -> ExercisePla
     raise NotImplementedError("Module 3 (exercise recommender) not yet implemented.")
 ```
 
-- [ ] **Step 6: Create `src/cera/synthesis/generate.py`**
+- [ ] **Step 6: Create `src/inform/synthesis/generate.py`**
 
 ```python
 """Module 4 — Natural Language Generation interface.
@@ -589,7 +589,7 @@ acts strictly as a linguistic synthesizer, producing an empathetic daily plan
 without altering any deterministic number.
 """
 
-from cera.schemas.master import DailyPlan, MasterPayload
+from inform.schemas.master import DailyPlan, MasterPayload
 
 
 def synthesize_plan(master: MasterPayload) -> DailyPlan:
@@ -601,7 +601,7 @@ def synthesize_plan(master: MasterPayload) -> DailyPlan:
     raise NotImplementedError("Module 4 (LLM synthesis) not yet implemented.")
 ```
 
-- [ ] **Step 7: Create `src/cera/synthesis/validate.py`**
+- [ ] **Step 7: Create `src/inform/synthesis/validate.py`**
 
 ```python
 """Module 4 — Backend validation guard against numerical mutation.
@@ -612,7 +612,7 @@ number. On mutation, the caller drops the response and falls back to
 deterministic template text.
 """
 
-from cera.schemas.master import DailyPlan, MasterPayload
+from inform.schemas.master import DailyPlan, MasterPayload
 
 
 def validate_no_mutation(master: MasterPayload, plan: DailyPlan) -> DailyPlan:
@@ -624,7 +624,7 @@ def validate_no_mutation(master: MasterPayload, plan: DailyPlan) -> DailyPlan:
     raise NotImplementedError("Module 4 validation not yet implemented.")
 ```
 
-- [ ] **Step 8: Create `src/cera/pipeline.py`**
+- [ ] **Step 8: Create `src/inform/pipeline.py`**
 
 ```python
 """End-to-end orchestration of the four-stage pipeline.
@@ -635,12 +635,12 @@ Runs Module 1, fuses the result with the user form, runs Modules 2 and 3
 
 from pathlib import Path
 
-from cera.nutrition.engine import compute_targets
-from cera.ocr.extract import extract_inbody
-from cera.recommender.filter import recommend_exercises
-from cera.schemas.master import DailyPlan, MasterPayload
-from cera.schemas.user import UserProfile
-from cera.synthesis.generate import synthesize_plan
+from inform.nutrition.engine import compute_targets
+from inform.ocr.extract import extract_inbody
+from inform.recommender.filter import recommend_exercises
+from inform.schemas.master import DailyPlan, MasterPayload
+from inform.schemas.user import UserProfile
+from inform.synthesis.generate import synthesize_plan
 
 
 def run_pipeline(image_path: Path, user: UserProfile) -> DailyPlan:
@@ -663,14 +663,14 @@ Run:
 ```bash
 python -c "
 from pathlib import Path
-import cera.ocr.extract as m1
-import cera.nutrition.engine as m2
-import cera.recommender.filter as m3
-import cera.synthesis.generate as m4
-import cera.synthesis.validate as m4v
-import cera.pipeline as p
-from cera.nutrition.constants import KATCH_MCARDLE_BASE, KATCH_MCARDLE_LBM_COEFF
-from cera.recommender.constants import BILATERAL_ASYMMETRY_THRESHOLD
+import inform.ocr.extract as m1
+import inform.nutrition.engine as m2
+import inform.recommender.filter as m3
+import inform.synthesis.generate as m4
+import inform.synthesis.validate as m4v
+import inform.pipeline as p
+from inform.nutrition.constants import KATCH_MCARDLE_BASE, KATCH_MCARDLE_LBM_COEFF
+from inform.recommender.constants import BILATERAL_ASYMMETRY_THRESHOLD
 
 assert (KATCH_MCARDLE_BASE, KATCH_MCARDLE_LBM_COEFF) == (370.0, 21.6)
 assert BILATERAL_ASYMMETRY_THRESHOLD == 0.05
@@ -693,7 +693,7 @@ Expected: prints `stubs OK` with no assertion error.
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/cera
+git add src/inform
 git commit -m "feat: add stubbed module interfaces and constants"
 ```
 
@@ -710,7 +710,7 @@ git commit -m "feat: add stubbed module interfaces and constants"
 - [ ] **Step 1: Create `CONTEXT.md`**
 
 ```markdown
-# CERA — Domain Context
+# InForm — Domain Context
 
 The ubiquitous language for the InBody AI Fitness Assistant. Use these terms exactly
 in code, schemas, issues, and tests. Where two terms are easily confused, the
@@ -832,7 +832,7 @@ feature may integrate the USDA FoodData Central database.
 - [ ] **Step 4: Replace `README.md`**
 
 ```markdown
-# CERA — InBody AI Fitness Assistant
+# InForm — InBody AI Fitness Assistant
 
 A hyper-personalized, multimodal AI system that turns an InBody body-composition
 report into a precise, safe daily fitness plan. Deterministic medical and caloric
@@ -850,7 +850,7 @@ risk.
 ## Layout
 
 ```
-src/cera/
+src/inform/
 ├── schemas/       # Pydantic JSON contracts between stages
 ├── ocr/           # Module 1 — Donut extraction
 ├── nutrition/     # Module 2 — Katch-McArdle engine
@@ -905,12 +905,12 @@ Expected: `All checks passed!` (fix any reported issue, then re-run until clean)
 Run:
 ```bash
 python -c "
-import cera
-import cera.pipeline
-from cera.schemas import MasterPayload, DailyPlan
-from cera.nutrition.constants import KATCH_MCARDLE_BASE
-from cera.recommender.constants import BILATERAL_ASYMMETRY_THRESHOLD
-print('import smoke OK', cera.__version__)
+import inform
+import inform.pipeline
+from inform.schemas import MasterPayload, DailyPlan
+from inform.nutrition.constants import KATCH_MCARDLE_BASE
+from inform.recommender.constants import BILATERAL_ASYMMETRY_THRESHOLD
+print('import smoke OK', inform.__version__)
 "
 ```
 Expected: prints `import smoke OK 0.1.0`
@@ -923,13 +923,13 @@ Expected: no uncommitted changes; the five task commits plus prior history visib
 - [ ] **Step 4: Push to origin**
 
 Run: `git push origin main`
-Expected: refs updated on `github.com/QeekOw/CERA`.
+Expected: refs updated on `github.com/QeekOw/InForm`.
 
 ---
 
 ## Self-Review
 
-**Spec coverage** (against `2026-08-09-cera-repo-scaffolding-design.md`):
+**Spec coverage** (against `2026-08-09-inform-repo-scaffolding-design.md`):
 - §3 folder structure → Tasks 1, 2, 4, 5 create every listed path (incl. `recommender/constants.py`). ✓
 - §4 module seams → Task 4 (all five entry functions + orchestrator). ✓
 - §5 schemas → Task 3 (all five schema files + re-exports). ✓

@@ -6,8 +6,8 @@
 # some fields None), never a fabricated value — the seam decides floor-reject.
 import json
 
-from cera.engines.donut import TASK_TOKEN, _to_partial
-from cera.inbody import InBodyPayload, PartialInBody
+from inform.engines.donut import TASK_TOKEN, _to_partial
+from inform.inbody import InBodyPayload, PartialInBody
 
 _GOOD = InBodyPayload(
     weight_kg=70.0,

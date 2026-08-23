@@ -1,5 +1,5 @@
 [project]
-name = "cera"
+name = "inform"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -28,4 +28,8 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"cera.synthetic" = ["templates/*.html"]
+"inform.synthetic" = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+

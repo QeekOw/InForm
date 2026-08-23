@@ -172,7 +172,7 @@ visual question answering"
   (more moving parts than Donut). **Licensing blocker:** the HF weights are
   released under **CC BY-NC-SA 4.0 (non-commercial)**
   ([microsoft/layoutlmv3-large](https://huggingface.co/microsoft/layoutlmv3-large)),
-  which restricts commercial use — a real constraint if CERA is ever
+  which restricts commercial use — a real constraint if InForm is ever
   commercialized.
 
 **Azure AI Document Intelligence (custom extraction).** Managed cloud service;
@@ -260,7 +260,7 @@ images to pre-train the model so it is "flexible on various languages and
 domains," and release SynthDoG data (0.5M samples each for English, Chinese,
 Japanese, Korean) plus generation code
 ([Donut GitHub](https://github.com/clovaai/donut),
-[Donut paper](https://arxiv.org/abs/2111.15664)). For CERA this means:
+[Donut paper](https://arxiv.org/abs/2111.15664)). For InForm this means:
 programmatically render realistic InBody-style sheets (fixed template, varied
 fonts/values/segmental figures) with the ground-truth `InBodyPayload` known by
 construction — you get perfectly-labeled image→JSON pairs for free and no real

@@ -1,7 +1,7 @@
 # Training the Donut engine
 
 Phase 2 of ADR-0002: fine-tune Donut on the synthetic dataset from
-`cera.synthetic.generate_sheet`, self-hosted per ADR-0005. This is offline
+`inform.synthetic.generate_sheet`, self-hosted per ADR-0005. This is offline
 training infrastructure, not part of the `extract_inbody` runtime path —
 install the extra separately:
 
@@ -16,7 +16,7 @@ Rendering shells out to a headless Chrome/Edge per sheet (~1s/sheet), so the
 full set takes on the order of an hour, sequentially, on a single machine.
 
 ```
-python -m cera.training.dataset --output-dir data/synthetic --n-per-device 2500
+python -m inform.training.dataset --output-dir data/synthetic --n-per-device 2500
 ```
 
 Writes one `<device>_<seed>.png` + matching `.json` ground truth per sheet.
@@ -24,7 +24,7 @@ Writes one `<device>_<seed>.png` + matching `.json` ground truth per sheet.
 ## 2. Fine-tune
 
 ```
-python -m cera.training.train \
+python -m inform.training.train \
   --data-dir data/synthetic \
   --output-dir checkpoints/donut-inbody \
   --model-name-or-path naver-clova-ix/donut-base \
@@ -35,7 +35,7 @@ python -m cera.training.train \
 
 Needs a GPU in practice — `donut-base` fine-tuning on CPU is not
 practical at this dataset size. Produces a checkpoint directory loadable via
-`cera.training.train.load_checkpoint`.
+`inform.training.train.load_checkpoint`.
 
 ## 3. Score Donut vs. the VLM baseline
 
@@ -43,7 +43,7 @@ Once a checkpoint exists, run the head-to-head on a held-out set of
 `generate_dataset()` png/json pairs (ADR-0002 / ADR-0006):
 
 ```
-python -m cera.compare \
+python -m inform.compare \
   --data-dir data/holdout \
   --donut-checkpoint checkpoints/donut-inbody/checkpoint-1250
 ```
@@ -66,7 +66,7 @@ checkpoint save/reload) is exercised end-to-end by
 (`optimum-internal-testing/tiny-random-VisionEncoderDecoderModel-donut`) and
 a handful of sheets — not the real `donut-base` checkpoint or the full
 ~5,000-sheet set. The real fine-tune has since been run on GPU (Colab T4); a
-`donut-base` checkpoint exists. The `cera.compare` integration + scoring path
+`donut-base` checkpoint exists. The `inform.compare` integration + scoring path
 (step 3) is code-complete and unit-tested (`tests/test_donut.py`); the actual
 head-to-head numbers come from running step 3 against that checkpoint on a
 held-out set.

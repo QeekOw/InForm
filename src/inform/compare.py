@@ -2,7 +2,7 @@
 labeled set, through the full extract_inbody seam (cross-check gate included),
 per ADR-0002 / ADR-0006. This is the accuracy comparison the paper reports.
 
-    python -m cera.compare --data-dir <held-out> --donut-checkpoint <ckpt>
+    python -m inform.compare --data-dir <held-out> --donut-checkpoint <ckpt>
 
 Run once per ground-truth source (synthetic, real hold-out) and report each
 separately — the synthetic->real gap is the honest number (ADR-0006).
@@ -11,9 +11,9 @@ import argparse
 from functools import partial
 from pathlib import Path
 
-from cera.engines import donut, vlm
-from cera.evaluate import AccuracyReport, evaluate, load_labeled_set
-from cera.extract import Engine, extract_inbody
+from inform.engines import donut, vlm
+from inform.evaluate import AccuracyReport, evaluate, load_labeled_set
+from inform.extract import Engine, extract_inbody
 
 
 def compare(engines: dict[str, Engine], data_dir: Path) -> dict[str, AccuracyReport]:

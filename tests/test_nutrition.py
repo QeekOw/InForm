@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cera.nutrition import NutritionTargets
+from inform.nutrition import NutritionTargets
 
 
 def _targets(**overrides) -> NutritionTargets:

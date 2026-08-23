@@ -3,7 +3,7 @@ from pathlib import Path
 
 from transformers import DonutProcessor, Seq2SeqTrainer, Seq2SeqTrainingArguments, VisionEncoderDecoderModel
 
-from cera.training.dataset import TASK_TOKEN, DonutInBodyDataset
+from inform.training.dataset import TASK_TOKEN, DonutInBodyDataset
 
 # The paper's contribution (ADR-0002); self-hosted, no per-call cost (ADR-0005).
 DEFAULT_MODEL = "naver-clova-ix/donut-base"

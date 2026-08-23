@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cera.user import UserProfile
+from inform.user import UserProfile
 
 
 def _user(**overrides) -> UserProfile:

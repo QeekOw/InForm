@@ -47,7 +47,7 @@ extractor to hallucinate, violating the anti-hallucination thesis.
 
 The Context table above (sourced from InBody-Canada 270**S** marketing material) claims the 270
 does not report Visceral Fat Level. **Real hardware disproves this.** Two real InBody 270 result
-sheets — the hand-labeled phone hold-out (`D:\cera\data\real_holdout`, Visceral Fat Level 7) and
+sheets — the hand-labeled phone hold-out (`D:\inform\data\real_holdout`, Visceral Fat Level 7) and
 a clean official 270 sample (Level 11), both tagged `[InBody270]` — print it plainly. Empirical
 sheets beat the doc citation.
 

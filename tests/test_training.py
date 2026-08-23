@@ -9,11 +9,13 @@ import pytest
 from PIL import Image
 
 torch = pytest.importorskip("torch")
+if not hasattr(torch, "__version__"):
+    pytest.skip("torch is not installed (namespace dummy)", allow_module_level=True)
 transformers = pytest.importorskip("transformers")
 
-from cera.engines.donut import TASK_TOKEN as _ENGINE_TASK_TOKEN  # noqa: E402
-from cera.training.dataset import TASK_TOKEN, generate_dataset  # noqa: E402
-from cera.training.train import load_checkpoint, train  # noqa: E402
+from inform.engines.donut import TASK_TOKEN as _ENGINE_TASK_TOKEN  # noqa: E402
+from inform.training.dataset import TASK_TOKEN, generate_dataset  # noqa: E402
+from inform.training.train import load_checkpoint, train  # noqa: E402
 
 
 def test_engine_task_token_matches_training_token():

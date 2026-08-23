@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Callable
 
-from cera.engines import vlm
-from cera.errors import MissingRequiredFieldsError
-from cera.inbody import (
+from inform.engines import vlm
+from inform.errors import MissingRequiredFieldsError
+from inform.inbody import (
     REQUIRED_DOTTED_FIELDS,
     InBodyExtraction,
     PartialInBody,

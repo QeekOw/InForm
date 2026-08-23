@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from cera.inbody import PartialInBody
+from inform.inbody import PartialInBody
 
 # The task-prompt token the model was trained to emit first (see
 # training.dataset.TASK_TOKEN) — duplicated as a plain string so parsing stays
@@ -27,7 +27,7 @@ def load_engine(checkpoint_dir: Path):
     import torch
     from PIL import Image
 
-    from cera.training.train import load_checkpoint
+    from inform.training.train import load_checkpoint
 
     processor, model = load_checkpoint(Path(checkpoint_dir))
     model.eval()

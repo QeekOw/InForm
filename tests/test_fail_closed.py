@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from cera.engines.vlm import _RawExtraction
-from cera.errors import MissingRequiredFieldsError, NotAnInBodySheetError
-from cera.extract import extract_inbody
+from inform.engines.vlm import _RawExtraction
+from inform.errors import MissingRequiredFieldsError, NotAnInBodySheetError
+from inform.extract import extract_inbody
 
 FIXTURE = Path(__file__).parent / "fixtures" / "inbody_sample.png"
 

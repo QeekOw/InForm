@@ -3,8 +3,8 @@ from typing import Callable
 
 from pydantic import BaseModel
 
-from cera.errors import InBodyExtractionError
-from cera.inbody import (
+from inform.errors import InBodyExtractionError
+from inform.inbody import (
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
     SEGMENTAL_FIELDS,
@@ -15,7 +15,7 @@ from cera.inbody import (
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
 _FIELD_TOLERANCE = 0.1
 
-# Field names come from the schema (cera.inbody); only their *match semantics*
+# Field names come from the schema (inform.inbody); only their *match semantics*
 # are an eval concern: categorical fields compare by equality, numeric ones by
 # tolerance. Optional fields (per ADR-0004, absent on the 270) are reported
 # per-field but excluded from whole_sheet_accuracy, which gates on required

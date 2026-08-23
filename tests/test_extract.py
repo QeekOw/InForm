@@ -5,9 +5,9 @@
 # will run against the synthetic-generator's labeled sheets (issue #5).
 from pathlib import Path
 
-from cera.engines.vlm import _RawExtraction
-from cera.extract import extract_inbody
-from cera.inbody import InBodyPayload, SegmentalLean
+from inform.engines.vlm import _RawExtraction
+from inform.extract import extract_inbody
+from inform.inbody import InBodyPayload, SegmentalLean
 
 FIXTURE = Path(__file__).parent / "fixtures" / "inbody_sample.png"
 

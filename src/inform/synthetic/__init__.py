@@ -9,7 +9,7 @@ from typing import Literal
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
-from cera.inbody import InBodyPayload, SegmentalLean
+from inform.inbody import InBodyPayload, SegmentalLean
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 # Both devices render a full-page portrait clone of a real sheet.

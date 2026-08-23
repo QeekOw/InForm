@@ -1,9 +1,9 @@
 from pydantic import BaseModel
 
-from cera.exercise import ExercisePlan
-from cera.inbody import InBodyPayload
-from cera.nutrition import NutritionTargets
-from cera.user import UserProfile
+from inform.exercise import ExercisePlan
+from inform.inbody import InBodyPayload
+from inform.nutrition import NutritionTargets
+from inform.user import UserProfile
 
 
 class MasterPayload(BaseModel):

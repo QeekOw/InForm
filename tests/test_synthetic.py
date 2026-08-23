@@ -5,7 +5,7 @@ import io
 
 from PIL import Image
 
-from cera.synthetic import _derive_render_values, _fill_template, _generate_values, generate_sheet
+from inform.synthetic import _derive_render_values, _fill_template, _generate_values, generate_sheet
 
 _SEEDS = range(30)
 _TOLERANCE = 0.1

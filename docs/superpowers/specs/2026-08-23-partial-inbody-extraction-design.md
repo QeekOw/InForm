@@ -33,7 +33,7 @@ fields carry no value; flagged fields are genuine reads marked low-confidence.
 
 ## Architecture (Approach A — typed partial result)
 
-### Data model (`cera/inbody.py`)
+### Data model (`inform/inbody.py`)
 
 `InBodyPayload` and `SegmentalLean` are unchanged — they remain the "complete and validated"
 contract downstream consumers (Module 4) require. Add:
@@ -69,7 +69,7 @@ class InBodyExtraction(BaseModel):
 `unread`/`flagged` use dotted names for segmental fields (`segmental_lean.left_arm_kg`),
 matching the eval harness convention.
 
-### Engine contract (`cera/engines/*.py`)
+### Engine contract (`inform/engines/*.py`)
 
 `Engine = Callable[[Path], PartialInBody]` — engines return what they read, `None` for the rest.
 
@@ -81,7 +81,7 @@ matching the eval harness convention.
   parse into `PartialInBody`, keeping whatever keys are present. `_to_payload` becomes
   `_to_partial`; it no longer raises `MissingRequiredFieldsError`.
 
-### Seam (`cera/extract.py`)
+### Seam (`inform/extract.py`)
 
 `extract_inbody(image_path, engine=vlm.extract) -> InBodyExtraction`:
 
@@ -111,7 +111,7 @@ Unchanged guarantee — never fabricates. Two hard-reject paths remain:
 `CrossCheckFailedError` is **removed** — nothing raises it once the cross-check flags instead
 of rejecting. Delete the class from `errors.py` and update any references (tests, imports).
 
-### Eval harness (`cera/evaluate.py`, `cera/compare.py`)
+### Eval harness (`inform/evaluate.py`, `inform/compare.py`)
 
 `evaluate` consumes `InBodyExtraction` through the real seam (so it exercises cross-checks).
 - **Per-field:** credit each field that is read AND correct (within ±0.1). A partially-read

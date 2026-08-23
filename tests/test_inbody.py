@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cera.inbody import InBodyPayload, SegmentalLean
+from inform.inbody import InBodyPayload, SegmentalLean
 
 
 def _segmental() -> SegmentalLean:

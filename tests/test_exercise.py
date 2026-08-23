@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from cera.exercise import Exercise, ExercisePlan
+from inform.exercise import Exercise, ExercisePlan
 
 
 def _exercise(**overrides) -> Exercise:

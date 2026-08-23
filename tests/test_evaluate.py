@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from cera.errors import NotAnInBodySheetError
-from cera.evaluate import evaluate
-from cera.inbody import InBodyExtraction, InBodyPayload, PartialInBody, SegmentalLean
+from inform.errors import NotAnInBodySheetError
+from inform.evaluate import evaluate
+from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody, SegmentalLean
 
 _TRUTH = InBodyPayload(
     weight_kg=70.0,

@@ -6,8 +6,8 @@ from typing import Literal
 from openai import OpenAI
 from pydantic import BaseModel
 
-from cera.errors import NotAnInBodySheetError
-from cera.inbody import PartialInBody
+from inform.errors import NotAnInBodySheetError
+from inform.inbody import PartialInBody
 
 _MODEL = "gpt-4o-2024-08-06"
 

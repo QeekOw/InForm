@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from cera.synthetic import generate_sheet
+from inform.synthetic import generate_sheet
 
 # Generation (generate_dataset / the CLI) is torch-free — it only renders sheets.
 # torch is needed solely by DonutInBodyDataset, so tolerate its absence and let
@@ -30,7 +30,7 @@ def generate_dataset(
 
     One PNG + one ground-truth JSON per sheet, seeded so the run is
     reproducible. Sequential and slow (~1s/sheet via headless-browser
-    rendering — see cera.synthetic). Pass a single-element `devices` (e.g.
+    rendering — see inform.synthetic). Pass a single-element `devices` (e.g.
     `("inbody_270",)`) for a device-specific set — issue #13 retrains 270-only.
     Seeds run `seed_start .. seed_start + len(devices)*n_per_device - 1`; use a
     disjoint `seed_start` for a held-out set so it never overlaps the train set.

@@ -1,7 +1,7 @@
 # Module 1 (OCR) — Donut vs VLM head-to-head
 
 Results for issue #8: the fine-tuned Donut engine scored against the VLM
-baseline through the shared `extract_inbody` seam, using `cera.compare` and the
+baseline through the shared `extract_inbody` seam, using `inform.compare` and the
 `evaluate()` harness (ADR-0006). All numbers below are on **held-out synthetic
 InBody sheets** (seeds ≥ 5000, never seen in training).
 
@@ -71,7 +71,7 @@ worth naming honestly.
 ## Reproduction
 
 ```bash
-python -m cera.compare --data-dir <holdout-dir> --donut-checkpoint <checkpoint-dir>
+python -m inform.compare --data-dir <holdout-dir> --donut-checkpoint <checkpoint-dir>
 ```
 
 `<holdout-dir>` is a `generate_dataset(..., seed_start=5000)` output (png/json
@@ -198,6 +198,55 @@ photo is the outstanding real-transfer lever for the 570.
 > Combined 46% vs the issue-#13 270-only 53.5% is not a regression: it is a different
 > (harder, two-device) held-out set and a model splitting one epoch of capacity across two
 > layouts — not directly comparable.
+
+## 570 phone-capture transfer (2026-08-23, #23)
+
+The trained adult-570 layout (kg, seed 3000) was rendered to `inform_570_trained_layout_kg.png`,
+**printed on paper, and re-photographed with a phone** (angled, ambient light, JPEG
+compression). Scored against the seed-3000 ground truth on `donut-both-v3`:
+
+| | Result |
+|---|---|
+| Health + segmental fields | **12/12 exact** |
+| `unread` | 0 |
+| `flagged` | 0 |
+
+Every field (weight 81.9, LBM 67.3, PBF 17.8, SMM 38.9, BMR 1823.7, VFL 10, segmental
+5.4/5.4/11.9/11.0/33.6, `inbody_570`) survived the digital→print→photo round-trip with no
+degradation. This isolates **capture** from **layout**: the 570's earlier weaknesses
+(~1/3 refuse rate, imperial weight misreads) are layout-density and OOD-value problems,
+**not** phone-capture problems. Capture is not the weak link for the 570.
+
+Caveat: this is a photo of the *synthetic* sheet, so it validates capture robustness, not
+the synthetic→real-device gap — that still needs a genuine InBody 570 printout (#24).
+
+## Genuine off-layout sheets — measured gap (2026-08-23, #24)
+
+Two **genuine** InBody printouts (real scans, metric kg) were phone-photographed and scored
+on `donut-both-v3`:
+
+| Sheet | Layout | Result |
+|---|---|---|
+| InBody 570, Jane Doe, 2014 | older Biospace 570 | **hard refuse — 0/12** |
+| InBody 270, Jane Doe, 2018 | older 270 (segmental figure diagrams) | **hard refuse — 0/12** |
+
+Both read nothing and fail-closed (no fabrication). Both are **older Biospace-era layouts**,
+structurally different from the modern adult layout we cloned and trained on (nested tables,
+figure-diagram segmental analysis, tan aged-paper background). This confirms and extends the
+earlier "older 570 hard-refused" note: the synthetic→real gap is **layout-bound**, not
+capture-bound.
+
+Contrast within the same session:
+- Modern-layout synthetic 570, printed + photographed (#23): **12/12**.
+- Genuine modern-layout real 270 (earlier, `inbody_real_01`): **100% health**.
+- Genuine **older-layout** 270/570 (here): **0/12, hard refuse**.
+
+**Conclusion:** the model generalizes across *capture* (render → print → photo) on trained
+layouts, but does **not** generalize across *layout* to older Biospace designs. The measured
+gap on off-layout genuine sheets is a safe zero. Closing the gap for old layouts needs either
+those layouts added to the synthetic generator, or genuine **modern**-layout sheets to confirm
+transfer on the design we actually trained. Samples saved under `data/real_holdout/` (never
+committed — real health data).
 
 ## Future Work
 

@@ -1,5 +1,5 @@
-from cera.inbody import InBodyPayload, SegmentalLean
-from cera.master import MasterPayload
+from inform.inbody import InBodyPayload, SegmentalLean
+from inform.master import MasterPayload
 
 from tests.test_exercise import _plan
 from tests.test_nutrition import _targets
