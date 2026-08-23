@@ -2,7 +2,7 @@
 
 InForm reads an InBody body-composition scan and a short intake form, then produces a personalized daily nutrition and corrective-exercise plan.
 
-It implements the concept paper *"Multimodal AI for Precision Fitness: A Deterministic Pipeline for InBody-Driven Nutritional and Corrective Exercise Planning"* (BINUS). The idea it is built around: every medical and mathematical decision is made by deterministic code you can audit, and the language model only writes the prose around those numbers. It never changes them.
+The idea it is built around: every medical and mathematical decision is made by deterministic code you can audit, and the language model only writes the prose around those numbers. It never changes them.
 
 ## What it does
 
