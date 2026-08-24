@@ -17,3 +17,17 @@ class MissingRequiredFieldsError(InBodyExtractionError):
             "Could not confidently read: " + ", ".join(fields) + ". "
             "Please re-upload a clearer photo."
         )
+
+
+class IncompleteExtractionError(Exception):
+    """Fail-closed error: run_pipeline refuses to build a plan from an
+    InBodyExtraction that has unread or flagged fields, rather than filling
+    gaps or ignoring a cross-check flag."""
+
+    def __init__(self, unread: list[str], flagged: list[str]) -> None:
+        self.unread = unread
+        self.flagged = flagged
+        super().__init__(
+            f"Cannot build a plan from an incomplete extraction. "
+            f"Unread: {unread or 'none'}; flagged for review: {flagged or 'none'}."
+        )
