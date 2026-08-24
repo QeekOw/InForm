@@ -1,0 +1,15 @@
+---
+description: graphify knowledge graph context
+alwaysApply: true
+---
+
+This project has a graphify knowledge graph at graphify-out/.
+
+**Before using search or reading broad files to explore the codebase, consult graphify:**
+- `graphify query "<question>"` — scoped subgraph for any codebase or architecture question
+- `graphify path "<A>" "<B>"` — dependency path between two symbols
+- `graphify explain "<concept>"` — all nodes related to a concept
+
+Rules:
+- Read `graphify-out/GRAPH_REPORT.md` for broad architecture review and community structure.
+- After modifying code files, run `graphify update .` to keep the graph current (AST-only, no API cost).
