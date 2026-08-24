@@ -1,11 +1,12 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from inform.engines.vlm import _RawExtraction
 from inform.errors import IncompleteExtractionError
-from inform.pipeline import run_pipeline
-
+from inform.master import DailyPlan, MasterPayload
+from inform.pipeline import assemble_master_payload, run_pipeline
 from tests.test_exercise_filter import _pool
 from tests.test_user import _user
 
@@ -27,16 +28,42 @@ def _raw(raw_segmental, **overrides) -> _RawExtraction:
     return _RawExtraction(**fields)
 
 
-def test_run_pipeline_assembles_master_payload(fake_openai, raw_segmental):
+def test_assemble_master_payload(fake_openai, raw_segmental):
     fake_openai(_raw(raw_segmental, visceral_fat_level=7))
     user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
 
-    master = run_pipeline(FIXTURE, user, _pool())
+    master = assemble_master_payload(FIXTURE, user, _pool())
 
+    assert isinstance(master, MasterPayload)
     assert master.inbody.lean_body_mass_kg == 58.0
     assert master.inbody.visceral_fat_level == 7
     assert master.nutrition.bmr_kcal == pytest.approx(1622.8)
+    assert master.nutrition.target_calories_kcal == pytest.approx(2015.34)
     assert master.exercises.detected_imbalances == []  # default fixture is symmetric
+
+
+def test_run_pipeline_end_to_end_synthesis(fake_openai, raw_segmental):
+    fake_openai(_raw(raw_segmental, visceral_fat_level=7))
+    user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
+
+    mock_llm_client = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.parsed = DailyPlan(
+        narrative_text="Here is your personalized fat loss coaching plan...",
+        target_calories_kcal=2015.34,
+        protein_g=139.2,
+        carbs_g=238.68,
+        fats_g=55.98,
+        fiber_g=28.21,
+    )
+    mock_llm_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
+
+    plan = run_pipeline(FIXTURE, user, _pool(), llm_client=mock_llm_client)
+
+    assert isinstance(plan, DailyPlan)
+    assert plan.target_calories_kcal == pytest.approx(2015.34)
+    assert plan.protein_g == pytest.approx(139.2)
+    assert "personalized fat loss coaching plan" in plan.narrative_text
 
 
 def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmental):
@@ -45,10 +72,22 @@ def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmen
     )
     user = _user(fitness_goal="hypertrophy")
 
-    master = run_pipeline(FIXTURE, user, _pool())
+    master = assemble_master_payload(FIXTURE, user, _pool())
 
     assert master.exercises.detected_imbalances == ["L/R leg SMM deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"
+
+
+def test_run_pipeline_fallback_when_no_llm_client(fake_openai, raw_segmental):
+    fake_openai(_raw(raw_segmental, visceral_fat_level=7))
+    user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
+
+    # Calling run_pipeline without OPENAI_API_KEY / mock falls back to deterministic DailyPlan
+    plan = run_pipeline(FIXTURE, user, _pool())
+
+    assert isinstance(plan, DailyPlan)
+    assert plan.target_calories_kcal == pytest.approx(2015.34)
+    assert "Daily Fitness & Nutrition Plan (Fat Loss)" in plan.narrative_text
 
 
 def test_run_pipeline_rejects_incomplete_extraction(fake_openai, raw_segmental):
