@@ -56,7 +56,7 @@ def _sample_master() -> MasterPayload:
                 movement_type="bilateral_compound",
             )
         ],
-        detected_imbalances=["L/R Leg SMM deviation 6.2%"],
+        detected_imbalances=["L/R Leg lean-mass deviation 6.2%"],
     )
     return MasterPayload(
         user=user,
@@ -126,7 +126,7 @@ def test_validate_no_mutation_raises_on_mutated_calories_in_prose():
     )
     with pytest.raises(NumericalMutationError) as exc_info:
         validate_no_mutation(master, plan)
-    assert exc_info.value.field_name == "narrative_calories_kcal"
+    assert exc_info.value.field_name == "narrative_text:kcal"
     assert exc_info.value.actual == 1800.0
 
 
@@ -179,4 +179,4 @@ def test_generate_fallback_plan_preserves_all_deterministic_numbers():
     # Check narrative content
     assert "Daily Fitness & Nutrition Plan (Muscle Hypertrophy)" in fallback.narrative_text
     assert "Barbell Squat" in fallback.narrative_text
-    assert "L/R Leg SMM deviation 6.2%" in fallback.narrative_text
+    assert "L/R Leg lean-mass deviation 6.2%" in fallback.narrative_text

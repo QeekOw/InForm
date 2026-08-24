@@ -9,6 +9,7 @@ from typing import Literal
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
+from inform.formulas import katch_mcardle_bmr
 from inform.inbody import InBodyPayload, SegmentalLean
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -70,7 +71,7 @@ def _generate_values(device: Literal["inbody_270", "inbody_570"], seed: int) -> 
     percent_body_fat = round(rng.uniform(*_PBF_RANGE_PCT), 1)
     lean_body_mass_kg = round(weight_kg * (1 - percent_body_fat / 100), 1)
     skeletal_muscle_mass_kg = round(lean_body_mass_kg * rng.uniform(*_SMM_FRACTION_OF_LBM_RANGE), 1)
-    basal_metabolic_rate_kcal = round(370 + 21.6 * lean_body_mass_kg, 1)
+    basal_metabolic_rate_kcal = round(katch_mcardle_bmr(lean_body_mass_kg), 1)
     # Both devices print a Visceral Fat Level (ADR-0004 corrected in issue #13 —
     # confirmed on two real InBody 270 sheets). Schema keeps it optional for
     # real-world absence, but synthetic sheets always render it.

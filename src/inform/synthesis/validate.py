@@ -95,8 +95,11 @@ def _assert_narrative_calories_consistent(master: MasterPayload, plan: DailyPlan
         stated = float(token.replace(",", ""))
         nearest = min(legit, key=lambda v: abs(v - stated))
         if abs(nearest - stated) > _NARRATIVE_KCAL_TOLERANCE:
+            # Not a struct field: the sentinel name marks a prose figure that
+            # matches none of the three deterministic calorie values; "expected"
+            # carries the nearest legitimate one for a readable message.
             raise NumericalMutationError(
-                "narrative_calories_kcal", nearest, stated, _NARRATIVE_KCAL_TOLERANCE
+                "narrative_text:kcal", nearest, stated, _NARRATIVE_KCAL_TOLERANCE
             )
 
 

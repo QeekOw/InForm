@@ -50,7 +50,7 @@ def recommend_exercises(
         right = getattr(inbody.segmental_lean, right_field)
         deviation_pct = abs(left - right) / max(left, right) * 100
         if deviation_pct > _ASYMMETRY_THRESHOLD_PCT:
-            detected_imbalances.append(f"L/R {limb} SMM deviation {deviation_pct:.1f}%")
+            detected_imbalances.append(f"L/R {limb} lean-mass deviation {deviation_pct:.1f}%")
             _add(
                 [
                     ex

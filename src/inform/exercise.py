@@ -19,6 +19,6 @@ class Exercise(BaseModel):
 
 class ExercisePlan(BaseModel):
     exercises: list[Exercise]
-    # Human-readable, e.g. "L/R leg SMM deviation 7%" — surfaced directly in
+    # Human-readable, e.g. "L/R leg lean-mass deviation 7%" — surfaced directly in
     # Module 4's narrative and echoed back for dual-validation (issue #15).
     detected_imbalances: list[str]

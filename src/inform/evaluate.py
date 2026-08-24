@@ -17,8 +17,8 @@ _FIELD_TOLERANCE = 0.1
 
 # Field names come from the schema (inform.inbody); only their *match semantics*
 # are an eval concern: categorical fields compare by equality, numeric ones by
-# tolerance. Optional fields (per ADR-0004, absent on the 270) are reported
-# per-field but excluded from whole_sheet_accuracy, which gates on required
+# tolerance. Optional fields (per ADR-0004/0009, absent only on some configs)
+# are reported per-field but excluded from whole_sheet_accuracy, which gates on required
 # fields only (ADR-0006: "% of sheets with every required field correct").
 _CATEGORICAL_FIELDS = ("source_device",)
 _REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in _CATEGORICAL_FIELDS)

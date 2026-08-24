@@ -3,6 +3,7 @@ from typing import Callable
 
 from inform.engines import vlm
 from inform.errors import MissingRequiredFieldsError
+from inform.formulas import katch_mcardle_bmr
 from inform.inbody import (
     REQUIRED_DOTTED_FIELDS,
     InBodyExtraction,
@@ -52,7 +53,7 @@ def _cross_check(payload: PartialInBody) -> list[str]:
 
     bmr = payload.basal_metabolic_rate_kcal
     if None not in (bmr, lbm):
-        recomputed_bmr = 370 + 21.6 * lbm
+        recomputed_bmr = katch_mcardle_bmr(lbm)
         if abs(bmr - recomputed_bmr) > _BMR_TOLERANCE_KCAL:
             flagged += ["basal_metabolic_rate_kcal", "lean_body_mass_kg"]
 

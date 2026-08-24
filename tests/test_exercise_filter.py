@@ -115,7 +115,7 @@ def test_leg_asymmetry_over_threshold_adds_corrective_exercise():
 
     plan = recommend_exercises(user, inbody, _pool())
 
-    assert plan.detected_imbalances == ["L/R leg SMM deviation 11.1%"]
+    assert plan.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     names = [ex.name for ex in plan.exercises]
     assert names[0] == "Bulgarian split squat"
     assert "Single-arm dumbbell row" not in names
@@ -137,8 +137,8 @@ def test_both_limb_asymmetries_detected_in_order():
     plan = recommend_exercises(user, inbody, _pool())
 
     assert plan.detected_imbalances == [
-        "L/R arm SMM deviation 25.0%",
-        "L/R leg SMM deviation 11.1%",
+        "L/R arm lean-mass deviation 25.0%",
+        "L/R leg lean-mass deviation 11.1%",
     ]
     names = [ex.name for ex in plan.exercises]
     assert names[:2] == ["Single-arm dumbbell row", "Bulgarian split squat"]
