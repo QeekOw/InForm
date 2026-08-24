@@ -18,10 +18,11 @@ _SYSTEM_PROMPT = (
     "in that case. Otherwise, read every field directly off the sheet and "
     "set source_device to the device model printed on it. Never guess a "
     "value: if a field is blurred, glare-washed, or otherwise not "
-    "confidently readable, leave it unset rather than estimate it. The "
-    "InBody 270 never prints a Visceral Fat Level, and the InBody 570 "
-    "sometimes omits it; leave visceral_fat_level unset when the sheet does "
-    "not print it — that is expected, not a misread."
+    "confidently readable, leave it unset rather than estimate it. Both the "
+    "InBody 270 and the InBody 570 print a Visceral Fat Level, so read it "
+    "whenever it appears on the sheet. It is a programmable output that some "
+    "configurations omit; leave visceral_fat_level unset only when the sheet "
+    "genuinely does not show it, not by default."
 )
 
 class _RawSegmentalLean(BaseModel):

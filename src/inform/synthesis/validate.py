@@ -6,6 +6,8 @@ did not mutate any deterministic number computed upstream. On mismatch,
 the caller drops the LLM response and defaults to deterministic fallback text.
 """
 
+import re
+
 from inform.master import DailyPlan, MasterPayload
 
 _DEFAULT_FLOAT_TOLERANCE = 0.5  # Tolerance for floating point equality check
@@ -16,6 +18,14 @@ _NUMERIC_FIELDS = (
     "carbs_g",
     "fats_g",
     "fiber_g",
+)
+
+# Any "<number> kcal/calorie(s)" figure a human reads in the narrative must be
+# one of the deterministic calorie values (target, BMR, TDEE). Rounding to whole
+# kcal for display can shift a value by up to ~0.5, so allow 1.0 kcal of slack.
+_NARRATIVE_KCAL_TOLERANCE = 1.0
+_KCAL_MENTION = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(?:kcal|calories|calorie)\b", re.IGNORECASE
 )
 
 
@@ -48,7 +58,36 @@ def validate_no_mutation(
         actual = getattr(plan, field)
         if abs(expected - actual) > tolerance:
             raise NumericalMutationError(field, expected, actual, tolerance)
+    _assert_narrative_calories_consistent(master, plan)
     return plan
+
+
+def _assert_narrative_calories_consistent(master: MasterPayload, plan: DailyPlan) -> None:
+    """Guard the *prose* against a mutated calorie figure.
+
+    The echoed structured fields above are a parallel copy; the numbers a human
+    actually reads live in ``narrative_text``. The model is told to restate the
+    deterministic figures exactly, so every ``<n> kcal`` mention in the prose
+    must match one of the three deterministic calorie values (target, BMR, TDEE).
+    Any other kcal figure — e.g. "aim for 1,800 kcal" when the target is 2,278 —
+    is a mutation; raise so the caller drops to the deterministic fallback.
+
+    Macro figures stated in grams are not scanned here (gram tokens collide with
+    example food quantities); the strict structured-field echo above is their
+    backstop.
+    """
+    legit = (
+        master.nutrition.target_calories_kcal,
+        master.nutrition.bmr_kcal,
+        master.nutrition.tdee_kcal,
+    )
+    for match in _KCAL_MENTION.finditer(plan.narrative_text):
+        stated = float(match.group(1).replace(",", ""))
+        nearest = min(legit, key=lambda v: abs(v - stated))
+        if abs(nearest - stated) > _NARRATIVE_KCAL_TOLERANCE:
+            raise NumericalMutationError(
+                "narrative_calories_kcal", nearest, stated, _NARRATIVE_KCAL_TOLERANCE
+            )
 
 
 def generate_fallback_plan(master: MasterPayload) -> DailyPlan:

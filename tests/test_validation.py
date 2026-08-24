@@ -112,6 +112,42 @@ def test_validate_no_mutation_raises_on_tweaked_calories():
     assert exc_info.value.field_name == "target_calories_kcal"
 
 
+def test_validate_no_mutation_raises_on_mutated_calories_in_prose():
+    # Structured echo is correct, but the narrative a human reads states a
+    # different calorie figure — the exploit the structured-only guard missed.
+    master = _sample_master()
+    plan = DailyPlan(
+        narrative_text="To hit your goal, aim for about 1,800 kcal per day.",
+        target_calories_kcal=2784.5,
+        protein_g=175.0,
+        carbs_g=330.0,
+        fats_g=77.0,
+        fiber_g=38.0,
+    )
+    with pytest.raises(NumericalMutationError) as exc_info:
+        validate_no_mutation(master, plan)
+    assert exc_info.value.field_name == "narrative_calories_kcal"
+    assert exc_info.value.actual == 1800.0
+
+
+def test_validate_no_mutation_allows_bmr_tdee_target_in_prose():
+    # BMR 1687.6, TDEE 2531.4, target 2784.5 — all three restated (rounded for
+    # display) are legitimate and must not trip the narrative guard.
+    master = _sample_master()
+    plan = DailyPlan(
+        narrative_text=(
+            "Your BMR is 1688 kcal and TDEE 2531 kcal, so your target is "
+            "2784 kcal today."
+        ),
+        target_calories_kcal=2784.5,
+        protein_g=175.0,
+        carbs_g=330.0,
+        fats_g=77.0,
+        fiber_g=38.0,
+    )
+    assert validate_no_mutation(master, plan) == plan
+
+
 def test_generate_fallback_plan_preserves_all_deterministic_numbers():
     master = _sample_master()
     fallback = generate_fallback_plan(master)
