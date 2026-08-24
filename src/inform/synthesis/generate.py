@@ -9,7 +9,6 @@ from typing import Protocol
 
 from inform.master import DailyPlan, MasterPayload
 from inform.synthesis.validate import (
-    NumericalMutationError,
     generate_fallback_plan,
     validate_no_mutation,
 )
@@ -22,7 +21,7 @@ Guidelines:
 2. If muscle asymmetries or imbalances were detected, explain in plain English which limbs need attention and how the prescribed unilateral exercises will help correct the balance.
 3. Outline the prescribed workout routine clearly and offer brief, helpful form cues.
 4. Highlight their daily nutrition targets and provide practical, balanced meal suggestions that fit their exact macronutrient requirements.
-5. CRITICAL INVARIANT: The caloric and macronutrient targets (target_calories_kcal, protein_g, carbs_g, fats_g, fiber_g) are clinically pre-computed and DETERMINISTIC. You MUST restate these numbers EXACTLY as provided in the input. DO NOT modify, round, or alter them under any circumstance.
+5. CRITICAL INVARIANT: The caloric and macronutrient targets (target_calories_kcal, protein_g, carbs_g, fats_g, fiber_g) are clinically pre-computed and DETERMINISTIC. You MUST restate these numbers EXACTLY as provided in the input. DO NOT modify, round, or alter them under any circumstance. The only calorie figures (kcal) you may write anywhere in the narrative are the provided target_calories_kcal, bmr_kcal, and tdee_kcal — never invent or estimate any other calorie number.
 """
 
 
@@ -72,6 +71,7 @@ def synthesize_plan(
         if plan is None:
             return generate_fallback_plan(master)
         return validate_no_mutation(master, plan)
-    except (NumericalMutationError, Exception):
-        # Drop-on-mutation / fail-closed fallback
+    except Exception:
+        # Drop-on-mutation (NumericalMutationError) or any API failure: fail closed
+        # to the deterministic fallback.
         return generate_fallback_plan(master)

@@ -20,7 +20,7 @@ def _exercise(**overrides) -> Exercise:
 def _plan(**overrides) -> ExercisePlan:
     fields = dict(
         exercises=[_exercise()],
-        detected_imbalances=["L/R leg SMM deviation 7%"],
+        detected_imbalances=["L/R leg lean-mass deviation 7%"],
     )
     fields.update(overrides)
     return ExercisePlan(**fields)
@@ -29,7 +29,7 @@ def _plan(**overrides) -> ExercisePlan:
 def test_valid_exercise_plan():
     plan = _plan()
     assert plan.exercises[0].movement_type == "corrective_unilateral"
-    assert plan.detected_imbalances == ["L/R leg SMM deviation 7%"]
+    assert plan.detected_imbalances == ["L/R leg lean-mass deviation 7%"]
 
 
 def test_invalid_movement_type_rejected():

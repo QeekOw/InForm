@@ -74,7 +74,7 @@ def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmen
 
     master = assemble_master_payload(FIXTURE, user, _pool())
 
-    assert master.exercises.detected_imbalances == ["L/R leg SMM deviation 11.1%"]
+    assert master.exercises.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"
 
 

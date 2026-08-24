@@ -1,10 +1,7 @@
+from inform.formulas import katch_mcardle_bmr
 from inform.inbody import InBodyPayload
 from inform.nutrition import NutritionTargets
 from inform.user import UserProfile
-
-# Katch-McArdle: BMR = 370 + 21.6 x LBM_kg (ADR-0001 [reserved], CONTEXT.md).
-_KATCH_MCARDLE_BASE_KCAL = 370.0
-_KATCH_MCARDLE_LBM_COEFFICIENT = 21.6
 
 # The paper (§3.1.2/§3.1.3.2) requires calorie/macro targets to differ by
 # fitness_goal but does not specify magnitudes. These follow standard
@@ -34,10 +31,7 @@ def compute_targets(user: UserProfile, inbody: InBodyPayload) -> NutritionTarget
     basal_metabolic_rate_kcal is a cross-check value only (ADR-0003,
     ADR-0008) and is never read here.
     """
-    bmr_kcal = (
-        _KATCH_MCARDLE_BASE_KCAL
-        + _KATCH_MCARDLE_LBM_COEFFICIENT * inbody.lean_body_mass_kg
-    )
+    bmr_kcal = katch_mcardle_bmr(inbody.lean_body_mass_kg)
     tdee_kcal = bmr_kcal * user.activity_multiplier
     target_calories_kcal = tdee_kcal + _CALORIE_ADJUSTMENT_KCAL[user.fitness_goal]
 
