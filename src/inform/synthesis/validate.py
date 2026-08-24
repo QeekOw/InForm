@@ -20,10 +20,17 @@ _NUMERIC_FIELDS = (
     "fiber_g",
 )
 
-# Any "<number> kcal/calorie(s)" figure a human reads in the narrative must be
-# one of the deterministic calorie values (target, BMR, TDEE). Rounding to whole
-# kcal for display can shift a value by up to ~0.5, so allow 1.0 kcal of slack.
+# A "<number> kcal/calorie(s)" figure in the narrative is only a mutation if it
+# is a *restatement* of a deterministic calorie value (target, BMR, TDEE) that
+# got the number wrong. Rounding for display can shift a value by up to ~0.5, so
+# allow 1.0 kcal of slack before calling it mutated.
 _NARRATIVE_KCAL_TOLERANCE = 1.0
+# A stated figure within this fraction of a deterministic value is read as a
+# restatement of it (and must match); figures farther from every deterministic
+# value are unrelated coaching numbers — "500 kcal deficit", "4 kcal per gram" —
+# and are left alone. The strict structured-field echo above still guards the
+# actual targets regardless.
+_RESTATEMENT_BAND = 0.20
 # Match a calorie figure with the unit on EITHER side: "1,800 kcal" and
 # "kcal: 1800" / "calories are 1800" both count. Two capture groups, one per order.
 _NUM = r"(\d[\d,]*(?:\.\d+)?)"
@@ -72,17 +79,20 @@ def _assert_narrative_calories_consistent(master: MasterPayload, plan: DailyPlan
 
     The echoed structured fields above are a parallel copy; the numbers a human
     actually reads live in ``narrative_text``. The model is told to restate the
-    deterministic figures exactly, so every ``<n> kcal`` mention in the prose
-    must match one of the three deterministic calorie values (target, BMR, TDEE).
-    Any other kcal figure — e.g. "aim for 1,800 kcal" when the target is 2,278 —
-    is a mutation; raise so the caller drops to the deterministic fallback.
+    deterministic figures exactly, so a ``<n> kcal`` figure *close to* one of the
+    three deterministic calorie values (target, BMR, TDEE) but not equal to it is
+    a mutated restatement — e.g. "aim for 1,800 kcal" when BMR is 1,688 — and we
+    raise so the caller drops to the deterministic fallback.
+
+    A kcal figure far from every deterministic value is an unrelated coaching
+    number ("a 500 kcal deficit", "4 kcal per gram"), not a restatement, so it is
+    left alone — the strict structured-field echo above still guards the targets.
 
     Coverage is a number adjacent to the unit in either order ("1,800 kcal",
     "kcal: 1800"). Two residuals are deliberately left to the prompt instruction
-    and the strict structured-field echo above: (1) a unit and number separated
-    by intervening words ("kcal target is 1800") — closing that needs NLP, not a
-    regex, and widening the pattern would false-positive on unrelated numbers;
-    (2) macro figures in grams — gram tokens collide with example food quantities.
+    and the structured-field echo: (1) a unit and number separated by intervening
+    words ("kcal target is 1800") — closing that needs NLP, not a regex; (2) macro
+    figures in grams — gram tokens collide with example food quantities.
     """
     legit = (
         master.nutrition.target_calories_kcal,
@@ -94,13 +104,17 @@ def _assert_narrative_calories_consistent(master: MasterPayload, plan: DailyPlan
         token = match.group(1) or match.group(2)
         stated = float(token.replace(",", ""))
         nearest = min(legit, key=lambda v: abs(v - stated))
-        if abs(nearest - stated) > _NARRATIVE_KCAL_TOLERANCE:
-            # Not a struct field: the sentinel name marks a prose figure that
-            # matches none of the three deterministic calorie values; "expected"
-            # carries the nearest legitimate one for a readable message.
+        delta = abs(nearest - stated)
+        if delta <= _NARRATIVE_KCAL_TOLERANCE:
+            continue  # exact restatement of a deterministic value
+        if delta <= _RESTATEMENT_BAND * nearest:
+            # Close enough to be a restatement of `nearest`, but the number is
+            # wrong: a mutated deterministic figure. Sentinel field name marks a
+            # prose figure; "expected" carries the value it should have restated.
             raise NumericalMutationError(
                 "narrative_text:kcal", nearest, stated, _NARRATIVE_KCAL_TOLERANCE
             )
+        # else: far from every deterministic value — an unrelated coaching figure.
 
 
 def generate_fallback_plan(master: MasterPayload) -> DailyPlan:

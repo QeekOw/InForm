@@ -146,6 +146,22 @@ def test_validate_no_mutation_raises_on_unit_first_calorie_mutation():
     assert exc_info.value.actual == 1800.0
 
 
+def test_validate_no_mutation_allows_unrelated_calorie_figures_in_prose():
+    # A deficit magnitude and a per-gram fact are not restatements of any
+    # deterministic value (target 2784.5 / BMR 1687.6 / TDEE 2531.4), so the
+    # guard must leave them alone rather than nuke the whole narrative.
+    master = _sample_master()
+    plan = DailyPlan(
+        narrative_text="Run a 500 kcal deficit; remember carbs are 4 kcal per gram.",
+        target_calories_kcal=2784.5,
+        protein_g=175.0,
+        carbs_g=330.0,
+        fats_g=77.0,
+        fiber_g=38.0,
+    )
+    assert validate_no_mutation(master, plan) == plan
+
+
 def test_validate_no_mutation_allows_bmr_tdee_target_in_prose():
     # BMR 1687.6, TDEE 2531.4, target 2784.5 — all three restated (rounded for
     # display) are legitimate and must not trip the narrative guard.
