@@ -1,5 +1,5 @@
-from cera.exercise import Exercise
-from cera.exercise_filter import recommend_exercises
+from inform.exercise import Exercise
+from inform.exercise_filter import recommend_exercises
 
 from tests.test_master import _inbody
 from tests.test_user import _user
