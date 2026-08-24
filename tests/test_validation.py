@@ -130,6 +130,22 @@ def test_validate_no_mutation_raises_on_mutated_calories_in_prose():
     assert exc_info.value.actual == 1800.0
 
 
+def test_validate_no_mutation_raises_on_unit_first_calorie_mutation():
+    # Same exploit, phrased unit-first ("calories: 1800") to dodge a number-first scan.
+    master = _sample_master()
+    plan = DailyPlan(
+        narrative_text="Your plan sets calories: 1800 to stay in a deficit.",
+        target_calories_kcal=2784.5,
+        protein_g=175.0,
+        carbs_g=330.0,
+        fats_g=77.0,
+        fiber_g=38.0,
+    )
+    with pytest.raises(NumericalMutationError) as exc_info:
+        validate_no_mutation(master, plan)
+    assert exc_info.value.actual == 1800.0
+
+
 def test_validate_no_mutation_allows_bmr_tdee_target_in_prose():
     # BMR 1687.6, TDEE 2531.4, target 2784.5 — all three restated (rounded for
     # display) are legitimate and must not trip the narrative guard.
