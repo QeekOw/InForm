@@ -1,6 +1,6 @@
-from cera.exercise import Exercise, ExercisePlan
-from cera.inbody import InBodyPayload
-from cera.user import UserProfile
+from inform.exercise import Exercise, ExercisePlan
+from inform.inbody import InBodyPayload
+from inform.user import UserProfile
 
 # Bilateral asymmetry: |larger - smaller| / larger x 100 (an Asymmetry Index,
 # cf. Bishop et al.). CONTEXT.md and the paper (§3.1.3.1) fix the trigger at

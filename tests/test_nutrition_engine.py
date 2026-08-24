@@ -1,6 +1,6 @@
 import pytest
 
-from cera.nutrition_engine import compute_targets
+from inform.nutrition_engine import compute_targets
 
 from tests.test_master import _inbody
 from tests.test_user import _user

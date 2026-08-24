@@ -1,6 +1,6 @@
-from cera.inbody import InBodyPayload
-from cera.nutrition import NutritionTargets
-from cera.user import UserProfile
+from inform.inbody import InBodyPayload
+from inform.nutrition import NutritionTargets
+from inform.user import UserProfile
 
 # Katch-McArdle: BMR = 370 + 21.6 x LBM_kg (ADR-0001 [reserved], CONTEXT.md).
 _KATCH_MCARDLE_BASE_KCAL = 370.0
