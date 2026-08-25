@@ -1,60 +1,43 @@
 # InForm
 
-InForm reads an InBody body-composition scan and a short intake form, then produces a personalized daily nutrition and corrective-exercise plan.
+InForm turns an InBody body scan into a personalized day of eating and training.
 
-The idea it is built around: every medical and mathematical decision is made by deterministic code you can audit, and the language model only writes the prose around those numbers. It never changes them. A recommendation always traces back to a formula and a value read off the scan, not to a model's guess.
+InBody machines are the body-composition scanners you find in a lot of gyms and clinics. You step on, and a minute later it prints a sheet full of numbers: your muscle mass, body fat, water, a per-limb breakdown, and more. Most people glance at it and file it away, because on its own it does not tell you what to actually do.
 
-## What it does
+InForm reads that sheet, plus a few facts about you (your age, activity level, and whether you want to build muscle or lose fat), and writes you a concrete daily plan: how many calories and grams of protein, carbs, fat and fiber to eat, and a workout that targets your specific muscle imbalances.
 
-You give it a photo of an InBody 270 or 570 result sheet plus the user's onboarding form. Four stages run:
+The catch with most "AI fitness" tools is that you cannot tell where the numbers came from. InForm is built the other way around. Every number is computed by plain, auditable code from your scan. The AI is only allowed to write the words around those numbers, and a validation step stops it from quietly changing any of them.
 
-![InForm pipeline diagram: an InBody scan and user form go through OCR and a fused input into the nutrition engine and exercise filter, which feed a Master JSON that the LLM synthesis stage turns into the daily plan.](docs/assets/pipeline.png)
+## What you get
 
-1. **OCR (Module 1)** reads the structured metrics off the sheet: lean body mass, percent body fat, segmental lean analysis, visceral fat level, and so on.
-2. **Nutrition engine (Module 2)** computes BMR (Katch-McArdle), TDEE, and calorie and macro targets from those metrics.
-3. **Exercise filter (Module 3)** looks for bilateral asymmetry, a left/right lean gap over 5%, and selects corrective exercises. It runs independently of the nutrition engine.
-4. **LLM synthesis (Module 4)** turns the first three stages into a readable daily plan. It only writes language, and a validation step confirms it has not altered any number.
-
-Stages 1 to 3 write a single consolidated object, the `MasterPayload` (the "Master JSON"), which is the only thing stage 4 sees.
-
-## Why it is built this way
-
-Nutrition and fitness advice is health-adjacent, so the numbers have to be reproducible and explainable. InForm draws a hard line between the deterministic core (all calculations) and the generative layer (wording only). Two mechanisms hold that line:
-
-- Module 2 recomputes BMR from lean body mass with Katch-McArdle. The BMR printed on the device sheet is treated as a cross-check value only, never as the source of truth.
-- Module 4 runs a dual validation. The deterministic figures are echoed as structured fields and checked exactly, and the narrative prose is scanned so a mutated calorie figure cannot slip through. If the model changes a number, or the call fails, the plan falls back to a deterministic template.
-
-## Project layout
+Give it your scan and your goal, and you get back something like this:
 
 ```
-src/inform/
-  formulas.py          Shared body-composition formulas (Katch-McArdle BMR)
-  user.py              UserProfile (onboarding form)
-  inbody.py            InBodyPayload / PartialInBody / SegmentalLean schemas
-  extract.py           Module 1 seam: extract_inbody() + cross-check flags
-  engines/
-    vlm.py             OCR engine A: vision-language model (phase-1 baseline)
-    donut.py           OCR engine B: fine-tuned Donut (self-hosted, phase 2)
-  nutrition.py         NutritionTargets schema
-  nutrition_engine.py  Module 2: compute_targets()
-  exercise.py          Exercise / ExercisePlan schemas
-  exercise_filter.py   Module 3: recommend_exercises()
-  exercise_pool.py     Stopgap candidate exercise set for the demo
-  master.py            MasterPayload (Modules 1-3) and DailyPlan (Module 4)
-  synthesis/
-    generate.py        Module 4: synthesize_plan()
-    validate.py        Dual-validation guard + deterministic fallback
-  pipeline.py          Orchestrator: run_pipeline()
-  evaluate.py          OCR accuracy scoring against ground truth
-  synthetic/           Synthetic InBody sheet generation (for OCR eval/training)
-  training/            Donut fine-tuning (dataset + train loop)
+# Daily Fitness & Nutrition Plan (Fat Loss)
+
+## Nutritional Targets
+- Daily Energy Target: 1748 kcal (BMR: 1450 kcal, TDEE: 2248 kcal)
+- Protein: 120.0g
+- Carbohydrates: 207.7g
+- Fats: 48.5g
+- Fiber: 24.5g
+
+## Recommended Workout Program
+### Detected Imbalances & Focus Areas
+- L/R arm lean-mass deviation 11.1%
+
+### Exercise Routine
+1. Single-arm dumbbell row  [corrective unilateral]  targets lats
+2. Single-arm overhead press [corrective unilateral]  targets deltoids
+3. Single-arm wrist curl     [corrective unilateral]  targets forearms
+4. Rowing sprint intervals   [cardio hiit]            targets cardio
 ```
 
-Domain terms and the rules behind each module live in [`CONTEXT.md`](CONTEXT.md). Design decisions are recorded in [`docs/adr/`](docs/adr/).
+Notice the workout is not generic. This scan showed the right arm carrying 11% more lean mass than the left, so InForm prescribed single-arm corrective moves to even it out. A different scan produces a different plan.
 
-## Install
+## Try it in two minutes
 
-Requires Python 3.11 or newer.
+You do not need an InBody scan or an API key to see it work. Install the project, then run the deterministic core on some example numbers.
 
 ```
 python -m venv .venv
@@ -62,34 +45,18 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-The base install is deliberately light (Pydantic, OpenAI SDK, Pillow). The heavier Donut fine-tuning stack (torch, transformers) is a separate extra:
-
-```
-pip install -e ".[training]"
-```
-
-Live OCR extraction and LLM synthesis call OpenAI, so set `OPENAI_API_KEY` before running the pipeline on a real image. If synthesis fails or the key is missing, Module 4 returns the deterministic fallback plan rather than erroring.
-
-## Quick start
-
-Run the whole pipeline on an InBody photo:
-
-```
-python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
-    --age 30 --sex female --activity 1.55 --goal fat_loss
-```
-
-It prints the consolidated `MasterPayload` and then the synthesized daily plan.
-
-As a library:
+Save this as `try_inform.py` and run it with `python try_inform.py`:
 
 ```python
-from pathlib import Path
-
-from inform.pipeline import run_pipeline
+from inform.inbody import InBodyPayload, SegmentalLean
 from inform.user import UserProfile
+from inform.nutrition_engine import compute_targets
+from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
+from inform.master import MasterPayload
+from inform.synthesis.generate import synthesize_plan
 
+# Your intake form.
 user = UserProfile(
     age=30,
     biological_sex="female",
@@ -97,29 +64,98 @@ user = UserProfile(
     fitness_goal="fat_loss",
 )
 
-plan = run_pipeline(Path("inbody_sheet.jpg"), user, DEFAULT_EXERCISE_POOL)
+# The numbers off an InBody sheet. Here they are typed in by hand; normally
+# Module 1 reads them from a photo.
+inbody = InBodyPayload(
+    weight_kg=68.0,
+    lean_body_mass_kg=50.0,
+    percent_body_fat=26.5,
+    skeletal_muscle_mass_kg=28.0,
+    basal_metabolic_rate_kcal=1450.0,
+    segmental_lean=SegmentalLean(
+        left_arm_kg=2.4, right_arm_kg=2.7,
+        left_leg_kg=7.8, right_leg_kg=7.9, trunk_kg=22.0,
+    ),
+    visceral_fat_level=8,
+    source_device="inbody_570",
+)
+
+# Modules 2 and 3 do the math; Module 4 writes the plan.
+master = MasterPayload(
+    user=user,
+    inbody=inbody,
+    nutrition=compute_targets(user, inbody),
+    exercises=recommend_exercises(user, inbody, DEFAULT_EXERCISE_POOL),
+)
+
+# With no OPENAI_API_KEY set, Module 4 returns the deterministic plan.
+plan = synthesize_plan(master, client=None)
 print(plan.narrative_text)
 ```
 
-For a deterministic run with no live model, `assemble_master_payload()` gives you Modules 1 to 3 (the `MasterPayload`) on its own, and you can pass a mock client into `run_pipeline(..., llm_client=...)`.
+That prints the plan shown above, computed entirely on your machine with no network call. Change the scan numbers or the goal and watch the plan change.
 
-## OCR engines
+## Try it on a real scan
 
-Module 1 fills one seam, `extract_inbody(image_path)`, and exactly one engine plugs into it at a time. They are swappable alternatives, not layers:
-
-- The **VLM engine** is a general vision-language model used as the phase-1 baseline and the permanent evaluation oracle. It is scoped to synthetic and consented images, never real personal health data, until the Donut engine lands (ADR-0005).
-- The **Donut engine** is a Document Understanding Transformer fine-tuned on synthetic InBody sheets. It is self-hosted with no per-call cost and is the paper's core contribution.
-
-The `synthetic/` package renders realistic InBody 270 and 570 sheets with known ground-truth values, which is what the Donut engine trains on and what `evaluate.py` scores both engines against. See [ADR-0002](docs/adr/0002-vlm-baseline-then-donut.md).
-
-## Tests
+To go from an actual photo of an InBody sheet all the way to an AI-written plan, you need an OpenAI key (it reads the photo and writes the prose):
 
 ```
-pytest -q
+export OPENAI_API_KEY=sk-...           # Windows: set OPENAI_API_KEY=sk-...
+
+python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
+    --age 30 --sex female --activity 1.55 --goal fat_loss
 ```
 
-The suite covers each module in isolation plus the end-to-end pipeline, including the fail-closed extraction paths and the Module 4 no-mutation guard.
+This runs the full pipeline: it reads the sheet, computes your targets, builds the workout, and has the model write the final plan. If the key is missing or the model ever tries to alter a number, it falls back to the deterministic plan instead of giving you a wrong one.
+
+## How it works
+
+Four stages run left to right. The first three are deterministic; only the last one is generative.
+
+![InForm pipeline diagram: an InBody scan and user form go through OCR and a fused input into the nutrition engine and exercise filter, which feed a Master JSON that the LLM synthesis stage turns into the daily plan.](docs/assets/pipeline.png)
+
+1. **OCR** reads the metrics off the sheet (lean body mass, body fat, the per-limb lean breakdown, visceral fat, and so on).
+2. **Nutrition engine** computes BMR with the Katch-McArdle formula, then TDEE and your calorie and macro targets.
+3. **Exercise filter** finds any left/right lean gap over 5% and picks corrective exercises for it. It runs independently of the nutrition engine.
+4. **LLM synthesis** turns all of that into a readable plan, and nothing else. It cannot change a number.
+
+Stages 1 to 3 produce one consolidated object, the `MasterPayload`, which is the only thing stage 4 is allowed to see.
+
+## FAQ
+
+**Do I need an OpenAI API key?** Only to read a photo and to get the AI-written version of the plan. The calculations and a plain deterministic plan run with no key, as the two-minute example shows.
+
+**Is my health data sent anywhere?** The photo-reading and plan-writing steps call OpenAI. For now that path is meant for synthetic or consented images, not real medical data (see [ADR-0005](docs/adr/0005-inference-privacy-posture.md)). The deterministic calculation path runs fully on your machine.
+
+**Which devices are supported?** InBody 270 and InBody 570 result sheets.
+
+**Do I need a GPU?** No, not to run InForm. A GPU only matters if you want to fine-tune the on-device OCR model yourself.
+
+**I do not have an InBody scan.** Type numbers in by hand like the example above, or use `inform.synthetic.generate_sheet(...)` to render a realistic practice sheet with known values.
+
+## Project layout
+
+For anyone reading the code:
+
+```
+src/inform/
+  formulas.py          Shared formulas (Katch-McArdle BMR)
+  user.py              UserProfile (the intake form)
+  inbody.py            InBody scan schemas
+  extract.py           Module 1: read a sheet into structured data
+  engines/             The two swappable OCR engines (VLM baseline, Donut)
+  nutrition_engine.py  Module 2: BMR, TDEE, calorie and macro targets
+  exercise_filter.py   Module 3: imbalance detection and exercise selection
+  master.py            MasterPayload (Modules 1-3) and DailyPlan (Module 4)
+  synthesis/           Module 4: write the plan, then validate it did not cheat
+  pipeline.py          run_pipeline(): the whole thing end to end
+  evaluate.py          Score OCR accuracy against known values
+  synthetic/           Generate practice InBody sheets
+  training/            Fine-tune the Donut OCR engine
+```
+
+The vocabulary and the rule behind each module are in [`CONTEXT.md`](CONTEXT.md). Design decisions are in [`docs/adr/`](docs/adr/). Run the test suite with `pytest -q`.
 
 ## Status
 
-This is a working proof of concept. Modules 1 to 4 run end to end on synthetic sheets, and the deterministic contracts between them are stable. The VLM engine is the active OCR path; the Donut engine has its training harness in place but is not yet trained and evaluated. `exercise_pool.py` ships a small stopgap exercise set so the demo runs; production would inject a full dataset.
+This is a working proof of concept. The four stages run end to end, and the contracts between them are stable. The vision-language model is the active way to read sheets; a self-hosted Donut model has its training harness in place but is not trained and measured yet. The exercise set in `exercise_pool.py` is a small stopgap so the demo runs; a real deployment would supply a full library.
