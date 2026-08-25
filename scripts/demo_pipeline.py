@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Run the pipeline end-to-end: InBody image -> DailyPlan (with LLM synthesis).
 
-Requires OPENAI_API_KEY for live LLM synthesis & VLM extraction (falls back
-gracefully to deterministic plan if synthesis fails or key is missing).
+Reads the sheet with the default self-hosted Donut engine (ADR-0010); pass
+`--engine vlm` to use the cloud VLM instead. LLM synthesis always needs
+OPENAI_API_KEY (it falls back to the deterministic plan if the key is missing
+or synthesis fails). Donut needs a checkpoint (INFORM_DONUT_CKPT, default
+models/donut-both-v3) and the training extra.
 
 Usage:
     python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
-        --age 30 --sex female --activity 1.55 --goal fat_loss
+        --age 30 --sex female --activity 1.55 --goal fat_loss [--engine donut|vlm]
 """
 
 import argparse
@@ -28,6 +31,12 @@ def main() -> None:
     parser.add_argument("--sex", choices=["male", "female"], default="female")
     parser.add_argument("--activity", type=float, default=1.55, help="Activity multiplier")
     parser.add_argument("--goal", choices=["hypertrophy", "fat_loss"], default="fat_loss")
+    parser.add_argument(
+        "--engine",
+        choices=["donut", "vlm"],
+        default="donut",
+        help="OCR engine: self-hosted Donut (default) or the cloud VLM oracle",
+    )
     args = parser.parse_args()
 
     user = UserProfile(
@@ -37,9 +46,16 @@ def main() -> None:
         fitness_goal=args.goal,
     )
 
+    # None lets extract_inbody resolve the default Donut engine (ADR-0010).
+    engine = None
+    if args.engine == "vlm":
+        from inform.engines import vlm
+
+        engine = vlm.extract
+
     try:
-        master = assemble_master_payload(args.image, user, DEFAULT_EXERCISE_POOL)
-        daily_plan = run_pipeline(args.image, user, DEFAULT_EXERCISE_POOL)
+        master = assemble_master_payload(args.image, user, DEFAULT_EXERCISE_POOL, engine=engine)
+        daily_plan = run_pipeline(args.image, user, DEFAULT_EXERCISE_POOL, engine=engine)
     except IncompleteExtractionError as e:
         print(f"Extraction incomplete — cannot build a plan.\n  Unread: {e.unread}\n  Flagged: {e.flagged}")
         raise SystemExit(1)

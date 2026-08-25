@@ -65,10 +65,13 @@ Module 1 fills one seam: `extract_inbody(image_path) -> InBodyExtraction` (the r
 `unread`/`flagged` lists; `.as_payload()` promotes a clean, complete read to an `InBodyPayload`).
 Exactly one *engine* plugs into that seam at a time. They are swappable alternatives, not layers:
 
-- **VLM engine** — a general vision-language model (OpenAI, zero/few-shot, Structured
-  Outputs) used as the **phase-1 baseline** and permanent **evaluation oracle**. No training.
 - **Donut engine** — a Document Understanding Transformer (`naver-clova-ix/donut-base`)
   **fine-tuned** on synthetic InBody sheets — the paper's core contribution; self-hosted, no
-  per-call cost, on-device-capable. Built in phase 2 and measured against the VLM baseline.
+  per-call cost, on-device-capable. The **default runtime engine**; its checkpoint lives
+  outside the repo (loaded by local path).
+- **VLM engine** — a general vision-language model (OpenAI, zero/few-shot, Structured
+  Outputs). No training. Now the **evaluation oracle** only: an explicitly-chosen engine,
+  never the runtime default and never a runtime fallback.
 
-See [ADR-0002](docs/adr/0002-vlm-baseline-then-donut.md).
+See [ADR-0002](docs/adr/0002-vlm-baseline-then-donut.md) and
+[ADR-0010](docs/adr/0010-donut-default-runtime-engine.md).

@@ -97,7 +97,7 @@ That prints the plan shown above, computed entirely on your machine with no netw
 
 ## Try it on a real scan
 
-To go from an actual photo of an InBody sheet all the way to an AI-written plan, you need an OpenAI key (it reads the photo and writes the prose):
+To go from an actual photo of an InBody sheet all the way to an AI-written plan:
 
 ```
 export OPENAI_API_KEY=sk-...           # Windows: set OPENAI_API_KEY=sk-...
@@ -106,7 +106,7 @@ python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
     --age 30 --sex female --activity 1.55 --goal fat_loss
 ```
 
-This runs the full pipeline: it reads the sheet, computes your targets, builds the workout, and has the model write the final plan. If the key is missing or the model ever tries to alter a number, it falls back to the deterministic plan instead of giving you a wrong one.
+By default the photo is read on your machine by the self-hosted Donut engine, so you need its checkpoint (set `INFORM_DONUT_CKPT`, default `models/donut-both-v3`) and the training extra (`pip install -e ".[training]"`). If you would rather read the photo with the cloud VLM, add `--engine vlm`, which uses your OpenAI key instead of a local checkpoint. Either way the plan-writing step uses the OpenAI key; if it is missing or the model ever tries to alter a number, InForm falls back to the deterministic plan instead of giving you a wrong one.
 
 ## How it works
 
@@ -123,13 +123,13 @@ Stages 1 to 3 produce one consolidated object, the `MasterPayload`, which is the
 
 ## FAQ
 
-**Do I need an OpenAI API key?** Only to read a photo and to get the AI-written version of the plan. The calculations and a plain deterministic plan run with no key, as the two-minute example shows.
+**Do I need an OpenAI API key?** For the AI-written version of the plan, yes. Reading a photo uses the self-hosted Donut engine by default (no key, but a local checkpoint), or the OpenAI VLM if you pass `--engine vlm`. The calculations and a plain deterministic plan run with no key at all, as the two-minute example shows.
 
-**Is my health data sent anywhere?** The photo-reading and plan-writing steps call OpenAI. For now that path is meant for synthetic or consented images, not real medical data (see [ADR-0005](docs/adr/0005-inference-privacy-posture.md)). The deterministic calculation path runs fully on your machine.
+**Is my health data sent anywhere?** By default the photo is read on your machine by the self-hosted Donut engine, so the image never leaves your computer. The plan-writing step still calls OpenAI. If you deliberately switch photo-reading to the VLM engine, that path is meant for synthetic or consented images, not real medical data (see [ADR-0005](docs/adr/0005-inference-privacy-posture.md)). The deterministic calculation path runs fully on your machine.
 
 **Which devices are supported?** InBody 270 and InBody 570 result sheets.
 
-**Do I need a GPU?** No, not to run InForm. A GPU only matters if you want to fine-tune the on-device OCR model yourself.
+**Do I need a GPU?** No. The default Donut engine runs on CPU (a GPU just makes reading a photo faster), and the deterministic core needs nothing special. A GPU only really matters if you want to fine-tune the OCR model yourself.
 
 **I do not have an InBody scan.** Type numbers in by hand like the example above, or use `inform.synthetic.generate_sheet(...)` to render a realistic practice sheet with known values.
 
@@ -143,7 +143,7 @@ src/inform/
   user.py              UserProfile (the intake form)
   inbody.py            InBody scan schemas
   extract.py           Module 1: read a sheet into structured data
-  engines/             The two swappable OCR engines (VLM baseline, Donut)
+  engines/             The two swappable OCR engines (Donut default, VLM oracle)
   nutrition_engine.py  Module 2: BMR, TDEE, calorie and macro targets
   exercise_filter.py   Module 3: imbalance detection and exercise selection
   master.py            MasterPayload (Modules 1-3) and DailyPlan (Module 4)
@@ -158,4 +158,4 @@ The vocabulary and the rule behind each module are in [`CONTEXT.md`](CONTEXT.md)
 
 ## Status
 
-This is a working proof of concept. The four stages run end to end, and the contracts between them are stable. The vision-language model is the active way to read sheets; a self-hosted Donut model has its training harness in place but is not trained and measured yet. The exercise set in `exercise_pool.py` is a small stopgap so the demo runs; a real deployment would supply a full library.
+This is a working proof of concept. The four stages run end to end, and the contracts between them are stable. The self-hosted Donut model is fine-tuned (trained on Kaggle) and is now the default way to read sheets; its checkpoint lives outside the repo and is loaded by local path. The vision-language model stays available as the evaluation oracle. Donut's accuracy on real photos (as opposed to the synthetic sheets it trained on) still needs to be measured with `evaluate.py`. The exercise set in `exercise_pool.py` is a small stopgap so the demo runs; a real deployment would supply a full library.

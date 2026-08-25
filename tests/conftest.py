@@ -2,17 +2,26 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from inform.engines import vlm
 from inform.engines.vlm import _RawExtraction, _RawSegmentalLean
 
 
 @pytest.fixture
 def fake_openai(monkeypatch):
+    """Set up the VLM engine path against a mocked OpenAI client.
+
+    Also resolves the default engine to the VLM (ADR-0010 made Donut the
+    default): these tests exercise the VLM seam and downstream wiring, so the
+    default they should see is the mocked VLM, not a real Donut checkpoint.
+    """
+
     def _install(raw: _RawExtraction) -> MagicMock:
         completion = MagicMock()
         completion.choices = [MagicMock(message=MagicMock(parsed=raw))]
         client = MagicMock()
         client.beta.chat.completions.parse.return_value = completion
         monkeypatch.setattr("inform.engines.vlm.OpenAI", lambda **_: client)
+        monkeypatch.setattr("inform.extract.default_engine", lambda: vlm.extract)
         return client
 
     return _install
