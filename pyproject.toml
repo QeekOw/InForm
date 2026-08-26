@@ -32,4 +32,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
+# Only collect the project's own tests; never walk downloaded checkpoints under
+# models/ (a Kaggle dump there ships an old repo's tests that fail to import).
+testpaths = ["tests"]
 

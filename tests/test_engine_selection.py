@@ -113,9 +113,20 @@ def test_extract_inbody_resolves_default_engine_when_none(monkeypatch):
 
 
 @pytest.mark.skipif(not _REAL_CKPT.exists(), reason="Donut checkpoint not downloaded")
-def test_default_engine_round_trips_real_checkpoint():
+def test_default_engine_round_trips_real_checkpoint(tmp_path):
     # Only runs when the real 809 MB checkpoint is on disk (needs the training
-    # extra). Proves load_checkpoint/load_engine bind the saved fine-tune.
-    engine = default_engine()
-    result = extract_inbody(FIXTURE, engine=engine)
-    assert result is not None
+    # extra). Drives the fine-tune on a synthetic sheet (the distribution it
+    # trained on) and asserts it reads the known ground truth back, proving
+    # load_checkpoint/load_engine bind a working model, not just that it loads.
+    from inform.synthetic import generate_sheet
+
+    png, truth = generate_sheet("inbody_570", seed=1)
+    sheet = tmp_path / "sheet.png"
+    sheet.write_bytes(png)
+
+    result = extract_inbody(sheet, engine=default_engine())
+
+    assert result.is_complete()
+    assert result.data.weight_kg == pytest.approx(truth.weight_kg, abs=0.1)
+    assert result.data.lean_body_mass_kg == pytest.approx(truth.lean_body_mass_kg, abs=0.1)
+    assert result.data.source_device == truth.source_device
