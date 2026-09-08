@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" width="100%" height="100%">
+  <defs>
+    <!-- Background subtle gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A0E17"/>
+      <stop offset="100%" stop-color="#121824"/>
+    </linearGradient>
+
+    <!-- Icon Neon Bioluminescent Gradient -->
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F2FE"/>
+      <stop offset="50%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Icon Squircle Gradient -->
+    <linearGradient id="squircleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+  </defs>
+
+  <style>
+    .brand-title {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", sans-serif;
+      font-weight: 800;
+      font-size: 82px;
+      letter-spacing: -2px;
+      fill: #FFFFFF;
+    }
+    .brand-title-accent {
+      fill: url(#brandGrad);
+    }
+    .brand-tagline {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", sans-serif;
+      font-weight: 500;
+      font-size: 16px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      fill: #94A3B8;
+    }
+  </style>
+
+  <!-- Canvas Background -->
+  <rect width="800" height="240" rx="24" fill="url(#bgGrad)" />
+
+  <!-- App Icon Squircle Container -->
+  <g transform="translate(48, 36)">
+    <!-- Squircle base -->
+    <rect width="168" height="168" rx="42" fill="url(#squircleGrad)" stroke="#334155" stroke-width="1.5" />
+    
+    <!-- Subtle Inner Border Highlight -->
+    <rect x="2" y="2" width="164" height="164" rx="40" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5" />
+
+    <!-- InForm Segmental Human Symbol -->
+    <g transform="translate(84, 84)" filter="url(#neonGlow)">
+      <!-- Head / Precision Biometric Node -->
+      <circle cx="0" cy="-44" r="11" fill="url(#brandGrad)" />
+      
+      <!-- Torso / Core (Trunk Segment) -->
+      <path d="M -3, -27 C -1, -15 -2, 5 0, 18 C 2, 5 1, -15 3, -27 Z" fill="url(#brandGrad)" stroke="url(#brandGrad)" stroke-width="6" stroke-linejoin="round" />
+
+      <!-- Left Arm Segment -->
+      <path d="M -6, -24 Q -28, -38 -52, -26" fill="none" stroke="url(#brandGrad)" stroke-width="7" stroke-linecap="round" />
+
+      <!-- Right Arm Segment -->
+      <path d="M 6, -24 Q 28, -38 52, -26" fill="none" stroke="url(#brandGrad)" stroke-width="7" stroke-linecap="round" />
+
+      <!-- Left Leg Segment -->
+      <path d="M -4, 18 L -36, 62" fill="none" stroke="url(#brandGrad)" stroke-width="7.5" stroke-linecap="round" />
+
+      <!-- Right Leg Segment (Dynamic / Kinetic stance forming 'F' balance arm) -->
+      <path d="M 4, 16 L 24, 28 L 38, 28" fill="none" stroke="url(#brandGrad)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M 12, 30 L 26, 62" fill="none" stroke="url(#brandGrad)" stroke-width="7" stroke-linecap="round" />
+    </g>
+  </g>
+
+  <!-- Brand Typography Lockup -->
+  <g transform="translate(252, 126)">
+    <text class="brand-title">
+      In<tspan class="brand-title-accent">Form</tspan>
+    </text>
+    <text y="42" class="brand-tagline">
+      Precision Body Scan &amp; AI
+    </text>
+  </g>
+</svg>

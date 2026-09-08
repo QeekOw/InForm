@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="iconBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+
+    <!-- Glowing Bioluminescent Mint-Cyan Gradient -->
+    <linearGradient id="neonCyanEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="35%" stop-color="#00F2FE"/>
+      <stop offset="70%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+
+    <!-- Scanline Laser Gradient -->
+    <linearGradient id="laserGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgba(0, 242, 254, 0)"/>
+      <stop offset="25%" stop-color="rgba(0, 242, 254, 0.4)"/>
+      <stop offset="50%" stop-color="rgba(255, 255, 255, 0.95)"/>
+      <stop offset="75%" stop-color="rgba(16, 185, 129, 0.4)"/>
+      <stop offset="100%" stop-color="rgba(16, 185, 129, 0)"/>
+    </linearGradient>
+
+    <!-- Radial Ambient Aura -->
+    <radialGradient id="centerGlow" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="rgba(16, 185, 129, 0.22)"/>
+      <stop offset="60%" stop-color="rgba(0, 242, 254, 0.08)"/>
+      <stop offset="100%" stop-color="rgba(0, 0, 0, 0)"/>
+    </radialGradient>
+
+    <!-- Glow Filter -->
+    <filter id="strongGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="blur1" />
+      <feGaussianBlur stdDeviation="6" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur1" />
+        <feMergeNode in="blur2" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- iOS App Icon Rounded Squircle (App Store spec radius = 22.5%) -->
+  <rect width="512" height="512" rx="115" fill="url(#iconBg)" stroke="#334155" stroke-width="2"/>
+
+  <!-- Ambient Glow Behind Figure -->
+  <circle cx="256" cy="240" r="180" fill="url(#centerGlow)" />
+
+  <!-- Subtle Precision Grid / Calibration Crosshairs -->
+  <g stroke="rgba(148, 163, 184, 0.12)" stroke-width="1.5" stroke-dasharray="3 3">
+    <circle cx="256" cy="256" r="180" />
+    <circle cx="256" cy="256" r="120" />
+    <line x1="256" y1="64" x2="256" y2="448" />
+    <line x1="64" y1="256" x2="448" y2="256" />
+  </g>
+
+  <!-- Horizontal OCR Scan Beam -->
+  <rect x="76" y="240" width="360" height="2.5" fill="url(#laserGrad)" opacity="0.85" />
+  <circle cx="256" cy="241" r="3" fill="#FFFFFF" filter="url(#strongGlow)" />
+
+  <!-- InForm Core Figure (Segmental Lean & Balance Form) -->
+  <g transform="translate(256, 248)" filter="url(#strongGlow)">
+    <!-- Head / Sensor Node -->
+    <circle cx="0" cy="-105" r="26" fill="url(#neonCyanEmerald)" />
+    
+    <!-- Torso / Trunk Segment (Core Spine) -->
+    <path d="M -7, -65 C -3, -35 -5, 10 0, 42 C 5, 10 3, -35 7, -65 Z" 
+          fill="url(#neonCyanEmerald)" stroke="url(#neonCyanEmerald)" stroke-width="14" stroke-linejoin="round" />
+
+    <!-- Left Arm Segment -->
+    <path d="M -15, -58 Q -65, -92 -125, -62" 
+          fill="none" stroke="url(#neonCyanEmerald)" stroke-width="17" stroke-linecap="round" />
+
+    <!-- Right Arm Segment -->
+    <path d="M 15, -58 Q 65, -92 125, -62" 
+          fill="none" stroke="url(#neonCyanEmerald)" stroke-width="17" stroke-linecap="round" />
+
+    <!-- Left Leg Segment -->
+    <path d="M -9, 44 L -85, 148" 
+          fill="none" stroke="url(#neonCyanEmerald)" stroke-width="18" stroke-linecap="round" />
+
+    <!-- Right Leg Segment (Dynamic / Kinetic balance stroke) -->
+    <path d="M 9, 38 L 56, 68 L 92, 68" 
+          fill="none" stroke="url(#neonCyanEmerald)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M 28, 72 L 62, 148" 
+          fill="none" stroke="url(#neonCyanEmerald)" stroke-width="17" stroke-linecap="round" />
+
+    <!-- Biometric Sensor Nodes on Limbs -->
+    <circle cx="-125" cy="-62" r="7" fill="#FFFFFF" />
+    <circle cx="125" cy="-62" r="7" fill="#FFFFFF" />
+    <circle cx="-85" cy="148" r="7" fill="#FFFFFF" />
+    <circle cx="62" cy="148" r="7" fill="#FFFFFF" />
+  </g>
+
+  <!-- Outer Specular Ring Highlight -->
+  <rect x="3" y="3" width="506" height="506" rx="112" fill="none" stroke="rgba(255, 255, 255, 0.12)" stroke-width="3"/>
+</svg>
