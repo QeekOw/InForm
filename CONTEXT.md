@@ -59,6 +59,27 @@ only — it must never mutate a deterministic number (enforced by validation).
   computed by deterministic code; the LLM only writes prose around them and may never change
   them.
 
+## The application — accounts, scans, plans
+
+Terms for the app that wraps the pipeline. The pipeline computes; the app remembers.
+
+- **Account** — a durable sign-in identity. **One Account, one person**: the person who owns
+  an Account is the person its scans are about. The system cannot verify whose body a sheet
+  describes, so it *assumes* the sheet belongs to the Account holder. *Avoid*: user.
+- **Profile** — the four facts a plan needs about a person: age, biological sex, activity
+  multiplier, fitness goal (`UserProfile`). A Profile describes a body at one moment, **not** a
+  login — it is frozen onto the Scan that used it, so changing your goal never rewrites the
+  meaning of a past plan. *Avoid*: user data, account details.
+- **Scan** — one **immutable** record pairing an InBody sheet with the Profile used to read it
+  and the Daily Plan produced from it, at a fixed point in time. Never edited; scanning again
+  appends a new Scan rather than replacing the old one. *Avoid*: session, entry, reading.
+- **History** — an Account's Scans in reverse-chronological order. The basis for showing change
+  over time, and the reason Scans are immutable.
+- **Current plan** — the Daily Plan of the most recent Scan on an Account.
+- **Stale plan** — a Current plan whose Scan is older than the staleness threshold, after which
+  the app invites a new Scan. A stale plan is still a true record of what was computed then, so
+  it is never hidden, expired, or recomputed.
+
 ## Module 1 (OCR) — the two engines
 
 Module 1 fills one seam: `extract_inbody(image_path) -> InBodyExtraction` (the read values plus
