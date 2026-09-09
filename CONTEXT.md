@@ -79,6 +79,14 @@ Terms for the app that wraps the pipeline. The pipeline computes; the app rememb
 - **Stale plan** — a Current plan whose Scan is older than the staleness threshold, after which
   the app invites a new Scan. A stale plan is still a true record of what was computed then, so
   it is never hidden, expired, or recomputed.
+- **Sample sheet** — an InBody sheet the app provides to be read, rather than one a person
+  uploaded. Some are synthetic, some are real printouts held with the subject's consent; the
+  gallery says which. See [ADR-0011](docs/adr/0011-health-data-at-rest.md).
+- **Measured field** — a value Module 1 read off the sheet.
+- **Corrected field** — a value a person typed after reviewing the extraction: because the
+  engine left it `unread`, because a cross-check `flagged` it, or because they could see it
+  was wrong. Recorded on the Scan **alongside** the measured fields, never merged into them,
+  so History can show which numbers a person supplied. *Avoid*: override, manual entry.
 
 ## Module 1 (OCR) — the two engines
 

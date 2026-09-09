@@ -122,12 +122,14 @@ including its loading and error states where noted.
 
 ### Screen 3 — Provide your scan
 - Purpose: the user gives us an InBody sheet to read.
-- **For now, design this as "choose a sample sheet"**: a small gallery of
-  provided InBody sheets the user picks from, plus a visible (but secondary)
-  "upload your own" affordance. Note for the designer: real-photo upload is a
-  planned later feature that is not confirmed yet, so please make the sample
-  picker the primary path and leave room for an upload button we may enable
-  later.
+- **The sample picker is the primary path.** A gallery of InBody sheets we
+  provide. Some are synthetic and some are real printouts we have permission to
+  use, and the gallery should **say which is which** — that honesty is part of
+  the same trust story as everything else here.
+- **"Upload your own" is now confirmed**, not speculative, but it ships after the
+  sample path. Design it as a real secondary action rather than a placeholder.
+  Uploading needs a short, plain-language line saying this is a student project
+  and that we keep the numbers but not the photo.
 - Content: a few selectable sheet thumbnails, a short line telling the user what
   an InBody sheet looks like, and the primary "Read this sheet" action.
 
@@ -136,7 +138,11 @@ including its loading and error states where noted.
 - Two parts:
   - **A "reading" / in-progress state.** The scan is being read. This is where a
     scan-line animation or progressive reveal fits. It should feel like the
-    machine is genuinely working through the sheet.
+    machine is genuinely working through the sheet. **The wait is real and it is
+    long — around 45 seconds** on an uploaded photo, because the model genuinely
+    runs. Design something that holds attention for that long and shows progress
+    honestly; a spinner will feel broken. (Sample sheets answer instantly, so this
+    state matters most for uploads.)
   - **The extraction result.** Show the sheet next to the numbers we pulled out
     of it, so the connection is obvious. Please design how a single extracted
     value looks (label, value, unit) and how the set reads as a group.
@@ -154,6 +160,21 @@ including its loading and error states where noted.
   - **Flagged / unread field:** sometimes a value can't be read confidently.
     Please design how one field looks when it is uncertain or missing, distinct
     from a clean read. This honesty about confidence is part of the trust story.
+  - **Whole-sheet refusal:** sometimes nothing readable comes back at all. This is
+    common enough to matter — on real photographed sheets it happens about half
+    the time today. It is not an error state and must not look like a crash: the
+    system declined to guess, which is the product working as designed.
+
+- **This screen is where the person corrects the read.** Every extracted value is
+  editable here, sitting next to the sheet it came from. Fields the machine could
+  not read, or flagged as suspect, **must** be filled in before continuing;
+  everything else can be edited if the person can see it is wrong. Please design:
+  - the editable value (its resting, focused, and edited-by-a-person states),
+  - the required-before-continuing treatment for unread and flagged fields,
+  - and an out-of-range warning, since someone will type 900 kg.
+
+  A value a person typed is a **corrected field**, and it stays visibly distinct
+  from a value the machine read, here and everywhere it appears later.
 
 ### Screen 5 — Your numbers (computed targets)
 - Purpose: show what the code computed from the scan. All hard numbers.
@@ -200,6 +221,11 @@ including its loading and error states where noted.
 - **States to design:** the empty case (a brand-new account with no scans yet —
   this is the first thing most visitors will see, so it matters), one scan, and
   many scans.
+- **Corrected values stay visible here.** If a scan contains fields a person
+  typed rather than the machine reading them, the history row should show it —
+  a small badge or count is enough. A trend line resting partly on typed numbers
+  has to look different from one read entirely off the sheets, otherwise the
+  history implies more certainty than it has.
 - **Stretch:** a single small trend line (percent body fat over time) above the
   list. Design it, but assume it may ship later than the list.
 
@@ -230,6 +256,8 @@ including its loading and error states where noted.
 - Sample-sheet thumbnail / picker
 - Scan-reading animation and the extracted-value card
 - Flagged/uncertain value treatment
+- Editable extracted value, and the "a person typed this" treatment
+- Whole-sheet refusal state (calm, not an error)
 - Imbalance line item
 - Exercise row with type tag
 - Prose / narrative block (the AI voice)
@@ -243,8 +271,6 @@ including its loading and error states where noted.
 - Settings screens, sharing, export
 - Payment or subscription
 - Onboarding tours beyond the simple intro
-- Real-photo camera upload as a confirmed feature (leave a placeholder button
-  only, per screen 3)
 
 ## 9. Open questions for the designer
 
