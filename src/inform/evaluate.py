@@ -17,11 +17,17 @@ from inform.inbody import (
 # training package; tests/test_evaluate.py asserts the two never drift.
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
-# ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
-# Public because inform.holdout scores the real hand-labelled set against the
-# same tolerance -- ADR-0006's synthetic-vs-real gap is only meaningful if
-# "correct" means one thing.
+# ponytail: fixed tolerances, not learned. Public because inform.holdout scores
+# the real hand-labelled set by the same rules -- ADR-0006's synthetic-vs-real
+# gap is only meaningful if "correct" means one thing.
 FIELD_TOLERANCE = 0.1
+
+# Segmental limbs need a relative bound as well (ADR-0006, amended). +/-0.1 kg
+# is 0.1% of an 85 kg weight but 2.9% of a 3.5 kg arm, and exercise_filter
+# fires on a bilateral asymmetry above 5%: a limb read that passes a 2.9% check
+# can still fabricate the imbalance the user is shown. At 1% per limb the
+# induced asymmetry error stays near 2 points, well inside the 5-point trigger.
+SEGMENTAL_RELATIVE_TOLERANCE = 0.01
 
 # Field names come from the schema (inform.inbody); only their *match semantics*
 # are an eval concern: categorical fields compare by equality, numeric ones by
@@ -118,7 +124,7 @@ def evaluate(
                 None if predicted.segmental_lean is None
                 else getattr(predicted.segmental_lean, field)
             )
-            match = numeric_matches(predicted_value, getattr(expected.segmental_lean, field))
+            match = segmental_matches(predicted_value, getattr(expected.segmental_lean, field))
             field_matches[f"segmental_lean.{field}"].append(match)
             sheet_matches.append(match)
 
@@ -133,6 +139,21 @@ def evaluate(
         critical_field_accuracy={field: per_field_accuracy[field] for field in _CRITICAL_FIELDS},
         whole_sheet_accuracy=_match_rate(whole_sheet_matches),
     )
+
+
+def segmental_matches(predicted: float | None, expected: float | None) -> bool:
+    """Correct within *both* the absolute and the relative bound (ADR-0006).
+
+    A limb spans an order of magnitude on one sheet -- a 3.5 kg arm beside a
+    28 kg trunk -- so a single absolute tolerance is either useless on the arm
+    or unreachable on the trunk. Requiring both means whichever is tighter at
+    that magnitude binds. See SEGMENTAL_RELATIVE_TOLERANCE.
+    """
+    if not numeric_matches(predicted, expected):
+        return False
+    if expected is None or predicted is None or expected == 0:
+        return True  # absence, and the degenerate case, settled by the line above
+    return abs(predicted - expected) / abs(expected) <= SEGMENTAL_RELATIVE_TOLERANCE
 
 
 def numeric_matches(predicted: float | int | None, expected: float | int | None) -> bool:

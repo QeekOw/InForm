@@ -182,3 +182,21 @@ def test_replay_engine_reads_a_recorded_run_by_name_or_stem(tmp_path):
     assert engine(Path("a/sheet_05.png")).weight_kg == 85.5
     with pytest.raises(KeyError, match="sheet_99.png"):
         engine(Path("sheet_99.png"))
+
+
+def test_the_real_holdout_scores_limbs_by_the_relative_bound_too():
+    # sheet_06's printed left arm is 3.59 kg and donut-both-v3 read 3.5: 0.09 kg
+    # out, inside the absolute tolerance, 2.5% out. The dropped second decimal
+    # on an arm is what clears exercise_filter's 5% asymmetry trigger, so the
+    # real hold-out has to see it as a miss, exactly as the synthetic set does.
+    dropped_decimal = _LABEL.model_copy(deep=True)
+    dropped_decimal.segmental_lean.left_arm_kg = 3.5
+    label = _LABEL.model_copy(deep=True)
+    label.segmental_lean.left_arm_kg = 3.59
+
+    report = score(_reading(dropped_decimal), [(_IMAGE, label)])
+
+    assert report.per_field["segmental_lean.left_arm_kg"].matched == 0
+    assert report.per_field["segmental_lean.left_arm_kg"].labelled == 1
+    assert report.segmental.matched == 4 and report.segmental.labelled == 5
+    assert report.core.matched == 6  # scalars untouched by the limb rule

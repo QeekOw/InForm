@@ -390,7 +390,25 @@ Segmental Fat panel, taking that panel's left column as the lean panel's right c
 This is a page-layout failure, not a glyph-recognition one, and it supports the geometry
 diagnosis below more directly than the Fat Free Mass errors do.
 
-Scored against the hand labels: **core fields 33/36, segmental lean 22/30.**
+Scored against the hand labels: **core fields 33/36, segmental lean 23/30.**
+
+Both figures now come from a committed scorer rather than a hand count, and are
+reproducible without a GPU or the checkpoint:
+
+```
+python -m inform.holdout --data-dir data/real_holdout \
+    --labels data/real_holdout/labels.json \
+    --reads data/real_holdout/donut-both-v3-reads.json
+```
+
+Two notes on the numbers. The segmental figure was first hand-counted as 22/30; the scorer
+puts it at 23/30 under ADR-0006's amended rule (25/30 if the 1% limb bound is dropped,
+19/30 on exact equality). The hand count could not be reproduced under any of the three
+rules, so the scorer's figure stands. And `source_device` is deliberately unlabelled: every
+sheet is a real 270, but nobody read that off the page, and inventing the label would
+change the 33/36 denominator.
+
+The 1% limb bound exists because of the row below. See ADR-0006's 2026-09-09 amendment.
 
 ### The segmental errors reach the user as a fabricated imbalance
 

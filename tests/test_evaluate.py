@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from inform.errors import NotAnInBodySheetError
-from inform.evaluate import IMAGE_SUFFIXES, evaluate, load_labeled_set
+from inform.evaluate import IMAGE_SUFFIXES, evaluate, load_labeled_set, segmental_matches
 from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody, SegmentalLean
 
 _TRUTH = InBodyPayload(
@@ -182,3 +182,33 @@ def test_load_labeled_set_reads_jpeg_and_png_alike(tmp_path):
 
     assert [p.name for p, _ in pairs] == ["sheet_01.jpg", "sheet_02.png"]
     assert all(expected == _TRUTH for _, expected in pairs)
+
+
+def test_segmental_match_needs_both_the_absolute_and_the_relative_bound():
+    # Values are printed/read pairs off the real 270 hold-out, not recomputed
+    # here. A limb spans an order of magnitude on one sheet, so one absolute
+    # tolerance is either useless on an arm or unreachable on a trunk:
+    #   arm   3.59 read as 3.5   -> 0.09 kg, within +/-0.1, but 2.5% off
+    #   arm   3.53 read as 3.5   -> 0.03 kg, 0.85% off
+    #   trunk 28.2 read as 28.1  -> 0.10 kg, 0.35% off
+    #   trunk 28.2 read as 27.9  -> 0.30 kg, over the absolute bound
+    assert segmental_matches(3.5, 3.53) is True
+    assert segmental_matches(3.5, 3.59) is False  # relative bound binds
+    assert segmental_matches(28.1, 28.2) is True
+    assert segmental_matches(27.9, 28.2) is False  # absolute bound binds
+
+
+def test_evaluate_scores_segmental_limbs_by_the_relative_bound_too():
+    # Truth's right arm is 3.3 kg. Read as 3.38 that is 0.08 kg out, inside the
+    # +/-0.1 absolute tolerance, but 2.42% out -- over the 1% limb bound, so it
+    # is a miss. The rest of the sheet is still credited.
+    near_miss = _TRUTH.model_copy(
+        update={"segmental_lean": _TRUTH.segmental_lean.model_copy(update={"right_arm_kg": 3.38})}
+    )
+
+    report = evaluate(_returning(near_miss), [(_IMAGE, _TRUTH)])
+
+    assert report.per_field_accuracy["segmental_lean.right_arm_kg"] == 0.0
+    assert report.per_field_accuracy["segmental_lean.left_arm_kg"] == 1.0
+    assert report.per_field_accuracy["weight_kg"] == 1.0
+    assert report.whole_sheet_accuracy == 0.0

@@ -17,9 +17,9 @@ ways that make it a sibling scorer rather than a flag on `evaluate()`:
   real-photo number that is free.
 
 Match semantics are imported from `inform.evaluate`, so "correct" means the same
-thing here as on the synthetic set: exact within +/-0.1 unit, equality for
-categorical fields. Comparability between the two is the whole point of the
-protocol.
+thing here as on the synthetic set: within +/-0.1 unit, plus a 1% relative bound
+on segmental limbs, and equality for categorical fields. Comparability between
+the two sources is the whole point of the protocol.
 
     python -m inform.holdout --data-dir data/real_holdout \\
         --labels data/real_holdout/labels.json --donut-checkpoint <ckpt>
@@ -48,7 +48,12 @@ from typing import Callable
 from pydantic import BaseModel
 
 from inform.errors import InBodyExtractionError
-from inform.evaluate import CATEGORICAL_FIELDS, IMAGE_SUFFIXES, numeric_matches
+from inform.evaluate import (
+    CATEGORICAL_FIELDS,
+    IMAGE_SUFFIXES,
+    numeric_matches,
+    segmental_matches,
+)
 from inform.inbody import (
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
@@ -200,6 +205,8 @@ def _matches(field: str, predicted, expected) -> bool:
         return False  # unread against a known value is a miss, not a pass
     if field in CATEGORICAL_FIELDS:
         return predicted == expected
+    if field in _SEGMENTAL_DOTTED:
+        return segmental_matches(predicted, expected)
     return numeric_matches(predicted, expected)
 
 
