@@ -34,3 +34,10 @@ graphify-out/
 
 # Trained model checkpoints (809 MB Donut weights) — loaded by local path, never committed (ADR-0010)
 models/
+
+# Real InBody sheets and anything derived from them (hand-written labels
+# included). These are one consenting subject's health data and carry a member
+# ID and a gym name; ADR-0011 keeps health data out of the repo. The eval doc
+# already describes data/real_holdout/ as uncommitted -- this is what makes
+# that true.
+data/

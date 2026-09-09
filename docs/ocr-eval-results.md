@@ -10,7 +10,8 @@ real printouts, photographed.
 > sheets and are the oldest numbers here. For where the engine actually stands, read
 > [Modern-layout real 270 hold-out, n=12](#modern-layout-real-270-hold-out-n12-2026-09-08):
 > on twelve genuine phone-photographed 270s, **3 read cleanly, 6 refused, 3 were caught by
-> a cross-check**. The **270** path is the only one measured against real photos; the
+> a cross-check** -- and hand-labelling since showed that **only 1 of those 3 clean reads is
+> actually correct**; the other two silently invent a muscle imbalance. The **270** path is the only one measured against real photos; the
 > **570** path is validated on synthetic sheets and a print-and-rephotograph round-trip
 > only, and has never been read from a genuine modern 570 printout.
 
@@ -311,9 +312,10 @@ non-refused sheets, twice emitting *the same* wrong value:
 | sheet_10 | 30.0 | 62.7 |
 | sheet_08 | 67.0 | 62.3 |
 
-30.0 twice is a lead, not noise. BMI on these sheets sits around 28-30, and BMI is a bold
-left-column figure while Fat Free Mass is small print in the right-hand Research Parameters
-block. **Hypothesis (untested): the model is reading BMI.** Worth checking directly, since
+30.0 twice is a lead, not noise. This section originally proposed that the model was
+reading BMI, which sits nearby as a bold left-column figure while Fat Free Mass is small
+print in the right-hand Research Parameters block. **That hypothesis was tested against the
+printouts and refuted** -- see "Hand-labelled" below. It matters which value is wrong, since
 ADR-0003 makes LBM authoritative for BMR, TDEE and every macro target downstream.
 
 ### Root cause: the synthetic sheets are the wrong shape
@@ -352,6 +354,77 @@ Independent of any real photo: `donut-both-v3` scores **48% on its own held-out 
 270 distribution**. It is weak on the data it was trained for, before domain shift is
 considered. The shipped checkpoint was trained for **1 epoch**, against `train.py`'s own
 default of 3.
+
+### Hand-labelled: the BMI hypothesis is refuted, and one "usable" read is wrong (2026-09-09)
+
+The six non-refused sheets were hand-read off the printouts. This is the per-field
+ground truth the section above said did not exist. It changes two conclusions.
+
+**BMI is not the source of the 30.0 reads.** Printed BMI on the three failing sheets is
+28.7, 27.8 and 28.0 — never 30.0, and never the value emitted:
+
+| Sheet | LBM read | BMI printed | Fat Free Mass printed |
+|---|---|---|---|
+| sheet_06 | 30.0 | 28.7 | 62.5 |
+| sheet_10 | 30.0 | 27.8 | 62.8 |
+| sheet_08 | 67.0 | 28.0 | 62.3 |
+
+Both sheets that emit 30.0 do carry a literal `30.0` in the Body Composition History PBF
+row, which is a plausible source for the token. It is not an explanation of *when* the
+failure fires: the same row also appears, containing 30.0, on sheets that read Fat Free
+Mass correctly. `67.0` appears nowhere on sheet_08 at all. **The designer task that was
+going to compare the BMI and Fat Free Mass positions visually is no longer worth doing.**
+
+**The model reads across a panel boundary.** Sheet_05 was scored *usable* — every
+cross-checked field on it is correct — and its segmental lean is wrong on two limbs:
+
+```
+printed  Segmental Lean:  LA 3.63  RA 3.68  trunk 28.2  LL 9.59  RL 9.59
+printed  Segmental Fat:   LA 1.4   RA 1.3   trunk 12.2  LL 3.1   RL 3.2
+read                      LA 3.63  RA 1.4   trunk 28.2  LL 9.59  RL 3.1
+```
+
+`1.4` and `3.1` are the printed left-arm and left-leg **fat** figures. The model reads the
+left column of the Segmental Lean panel and then continues rightward into the adjacent
+Segmental Fat panel, taking that panel's left column as the lean panel's right column.
+This is a page-layout failure, not a glyph-recognition one, and it supports the geometry
+diagnosis below more directly than the Fat Free Mass errors do.
+
+Scored against the hand labels: **core fields 33/36, segmental lean 22/30.**
+
+### The segmental errors reach the user as a fabricated imbalance
+
+`exercise_filter.py` triggers on a bilateral asymmetry above 5% and
+`synthesis/generate.py` then has the model name the limb that needs attention. Recomputing
+that trigger from the labels against the reads:
+
+| Sheet | Outcome | Arm asymmetry truth → read | Leg asymmetry truth → read | Verdict flips |
+|---|---|---|---|---|
+| sheet_02 | usable | 0.85% → **5.41%** | 0.42% → 0.42% | **yes** |
+| sheet_05 | usable | 1.36% → **61.43%** | 0.00% → **67.67%** | **yes** |
+| sheet_07 | usable | 1.37% → 0.00% | 0.42% → 0.42% | no |
+| sheet_06 | flagged | 1.67% → 5.71% | 0.40% → 0.40% | (never reaches a plan) |
+| sheet_08 | flagged | 1.57% → 1.57% | 0.22% → 0.22% | no |
+| sheet_10 | flagged | 1.90% → 1.90% | 1.35% → 1.35% | no |
+
+**Two of the three sheets that produce a plan produce a plan asserting a muscle imbalance
+the subject does not have**, one of them a 61% arm deficit in a person whose arms differ by
+1.4%. The honest headline for this hold-out is not "3 usable out of 12" but **3 reach a
+plan and 1 of those is correct**.
+
+Sheet_02 shows how little error it takes. Printed arms are 3.53 and 3.50 — a 0.03 kg
+difference. Read as 3.5 and 3.7, that clears the 5% threshold. Arm values lose their second
+decimal consistently across the set (3.5, 3.6, 3.7) while leg values keep it (9.40, 9.42,
+9.44, 9.46), and a 5% threshold on ~3.5 kg figures has no tolerance for a dropped decimal.
+
+**Two consequences for the work queue.** For Track A, the designer's layout spec should
+additionally pin the *horizontal* gap and alignment between the Segmental Lean and
+Segmental Fat panels, and the decimal precision of the arm figures. For the application,
+`recommend_exercises` currently states an imbalance with the same confidence whether the
+limb pair differs by 0.9% or 61%, on the two fields that have no cross-check behind them —
+that is a product-safety question independent of OCR quality.
+
+Labels are real health data and are not committed, as with the sheets themselves.
 
 ### Caveats
 
