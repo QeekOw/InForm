@@ -18,15 +18,18 @@ from inform.inbody import (
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
-_FIELD_TOLERANCE = 0.1
+# Public because inform.holdout scores the real hand-labelled set against the
+# same tolerance -- ADR-0006's synthetic-vs-real gap is only meaningful if
+# "correct" means one thing.
+FIELD_TOLERANCE = 0.1
 
 # Field names come from the schema (inform.inbody); only their *match semantics*
 # are an eval concern: categorical fields compare by equality, numeric ones by
 # tolerance. Optional fields (per ADR-0004/0009, absent only on some configs)
 # are reported per-field but excluded from whole_sheet_accuracy, which gates on required
 # fields only (ADR-0006: "% of sheets with every required field correct").
-_CATEGORICAL_FIELDS = ("source_device",)
-_REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in _CATEGORICAL_FIELDS)
+CATEGORICAL_FIELDS = ("source_device",)
+_REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in CATEGORICAL_FIELDS)
 _OPTIONAL_NUMERIC_FIELDS = OPTIONAL_FIELDS
 _SEGMENTAL_FIELDS = SEGMENTAL_FIELDS
 _CRITICAL_FIELDS = ("lean_body_mass_kg",) + tuple(f"segmental_lean.{f}" for f in _SEGMENTAL_FIELDS)
@@ -69,7 +72,7 @@ def evaluate(
     correct AND no cross-check flags. `labeled_set` is homogeneous — call once
     per ground-truth source (synthetic, real hold-out) and report separately.
     """
-    all_fields = _REQUIRED_NUMERIC_FIELDS + _OPTIONAL_NUMERIC_FIELDS + _CATEGORICAL_FIELDS
+    all_fields = _REQUIRED_NUMERIC_FIELDS + _OPTIONAL_NUMERIC_FIELDS + CATEGORICAL_FIELDS
     field_matches: dict[str, list[bool]] = {field: [] for field in all_fields}
     for field in _SEGMENTAL_FIELDS:
         field_matches[f"segmental_lean.{field}"] = []
@@ -84,10 +87,10 @@ def evaluate(
             # segmental field scores wrong. The OPTIONAL visceral field is
             # scored against truth the same way as on the success path: a reject
             # on a 270 (truth None) is not a visceral miss (ADR-0004; matches
-            # _numeric_matches(None, None)).
+            # numeric_matches(None, None)).
             for field in field_matches:
                 if field in _OPTIONAL_NUMERIC_FIELDS:
-                    field_matches[field].append(_numeric_matches(None, getattr(expected, field)))
+                    field_matches[field].append(numeric_matches(None, getattr(expected, field)))
                 else:
                     field_matches[field].append(False)
             whole_sheet_matches.append(False)
@@ -97,15 +100,15 @@ def evaluate(
         sheet_matches: list[bool] = []
 
         for field in _REQUIRED_NUMERIC_FIELDS:
-            match = _numeric_matches(getattr(predicted, field), getattr(expected, field))
+            match = numeric_matches(getattr(predicted, field), getattr(expected, field))
             field_matches[field].append(match)
             sheet_matches.append(match)
 
         for field in _OPTIONAL_NUMERIC_FIELDS:
-            match = _numeric_matches(getattr(predicted, field), getattr(expected, field))
+            match = numeric_matches(getattr(predicted, field), getattr(expected, field))
             field_matches[field].append(match)
 
-        for field in _CATEGORICAL_FIELDS:
+        for field in CATEGORICAL_FIELDS:
             match = getattr(predicted, field) == getattr(expected, field)
             field_matches[field].append(match)
             sheet_matches.append(match)
@@ -115,7 +118,7 @@ def evaluate(
                 None if predicted.segmental_lean is None
                 else getattr(predicted.segmental_lean, field)
             )
-            match = _numeric_matches(predicted_value, getattr(expected.segmental_lean, field))
+            match = numeric_matches(predicted_value, getattr(expected.segmental_lean, field))
             field_matches[f"segmental_lean.{field}"].append(match)
             sheet_matches.append(match)
 
@@ -132,10 +135,15 @@ def evaluate(
     )
 
 
-def _numeric_matches(predicted: float | int | None, expected: float | int | None) -> bool:
+def numeric_matches(predicted: float | int | None, expected: float | int | None) -> bool:
+    """Exact within tolerance (ADR-0006). Note the None semantics: here a None
+    expectation means the field is legitimately absent on this device
+    (ADR-0004), so an unread None *matches* it. inform.holdout, where a None
+    label instead means nobody hand-read the field, filters those out before
+    calling this."""
     if expected is None or predicted is None:
         return predicted == expected
-    return abs(predicted - expected) <= _FIELD_TOLERANCE
+    return abs(predicted - expected) <= FIELD_TOLERANCE
 
 
 def _match_rate(matches: list[bool]) -> float:
