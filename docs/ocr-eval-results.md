@@ -2,8 +2,17 @@
 
 Results for issue #8: the fine-tuned Donut engine scored against the VLM
 baseline through the shared `extract_inbody` seam, using `inform.compare` and the
-`evaluate()` harness (ADR-0006). All numbers below are on **held-out synthetic
-InBody sheets** (seeds ≥ 5000, never seen in training).
+`evaluate()` harness (ADR-0006). The Headline and ablation tables are on **held-out
+synthetic InBody sheets** (seeds ≥ 5000, never seen in training); later sections add
+real printouts, photographed.
+
+> **Current status (2026-09-08).** The tables in this section are *held-out synthetic*
+> sheets and are the oldest numbers here. For where the engine actually stands, read
+> [Modern-layout real 270 hold-out, n=12](#modern-layout-real-270-hold-out-n12-2026-09-08):
+> on twelve genuine phone-photographed 270s, **3 read cleanly, 6 refused, 3 were caught by
+> a cross-check**. The **270** path is the only one measured against real photos; the
+> **570** path is validated on synthetic sheets and a print-and-rephotograph round-trip
+> only, and has never been read from a genuine modern 570 printout.
 
 ## Headline
 
@@ -248,6 +257,129 @@ those layouts added to the synthetic generator, or genuine **modern**-layout she
 transfer on the design we actually trained. Samples saved under `data/real_holdout/` (never
 committed — real health data).
 
+## Modern-layout real 270 hold-out, n=12 (2026-09-08)
+
+The "larger real-photo hold-out" listed under Future Work, delivered. **Twelve genuine
+InBody 270 printouts**, phone-photographed, scored on `donut-both-v3`. These are the
+*modern* layout — the one the generator clones and the model trains on — so this is the
+first measurement of the case the earlier n=1 anecdote covered.
+
+| Outcome | Sheets | |
+|---|---|---|
+| **Usable** — clean read, `as_payload()` returns a payload | **3** | 25% |
+| **Refused** — empty read, nothing extracted | **6** | 50% |
+| **Flagged** — read, but a cross-check caught it | **3** | 25% |
+
+**One real sheet in four produces a plan.** The earlier `inbody_real_01` result (100% on
+all health fields) was a favourable draw from this distribution, not a representative
+one — it should not be read as the expected real-world accuracy, and the Headline table
+above describes held-out *synthetic* sheets only.
+
+### The cross-checks earned their keep
+
+Every flagged sheet was caught by ADR-0003's LBM cross-check, on real data, for the first
+time. Example (sheet 06):
+
+```
+printed Fat Free Mass          62.5 kg
+donut-both-v3 read             30.0 kg
+weight x (1 - PBF/100)         84.8 x 0.737 = 62.5
+flagged: weight_kg, percent_body_fat, lean_body_mass_kg, basal_metabolic_rate_kcal
+```
+
+Both guards fired independently — the LBM identity, and Katch-McArdle recomputing 1018 kcal
+against a printed 1721. `is_complete()` returned False, `as_payload()` returned None, and the
+pipeline raised rather than computing a plan from a 32 kg error.
+
+**What this does not establish.** The cross-checks cover LBM and BMR only. An error in SMM,
+visceral fat level, or a single segmental lean has nothing to contradict it and would pass
+through a "usable" read unnoticed. The three usable sheets are **unverified** — no
+ground-truth labels exist for this set yet. Hand-checking sheet 06 against the printout did
+turn up an uncaught `right_arm_kg` error (3.3 read against 3.53 printed) that the cross-checks
+had no way to see; that sheet was flagged for other reasons, so it never reached a plan, but
+it shows the gap is real. The honest claim is **no usable read was contradicted by the checks
+that exist**, not that none is wrong.
+
+### Fat Free Mass is the failing field
+
+Weight, PBF, SMM, BMR and visceral fat read well; LBM was wrong on three of the six
+non-refused sheets, twice emitting *the same* wrong value:
+
+| Sheet | LBM read | weight x (1 - PBF/100) |
+|---|---|---|
+| sheet_06 | 30.0 | 62.5 |
+| sheet_10 | 30.0 | 62.7 |
+| sheet_08 | 67.0 | 62.3 |
+
+30.0 twice is a lead, not noise. BMI on these sheets sits around 28-30, and BMI is a bold
+left-column figure while Fat Free Mass is small print in the right-hand Research Parameters
+block. **Hypothesis (untested): the model is reading BMI.** Worth checking directly, since
+ADR-0003 makes LBM authoritative for BMR, TDEE and every macro target downstream.
+
+### Root cause: the synthetic sheets are the wrong shape
+
+Not a capture problem — image statistics are indistinguishable across outcomes:
+
+```
+usable    brightness 123.7  contrast 51.8  edge-energy 35.5
+flagged   brightness 123.6  contrast 51.7  edge-energy 33.0
+REFUSED   brightness 124.6  contrast 51.5  edge-energy 34.9
+```
+
+The mismatch is geometric, and measurable:
+
+| | Aspect | Pixel width |
+|---|---|---|
+| Synthetic training sheet (mean of 12 seeds) | **0.949** | 941-1251 |
+| Real A4 InBody printout | 0.707 | — |
+| Real phone photo (rotated upright) | 0.563 | 2296 |
+| Donut canvas | 0.750 | 1920 |
+
+Two consequences. The sheet is **nearly square** where a real printout is A4 portrait, traced
+to `synthetic/templates/inbody_270.html` — `.sheet { width: 1000px }` with content ending at
+993px. And the **resize runs in opposite directions**: synthetic sheets were upscaled ~2x onto
+the canvas while real photos are downscaled onto it, so the model learned soft interpolated
+text and meets sharp text at inference. Small print in a narrow column is what degrades first
+under both, which matches Fat Free Mass being the field that fails.
+
+This refines #24's "the gap is layout-bound" conclusion: for *modern*-layout sheets the
+binding constraint is page geometry and effective text scale, both of which are template
+bugs rather than missing training data.
+
+### The model is also undertrained
+
+Independent of any real photo: `donut-both-v3` scores **48% on its own held-out synthetic
+270 distribution**. It is weak on the data it was trained for, before domain shift is
+considered. The shipped checkpoint was trained for **1 epoch**, against `train.py`'s own
+default of 3.
+
+### Caveats
+
+One subject, one gym, one printer, photographed in a single session, so this measures
+capture and layout robustness on one sheet design — not accuracy across people or devices.
+Every photo was shot sideways and **normalized to upright before scoring**; grading as-shot
+would be worse and would be the honest number for a raw upload path that does not auto-rotate.
+Outcome distribution only — no per-field accuracy until the set is hand-labeled.
+
+### Reproduction
+
+```bash
+# outcome split (no ground-truth labels needed)
+python -m inform.compare --data-dir <real-sheet-dir> --donut-checkpoint models/donut-both-v3 --skip-vlm
+```
+
+Sheets are real health data and are **not committed** (`data/real_holdout/`, as with #24).
+
+### Numbers above predate the generator fix
+
+Following this run the generator was changed: sheets now render at 2.5x device scale
+(941 -> 2350 px) and are written as JPEG rather than PNG, and `train.py` defaults moved to 5
+epochs with every epoch's checkpoint retained. **The template aspect is still unfixed** —
+`scripts/check_sheet_geometry.py` reports 0.936 (270) and 0.885 (570) against a 0.707 target.
+Every number in this section belongs to the pre-fix generator and `donut-both-v3`; re-run
+after the template is corrected and the model retrained, and compare against the 3/6/3 split
+as the baseline.
+
 ## Future Work
 
 - **Real *metric* 570 photo.** The adult 570 clone + both-device retrain is done
@@ -257,8 +389,13 @@ committed — real health data).
 - **Device-label robustness on real photos.** The both-device model reads real 270
   health fields perfectly but misclassifies `source_device` on the out-of-distribution
   photo. Worth a real-photo-aware fix (more real captures, or device-agnostic scoring).
-- **Larger real-photo hold-out.** A hand-labeled set of real InBody 270/570
-  photos (>1) to turn the anecdote above into a measured synthetic→real gap for
-  both engines.
+- **Template geometry (highest value).** Both templates render near-square
+  (0.936 / 0.885) where a real printout is A4 (0.707). Fix, regenerate, retrain
+  from `donut-base`, and score against the n=12 baseline above.
+- **Hand-label the n=12 real hold-out.** The outcome split is measured; per-field
+  accuracy is not, and the cross-checks cannot see errors in SMM, visceral fat or
+  segmental lean.
+- **Test the BMI hypothesis** for the Fat Free Mass misread — possibly a separate
+  fix from geometry, and cheap to check.
 - **Beam-search decoding** for Donut — may recover some refusals with no
   retrain; untested.
