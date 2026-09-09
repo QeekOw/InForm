@@ -17,12 +17,11 @@
   .idrow .cell:last-child { border-right: none; }
   .idrow .k { color: #555; font-size: 10px; display: block; }
   .idrow .v { font-weight: 700; }
-  /* PROVISIONAL gutter, same reasoning as the 270's .segwrap gap: on this
-     sheet Segmental Lean (left column) sits directly opposite Segmental Fat
-     (right column), the adjacency the model crossed on the real hold-out
-     (docs/ocr-eval-results.md, sheet_05). Widened from 20px. Not measured off
-     a real printout; see docs/design/ui-brief-revision-1.md section 5 on the
-     docs/track-b-spec branch. */
+  /* ponytail: PROVISIONAL gutter, same reasoning as the 270's .segwrap gap.
+     On this sheet Segmental Lean (left column) sits directly opposite
+     Segmental Fat (right column), the adjacency the model crossed on the real
+     hold-out (docs/ocr-eval-results.md, "Hand-labelled", sheet_05). Widened
+     from 20px, not measured off a real printout. */
   .cols { display: flex; gap: 30px; margin-top: 18px; }
   .left { width: 600px; } .right { width: 350px; }
   .sec { margin-top: 16px; }

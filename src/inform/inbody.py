@@ -97,11 +97,15 @@ class InBodyExtraction(BaseModel):
         return InBodyPayload.model_validate(self.data.model_dump())
 
 
-# Every required field named for the partial-extraction seam and eval harness;
-# segmental limbs are dotted to match the per-field accuracy convention.
-REQUIRED_DOTTED_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + tuple(
+# The segmental limbs under their dotted per-field-accuracy names. Defined once
+# here, beside the schema they are derived from, because the seam and both eval
+# scorers all need them and three copies of the f-string drift.
+SEGMENTAL_DOTTED_FIELDS: tuple[str, ...] = tuple(
     f"segmental_lean.{f}" for f in SEGMENTAL_FIELDS
 )
+
+# Every required field named for the partial-extraction seam and eval harness.
+REQUIRED_DOTTED_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + SEGMENTAL_DOTTED_FIELDS
 
 
 def partial_field_value(data: PartialInBody, dotted: str) -> float | int | str | None:

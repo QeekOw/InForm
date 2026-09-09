@@ -43,13 +43,14 @@ ignored:
 import argparse
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from pydantic import BaseModel
 
 from inform.errors import InBodyExtractionError
 from inform.evaluate import (
     CATEGORICAL_FIELDS,
+    CRITICAL_FIELDS,
     IMAGE_SUFFIXES,
     numeric_matches,
     segmental_matches,
@@ -57,7 +58,7 @@ from inform.evaluate import (
 from inform.inbody import (
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
-    SEGMENTAL_FIELDS,
+    SEGMENTAL_DOTTED_FIELDS,
     InBodyExtraction,
     PartialInBody,
     partial_field_value,
@@ -66,8 +67,7 @@ from inform.inbody import (
 # Every field a hand label may carry. Required and optional scalars plus the
 # dotted segmental limbs, in schema declaration order, so adding a field to
 # InBodyPayload flows here without hand-editing (as in inform.evaluate).
-_SEGMENTAL_DOTTED = tuple(f"segmental_lean.{f}" for f in SEGMENTAL_FIELDS)
-SCORED_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS + _SEGMENTAL_DOTTED
+SCORED_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS + SEGMENTAL_DOTTED_FIELDS
 
 # The buckets a real sheet's read falls into, in order of decreasing usefulness.
 # `unread` is an incomplete read that no cross-check objected to; `flagged`
@@ -78,27 +78,46 @@ Holdout = list[tuple[Path, PartialInBody | None]]
 
 
 class Score(BaseModel):
-    """Matches over labelled opportunities. `labelled` is the denominator, so a
-    field nobody hand-read reads 0/0 rather than 0%."""
+    """Matches over labelled opportunities.
+
+    `labelled` is the denominator, so a field nobody hand-read is 0/0 and its
+    accuracy is None, not 0.0. Unknown has to be distinguishable from wrong: a
+    caller averaging per-field accuracy would otherwise pull the mean down with
+    fields that were never read, which is the error the partial-truth
+    denominator exists to prevent.
+    """
 
     matched: int
     labelled: int
 
     @property
-    def accuracy(self) -> float:
-        return self.matched / self.labelled if self.labelled else 0.0
+    def accuracy(self) -> float | None:
+        return self.matched / self.labelled if self.labelled else None
 
     def __str__(self) -> str:
         return f"{self.matched}/{self.labelled}"
 
 
 class HoldoutReport(BaseModel):
+    """Per-field accuracy over the hand-labelled sheets, plus the outcome split
+    over all of them.
+
+    There is deliberately no whole-sheet figure. ADR-0006 calls it the headline
+    number and defines it as "every required field correct", which this set
+    cannot answer: `source_device` is unlabelled on every sheet, so "every
+    required field" is not available to check. A whole-sheet number computed
+    over labelled fields only would carry the same name as the synthetic one
+    with a different denominator, and would invite exactly the comparison
+    ADR-0006 exists to make honest. The critical cut is reported instead.
+    """
+
     n_sheets: int
     n_labelled: int
     outcome_split: dict[str, int]
     per_field: dict[str, Score]
     core: Score
     segmental: Score
+    critical: Score
 
 
 def load_labels(labels_path: Path) -> dict[str, PartialInBody]:
@@ -187,8 +206,11 @@ def score(
         n_labelled=sum(1 for _, label in holdout if label is not None),
         outcome_split=outcomes,
         per_field={f: Score(matched=matched[f], labelled=labelled[f]) for f in SCORED_FIELDS},
-        core=_total(matched, labelled, [f for f in SCORED_FIELDS if f not in _SEGMENTAL_DOTTED]),
-        segmental=_total(matched, labelled, _SEGMENTAL_DOTTED),
+        core=_total(
+            matched, labelled, [f for f in SCORED_FIELDS if f not in SEGMENTAL_DOTTED_FIELDS]
+        ),
+        segmental=_total(matched, labelled, SEGMENTAL_DOTTED_FIELDS),
+        critical=_total(matched, labelled, CRITICAL_FIELDS),
     )
 
 
@@ -200,17 +222,19 @@ def _outcome(result: InBodyExtraction) -> str:
     return "usable"
 
 
-def _matches(field: str, predicted, expected) -> bool:
+def _matches(field: str, predicted: float | str | None, expected: float | str) -> bool:
     if predicted is None:
         return False  # unread against a known value is a miss, not a pass
     if field in CATEGORICAL_FIELDS:
         return predicted == expected
-    if field in _SEGMENTAL_DOTTED:
+    if field in SEGMENTAL_DOTTED_FIELDS:
         return segmental_matches(predicted, expected)
     return numeric_matches(predicted, expected)
 
 
-def _total(matched: dict[str, int], labelled: dict[str, int], fields) -> Score:
+def _total(
+    matched: dict[str, int], labelled: dict[str, int], fields: Iterable[str]
+) -> Score:
     return Score(
         matched=sum(matched[f] for f in fields), labelled=sum(labelled[f] for f in fields)
     )
@@ -227,14 +251,20 @@ def format_report(report: HoldoutReport) -> str:
 
     for field in SCORED_FIELDS:
         entry = report.per_field[field]
-        rate = "     --" if not entry.labelled else f"{entry.accuracy:6.1%}"
-        lines.append(f"  {field.ljust(width)}{str(entry):>8}{rate:>9}")
+        lines.append(f"  {field.ljust(width)}{str(entry):>8}{_rate(entry):>9}")
 
     lines.append("  " + "-" * (width + 16))
-    for name, entry in (("core fields", report.core), ("segmental lean", report.segmental)):
-        rate = "     --" if not entry.labelled else f"{entry.accuracy:6.1%}"
-        lines.append(f"  {name.ljust(width)}{str(entry):>8}{rate:>9}")
+    for name, entry in (
+        ("core fields", report.core),
+        ("segmental lean", report.segmental),
+        ("critical (LBM + limbs)", report.critical),
+    ):
+        lines.append(f"  {name.ljust(width)}{str(entry):>8}{_rate(entry):>9}")
     return "\n".join(lines)
+
+
+def _rate(entry: Score) -> str:
+    return "     --" if entry.accuracy is None else f"{entry.accuracy:6.1%}"
 
 
 def _main() -> None:

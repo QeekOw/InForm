@@ -200,3 +200,28 @@ def test_the_real_holdout_scores_limbs_by_the_relative_bound_too():
     assert report.per_field["segmental_lean.left_arm_kg"].labelled == 1
     assert report.segmental.matched == 4 and report.segmental.labelled == 5
     assert report.core.matched == 6  # scalars untouched by the limb rule
+
+
+def test_an_unlabelled_field_reports_no_accuracy_rather_than_zero():
+    # 0/0 is unknown, not 0% correct. Returning 0.0 would let any caller that
+    # averages per-field accuracy drag the mean down with fields nobody read --
+    # the exact error the partial-truth denominator exists to prevent.
+    report = score(_reading(_LABEL), [(_IMAGE, _LABEL)])
+
+    assert report.per_field["source_device"].labelled == 0
+    assert report.per_field["source_device"].accuracy is None
+    assert report.per_field["weight_kg"].accuracy == 1.0
+
+
+def test_the_critical_field_cut_is_lbm_plus_the_limbs():
+    # ADR-0006 requires separate reporting for the fields the pipeline hinges
+    # on: lean_body_mass_kg and the segmental lean values. On this hold-out that
+    # is the number that matters, because LBM is the weakest field.
+    wrong_lbm = _LABEL.model_copy(deep=True)
+    wrong_lbm.lean_body_mass_kg = 30.0  # the observed donut-both-v3 misread
+
+    report = score(_reading(wrong_lbm), [(_IMAGE, _LABEL)])
+
+    assert report.critical.labelled == 6  # LBM + five limbs
+    assert report.critical.matched == 5  # limbs right, LBM wrong
+    assert report.core.matched == 5  # LBM also sits in the scalar cut

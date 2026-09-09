@@ -23,9 +23,9 @@ import random
 from PIL import Image
 
 from inform.synthetic import (
-    MIN_SHEET_WIDTH_PX as MIN_RENDER_WIDTH_PX,
-    SHEET_ASPECT as A4_ASPECT,
-    SHEET_ASPECT_TOLERANCE as ASPECT_TOLERANCE,
+    MIN_SHEET_WIDTH_PX,
+    SHEET_ASPECT,
+    SHEET_ASPECT_TOLERANCE,
     _augment,
     _generate_values,
     _render,
@@ -38,7 +38,7 @@ def main() -> int:
     parser.add_argument("--seed-start", type=int, default=9001)
     args = parser.parse_args()
 
-    print(f"target: aspect {A4_ASPECT:.3f} +/- {ASPECT_TOLERANCE}   width >= {MIN_RENDER_WIDTH_PX}px\n")
+    print(f"target: aspect {SHEET_ASPECT:.3f} +/- {SHEET_ASPECT_TOLERANCE}   width >= {MIN_SHEET_WIDTH_PX}px\n")
     failures = 0
 
     for device in ("inbody_270", "inbody_570"):
@@ -55,8 +55,8 @@ def main() -> int:
 
         mean_aspect = sum(aspects) / len(aspects)
         min_width = min(widths)
-        aspect_ok = abs(mean_aspect - A4_ASPECT) <= ASPECT_TOLERANCE
-        width_ok = min_width >= MIN_RENDER_WIDTH_PX
+        aspect_ok = abs(mean_aspect - SHEET_ASPECT) <= SHEET_ASPECT_TOLERANCE
+        width_ok = min_width >= MIN_SHEET_WIDTH_PX
         failures += (not aspect_ok) + (not width_ok)
 
         print(

@@ -23,6 +23,12 @@ real printouts, photographed.
 | Critical-field mean (LBM + segmental) | 56.8% | 100.0% |
 | Per-field range | 56.5–57.0% | 100.0% |
 
+> **Scored under the pre-amendment tolerance.** Every figure in this section that includes
+> a segmental limb was measured before ADR-0006's 2026-09-09 amendment added the 1%
+> relative bound on limbs, so re-running would lower the whole-sheet and critical-field
+> numbers. They have not been re-measured, because the retrain that follows the template
+> geometry fix re-baselines them anyway.
+
 - **n = 200** held-out sheets (100 InBody 270 + 100 InBody 570).
 - VLM: `gpt-4o-2024-08-06`, zero-shot with Structured Outputs.
 - Donut: `donut-base` fine-tuned 1 epoch on the ~5,000-sheet synthetic set
@@ -135,6 +141,8 @@ new-look sheets) on Kaggle. `InBodyPayload` contract unchanged.
 | **Real InBody 270 photo (n=1)** | **0%** whole-sheet (fail-closed) | **100%** whole-sheet |
 | Held-out synthetic, whole-sheet | 56.0% (easy augmentation) | 53.5% (harder augmentation) |
 | Held-out synthetic, per-field | ~57% | 55.0–57.0% |
+
+(Whole-sheet and per-field here also predate the 1% limb bound; see the note above.)
 | Failure mode | safe fail-closed | safe fail-closed (per-field > whole-sheet) |
 
 **The real-photo result is the headline: 0% → 100%.** The retrained model
@@ -390,7 +398,7 @@ Segmental Fat panel, taking that panel's left column as the lean panel's right c
 This is a page-layout failure, not a glyph-recognition one, and it supports the geometry
 diagnosis below more directly than the Fat Free Mass errors do.
 
-Scored against the hand labels: **core fields 33/36, segmental lean 23/30.**
+Scored against the hand labels: **core fields 33/36, segmental lean 23/30, critical cut (LBM + limbs) 26/36.**
 
 Both figures now come from a committed scorer rather than a hand count, and are
 reproducible without a GPU or the checkpoint:

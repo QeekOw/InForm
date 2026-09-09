@@ -21,9 +21,14 @@ _SHEET_JPEG_QUALITY = 92
 # scripts/check_sheet_geometry.py so there is one definition of "done".
 # A real InBody printout is A4 portrait; the render is measured before
 # augmentation because that is what the template controls.
+#
+# ponytail: SHEET_ASPECT is a fact about A4 paper, but the tolerance and the
+# width floor are fixed judgement calls, not measurements. The floor is one
+# observed phone photo (2296 px, docs/ocr-eval-results.md); widen the sample
+# before trusting it as a distribution.
 SHEET_ASPECT = 210 / 297  # 0.707
 SHEET_ASPECT_TOLERANCE = 0.03
-MIN_SHEET_WIDTH_PX = 2300  # a phone photo of a sheet, roughly
+MIN_SHEET_WIDTH_PX = 2300
 
 # Render at higher pixel density than the CSS layout so a synthetic sheet lands
 # at roughly the pixel width of a real phone photo (~2300 px). Donut resizes

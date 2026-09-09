@@ -44,15 +44,14 @@
   .ticks span { flex: 1; border-left: 1px solid #eee; padding-left: 1px; white-space: nowrap; }
   .bar { position: absolute; top: 20px; height: 8px; background: #222; }
   .bar .bv { position: absolute; right: -32px; top: -17px; font-size: 13px; font-weight: 700; color:#111; background: #fff; padding: 0 2px; box-shadow: 0 0 2px 2px #fff; white-space: nowrap; }
-  /* PROVISIONAL gutter. On the real 270 hold-out the model read the left-arm
-     *fat* value as the right-arm *lean* value, crossing the panel boundary
-     (docs/ocr-eval-results.md, sheet_05). At the previous 10px gap, with the
-     labels 2px from each panel edge, adjacent numbers sat ~14px apart with
-     only a hairline between them. 26px plus 10px panel padding and 10px
-     label insets is a considered guess, not a measurement: the true gutter
-     has not been taken off a real printout yet. That is the designer's
-     layout-fidelity brief (docs/design/ui-brief-revision-1.md section 5, on
-     the docs/track-b-spec branch), which is deferred. */
+  /* ponytail: PROVISIONAL gutter, a considered guess rather than a
+     measurement. On the real 270 hold-out the model read the left-arm *fat*
+     value as the right-arm *lean* value, crossing the panel boundary
+     (docs/ocr-eval-results.md, "Hand-labelled", sheet_05). At the previous
+     10px gap, with the labels 2px from each panel edge, adjacent numbers sat
+     ~14px apart with only a hairline between them. 26px plus 10px panel
+     padding and 10px label insets separates them; the true gutter has not
+     been taken off a real printout yet, and measuring it is deferred. */
   .segwrap { display: flex; gap: 26px; }
   .segbox { flex: 1; border: 1px solid #ccc; padding: 10px; position: relative; }
   .segbox .cap { color:#2a3d66; font-weight:800; font-size:15px; border-bottom:2px solid #2a3d66; }

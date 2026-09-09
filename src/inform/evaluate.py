@@ -7,6 +7,7 @@ from inform.errors import InBodyExtractionError
 from inform.inbody import (
     OPTIONAL_FIELDS,
     REQUIRED_FIELDS,
+    SEGMENTAL_DOTTED_FIELDS,
     SEGMENTAL_FIELDS,
     InBodyExtraction,
     InBodyPayload,
@@ -38,7 +39,9 @@ CATEGORICAL_FIELDS = ("source_device",)
 _REQUIRED_NUMERIC_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in CATEGORICAL_FIELDS)
 _OPTIONAL_NUMERIC_FIELDS = OPTIONAL_FIELDS
 _SEGMENTAL_FIELDS = SEGMENTAL_FIELDS
-_CRITICAL_FIELDS = ("lean_body_mass_kg",) + tuple(f"segmental_lean.{f}" for f in _SEGMENTAL_FIELDS)
+# ADR-0006's critical-field cut: the fields the downstream pipeline hinges on.
+# Public so the real hold-out scorer reports the same cut (inform.holdout).
+CRITICAL_FIELDS: tuple[str, ...] = ("lean_body_mass_kg",) + SEGMENTAL_DOTTED_FIELDS
 
 LabeledSet = list[tuple[Path, InBodyPayload]]
 
@@ -136,7 +139,7 @@ def evaluate(
     return AccuracyReport(
         n_sheets=len(labeled_set),
         per_field_accuracy=per_field_accuracy,
-        critical_field_accuracy={field: per_field_accuracy[field] for field in _CRITICAL_FIELDS},
+        critical_field_accuracy={field: per_field_accuracy[field] for field in CRITICAL_FIELDS},
         whole_sheet_accuracy=_match_rate(whole_sheet_matches),
     )
 

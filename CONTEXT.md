@@ -50,6 +50,10 @@ only — it must never mutate a deterministic number (enforced by validation).
   right arm, left leg, right leg, trunk. Basis for bilateral-asymmetry detection.
 - **Bilateral asymmetry** — a lean-mass deviation between a left/right limb pair. A deviation
   **> 5%** triggers targeted unilateral corrective exercises (Module 3).
+- **Core fields** — the scalar values on a sheet (weight, LBM, PBF, SMM, BMR, Visceral Fat
+  Level), as against the five **Segmental Lean** values. Scored and reported separately,
+  because a limb carries a relative tolerance the scalars do not
+  ([ADR-0006](docs/adr/0006-ocr-evaluation-protocol.md)).
 - **InBody 270 / InBody 570** — the two device layouts in scope. Both report Visceral Fat Level
   (ADR-0004 correction, issue #13); the 570 reports more, and BMR / Visceral Fat are
   programmable outputs. See [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).

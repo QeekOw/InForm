@@ -80,6 +80,17 @@ chosen against that threshold, not fitted to a score.
 - *A relative bound alone.* Looser than the status quo on the trunk (1% of 28.2 kg is
   +/-0.28), which would weaken scoring on a field that currently reads correctly.
 
+**What the real hold-out can and cannot report.** The hand-labelled set carries the
+critical-field cut (`lean_body_mass_kg` plus the five limbs) and per-field accuracy, but
+**not whole-sheet accuracy**, this ADR's stated headline number. Whole-sheet is defined as
+"every required field correct", and `source_device` is unlabelled on every sheet in the
+set: nobody read the device off the page, and inventing the label would both fabricate
+ground truth and move the per-field denominator. A whole-sheet figure computed over only
+the labelled fields would carry the same name as the synthetic one with a different
+denominator, and would invite exactly the comparison this ADR exists to keep honest. The
+outcome split (usable / flagged / unread / refused) covers all sheets and needs no labels,
+so it carries the whole-set signal instead.
+
 **Consequences.** Implemented as `inform.evaluate.segmental_matches` and used by both
 ground-truth sources, `evaluate()` for the synthetic set and `inform.holdout.score()` for
 the real hand-labelled hold-out, so "correct" still means one thing across the
