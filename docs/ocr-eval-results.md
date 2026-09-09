@@ -483,9 +483,9 @@ scale grew with the page instead of text staying small on a taller sheet. The gu
 the Segmental Lean and Segmental Fat panels was widened at the same time (270: 10px to 26px
 plus larger panel padding and labels pulled in from the panel edge; 570: column gap 20px to
 30px), because that is the boundary the model crossed on sheet_05. Both gutters are
-provisional: they have not been measured off a real printout. That measurement is
-section 5 of the designer's layout-fidelity brief
-(`docs/design/ui-brief-revision-1.md`, on the `docs/track-b-spec` branch), which is deferred.
+provisional: they have not been measured off a real printout. That measurement is issue #46
+(also section 5 of the designer's layout-fidelity brief, on the `docs/track-b-spec` branch,
+which is deferred).
 
 Every number in this section belongs to the pre-fix generator and `donut-both-v3`. Re-run
 after regenerating and retraining from `donut-base`, and compare against the 3/6/3 split and
