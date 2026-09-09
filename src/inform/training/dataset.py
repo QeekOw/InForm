@@ -37,9 +37,13 @@ def generate_dataset(
 ) -> None:
     """Render a synthetic InBody dataset to disk (ADR-0007).
 
-    One PNG + one ground-truth JSON per sheet, seeded so the run is
-    reproducible. Sequential and slow (~1s/sheet via headless-browser
-    rendering — see inform.synthetic). Pass a single-element `devices` (e.g.
+    One JPEG + one ground-truth JSON per sheet, seeded so the run is
+    reproducible. Sequential and slow: ~5s/sheet via headless-browser
+    rendering (measured at the A4 geometry; it was ~1s at the old near-square
+    2.5x-smaller render), so a 2500-per-device run is ~7 hours. Shard it over
+    disjoint `seed_start` ranges to parallelise — a sheet depends only on its
+    device and seed, and the filename is `{device}_{seed:06d}`, so shards
+    neither collide nor diverge from a single sequential run. Pass a single-element `devices` (e.g.
     `("inbody_270",)`) for a device-specific set — issue #13 retrains 270-only.
     Seeds run `seed_start .. seed_start + len(devices)*n_per_device - 1`; use a
     disjoint `seed_start` for a held-out set so it never overlaps the train set.
