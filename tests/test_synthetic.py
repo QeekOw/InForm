@@ -5,7 +5,16 @@ import io
 
 from PIL import Image
 
-from inform.synthetic import _derive_render_values, _fill_template, _generate_values, generate_sheet
+from inform.synthetic import (
+    MIN_SHEET_WIDTH_PX,
+    SHEET_ASPECT,
+    SHEET_ASPECT_TOLERANCE,
+    _derive_render_values,
+    _fill_template,
+    _generate_values,
+    _render,
+    generate_sheet,
+)
 
 _SEEDS = range(30)
 _TOLERANCE = 0.1
@@ -166,3 +175,17 @@ def test_derived_distractors_are_coherent_and_deterministic():
         assert 12.0 <= d["bmi"] <= 45.0
         # Deterministic given the same payload.
         assert _derive_render_values(payload) == d
+
+
+def test_rendered_sheets_are_a4_portrait_at_phone_photo_resolution():
+    # Donut learns whatever geometry the synthetic set has. A nearly-square
+    # sheet trained against real A4 photos is the diagnosed cause of the poor
+    # real-world reads (docs/ocr-eval-results.md), so the template's own
+    # geometry is locked here and not only by scripts/check_sheet_geometry.py.
+    for device in ("inbody_270", "inbody_570"):
+        rendered = _render(device, _generate_values(device, seed=9001))
+        aspect = rendered.width / rendered.height
+        assert abs(aspect - SHEET_ASPECT) <= SHEET_ASPECT_TOLERANCE, (
+            f"{device} rendered {rendered.width}x{rendered.height} (aspect {aspect:.3f})"
+        )
+        assert rendered.width >= MIN_SHEET_WIDTH_PX, f"{device} rendered {rendered.width}px wide"

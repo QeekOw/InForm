@@ -443,15 +443,27 @@ python -m inform.compare --data-dir <real-sheet-dir> --donut-checkpoint models/d
 
 Sheets are real health data and are **not committed** (`data/real_holdout/`, as with #24).
 
-### Numbers above predate the generator fix
+### Numbers above predate the generator and template fixes
 
 Following this run the generator was changed: sheets now render at 2.5x device scale
 (941 -> 2350 px) and are written as JPEG rather than PNG, and `train.py` defaults moved to 5
-epochs with every epoch's checkpoint retained. **The template aspect is still unfixed** —
-`scripts/check_sheet_geometry.py` reports 0.936 (270) and 0.885 (570) against a 0.707 target.
-Every number in this section belongs to the pre-fix generator and `donut-both-v3`; re-run
-after the template is corrected and the model retrained, and compare against the 3/6/3 split
-as the baseline.
+epochs with every epoch's checkpoint retained. **The template aspect is now fixed too**:
+`scripts/check_sheet_geometry.py` reports 0.702 (270) and 0.701 (570) against the 0.707
+target, up from 0.936 and 0.885, and the render is 2350x3346 / 2350x3352.
+
+The height went into the blocks rather than the page margins: table row heights, bar-graph
+row heights, the segmental body figure and every font size grew together, so effective text
+scale grew with the page instead of text staying small on a taller sheet. The gutter between
+the Segmental Lean and Segmental Fat panels was widened at the same time (270: 10px to 26px
+plus larger panel padding and labels pulled in from the panel edge; 570: column gap 20px to
+30px), because that is the boundary the model crossed on sheet_05. Both gutters are
+provisional: they have not been measured off a real printout. That measurement is
+section 5 of the designer's layout-fidelity brief
+(`docs/design/ui-brief-revision-1.md`, on the `docs/track-b-spec` branch), which is deferred.
+
+Every number in this section belongs to the pre-fix generator and `donut-both-v3`. Re-run
+after regenerating and retraining from `donut-base`, and compare against the 3/6/3 split and
+the hand labels above.
 
 ## Future Work
 
@@ -462,13 +474,14 @@ as the baseline.
 - **Device-label robustness on real photos.** The both-device model reads real 270
   health fields perfectly but misclassifies `source_device` on the out-of-distribution
   photo. Worth a real-photo-aware fix (more real captures, or device-agnostic scoring).
-- **Template geometry (highest value).** Both templates render near-square
-  (0.936 / 0.885) where a real printout is A4 (0.707). Fix, regenerate, retrain
-  from `donut-base`, and score against the n=12 baseline above.
-- **Hand-label the n=12 real hold-out.** The outcome split is measured; per-field
-  accuracy is not, and the cross-checks cannot see errors in SMM, visceral fat or
-  segmental lean.
-- **Test the BMI hypothesis** for the Fat Free Mass misread — possibly a separate
-  fix from geometry, and cheap to check.
+- **Regenerate and retrain (highest value).** Template geometry is fixed (0.702 /
+  0.701 against A4's 0.707); the dataset and the model still predate it. Regenerate,
+  retrain from `donut-base` rather than `donut-both-v3` because the input
+  distribution changed, and score every epoch checkpoint against the n=12 baseline
+  and the hand labels above. Whether the sheet_05 panel crossing disappears is the
+  sharpest single indicator that geometry was the cause.
+- **Hand-label the six refused sheets.** The six that produced a read are labelled;
+  the six refusals have no ground truth, so a checkpoint that stops refusing them
+  cannot yet be scored per-field.
 - **Beam-search decoding** for Donut — may recover some refusals with no
   retrain; untested.

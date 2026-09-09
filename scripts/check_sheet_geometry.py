@@ -22,11 +22,14 @@ import random
 
 from PIL import Image
 
-from inform.synthetic import _augment, _generate_values, _render
-
-A4_ASPECT = 210 / 297  # 0.707 -- a real InBody printout is A4 portrait
-ASPECT_TOLERANCE = 0.03
-MIN_RENDER_WIDTH_PX = 2300  # a phone photo of a sheet, roughly
+from inform.synthetic import (
+    MIN_SHEET_WIDTH_PX as MIN_RENDER_WIDTH_PX,
+    SHEET_ASPECT as A4_ASPECT,
+    SHEET_ASPECT_TOLERANCE as ASPECT_TOLERANCE,
+    _augment,
+    _generate_values,
+    _render,
+)
 
 
 def main() -> int:
