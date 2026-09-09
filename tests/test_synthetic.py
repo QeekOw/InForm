@@ -2,7 +2,9 @@
 # run fast across many seeds. Only a couple of tests exercise the full
 # generate_sheet() render path, which shells out to a headless browser.
 import io
+import subprocess
 
+import pytest
 from PIL import Image
 
 from inform.synthetic import (
@@ -189,3 +191,40 @@ def test_rendered_sheets_are_a4_portrait_at_phone_photo_resolution():
             f"{device} rendered {rendered.width}x{rendered.height} (aspect {aspect:.3f})"
         )
         assert rendered.width >= MIN_SHEET_WIDTH_PX, f"{device} rendered {rendered.width}px wide"
+
+
+def test_render_gives_each_browser_run_its_own_profile_dir(monkeypatch):
+    # Concurrent renders (sharded dataset generation) must not share Chrome's
+    # default profile. When they do, a second instance hands off to the first
+    # and exits 0 without writing the screenshot, which surfaced as a missing
+    # PNG 574 sheets into a shard rather than as an error.
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        png = next(a.split("=", 1)[1] for a in argv if a.startswith("--screenshot="))
+        Image.new("RGB", (40, 60), "white").save(png)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _render("inbody_270", _generate_values("inbody_270", seed=1))
+    _render("inbody_270", _generate_values("inbody_270", seed=2))
+
+    profiles = [
+        next(a.split("=", 1)[1] for a in argv if a.startswith("--user-data-dir="))
+        for argv in seen
+    ]
+    assert len(profiles) == 2
+    assert profiles[0] != profiles[1], "two renders shared one Chrome profile"
+
+
+def test_render_fails_loudly_when_the_browser_writes_no_screenshot(monkeypatch):
+    # The browser can exit 0 and produce nothing. That used to surface as a
+    # FileNotFoundError from inside PIL, which says nothing about the cause;
+    # ADR-0008's fail-closed posture wants the real reason named.
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0)
+    )
+
+    with pytest.raises(RuntimeError, match="no screenshot"):
+        _render("inbody_270", _generate_values("inbody_270", seed=1))

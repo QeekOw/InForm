@@ -338,6 +338,12 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 f"--screenshot={png_path}",
+                # A profile dir of this render's own. Chrome shares the default
+                # profile across instances, and a second instance that finds the
+                # first alive hands off to it and exits 0 having written no
+                # screenshot -- so concurrent renders (sharded dataset
+                # generation) silently lose sheets without a non-zero exit.
+                f"--user-data-dir={Path(tmp_dir) / 'profile'}",
                 f"--window-size={_WINDOW_SIZE[device]}",
                 f"--force-device-scale-factor={_DEVICE_SCALE_FACTOR}",
                 "--hide-scrollbars",
@@ -346,6 +352,13 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
             check=True,
             capture_output=True,
         )
+        if not png_path.exists():
+            raise RuntimeError(
+                f"{_find_browser()} exited 0 but wrote no screenshot for {device}. "
+                "Most often a profile clash between concurrent renders; each render "
+                "passes its own --user-data-dir, so check the browser install and "
+                "that the temp dir is writable."
+            )
         image = Image.open(png_path).convert("RGB").copy()
     return _crop_to_content(image)
 
