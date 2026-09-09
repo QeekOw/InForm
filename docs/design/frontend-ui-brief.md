@@ -130,6 +130,12 @@ including its loading and error states where noted.
   sample path. Design it as a real secondary action rather than a placeholder.
   Uploading needs a short, plain-language line saying this is a student project
   and that we keep the numbers but not the photo.
+- **Sample sheets are answered from a stored reading.** We run the model over the
+  gallery ahead of time and keep the result, so picking a sample returns straight
+  away. A secondary **"Run the model live on this sheet"** action re-reads it for
+  real, and that path takes the full ~45 seconds. Design the live action as a
+  deliberate second step rather than the default, so a first-time visitor is never
+  made to wait 45 seconds before seeing anything.
 - Content: a few selectable sheet thumbnails, a short line telling the user what
   an InBody sheet looks like, and the primary "Read this sheet" action.
 
@@ -142,7 +148,7 @@ including its loading and error states where noted.
     long — around 45 seconds** on an uploaded photo, because the model genuinely
     runs. Design something that holds attention for that long and shows progress
     honestly; a spinner will feel broken. (Sample sheets answer instantly, so this
-    state matters most for uploads.)
+    state matters most for uploads and for the live re-read of a sample.)
   - **The extraction result.** Show the sheet next to the numbers we pulled out
     of it, so the connection is obvious. Please design how a single extracted
     value looks (label, value, unit) and how the set reads as a group.
