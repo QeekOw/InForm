@@ -290,10 +290,13 @@ loading dan error-nya bila disebutkan.
 3. Paragraf tulisan AI sebaiknya di mana: membuka hasil, atau menutupnya?
 4. Seberapa jauh animasi pembacaan scan didorong? Ini bintangnya, jadi mungkin cukup jauh —
    tapi tetap harus terasa presisi, bukan gimmick.
-5. **Bahasa antarmuka aplikasi: Inggris atau Indonesia?** Ini belum diputuskan. Nama field di
-   dokumen ini sengaja dibiarkan dalam bahasa Inggris karena itu nama sebenarnya di sistem,
-   tapi label yang dilihat pengguna bisa saja berbahasa Indonesia. Tolong konfirmasi sebelum
-   menulis teks antarmuka.
+
+## 10. Sudah diputuskan
+
+**Bahasa antarmuka aplikasi: Inggris.** Semua teks yang dilihat pengguna — tombol, label,
+pesan error, paragraf tulisan AI — ditulis dalam bahasa Inggris. Nama field tetap seperti di
+dokumen ini karena itu memang nama sebenarnya di sistem. Dokumen ini sendiri tetap berbahasa
+Indonesia; yang berbahasa Inggris adalah isi aplikasinya.
 
 ---
 

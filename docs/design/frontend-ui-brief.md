@@ -289,6 +289,13 @@ including its loading and error states where noted.
 4. How far do we push the scan-reading animation? It is the hero, so probably
    far, but it should still feel precise rather than gimmicky.
 
+
+## 10. Settled
+
+**Interface language: English.** Everything the user reads — buttons, labels, error
+messages, the AI-written paragraph — is in English. Field names stay as written
+here, since those are their real names in the system.
+
 ---
 
 ### One-line summary for context
