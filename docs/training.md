@@ -12,14 +12,31 @@ pip install -e ".[dev,training]"
 ## 1. Generate the synthetic dataset
 
 Paper target: ~5,000 sheets, ~2,500 each for InBody 270 and 570 (ADR-0007).
-Rendering shells out to a headless Chrome/Edge per sheet (~1s/sheet), so the
-full set takes on the order of an hour, sequentially, on a single machine.
+Rendering shells out to a headless Chrome/Edge per sheet. Measured at the A4
+geometry: **5.05s/sheet**, so ~7.6 hours for the full set sequentially. (It was
+~1s/sheet before the sheet became A4-portrait at 2.5x device scale, which is
+where the older "about an hour" figure came from.)
 
 ```
 python -m inform.training.dataset --output-dir data/synthetic --n-per-device 2500
 ```
 
-Writes one `<device>_<seed>.png` + matching `.json` ground truth per sheet.
+Writes one `<device>_<seed>.jpg` + matching `.json` ground truth per sheet.
+
+**Shard it.** A sheet depends only on its device and seed, and the filename is
+`{device}_{seed:06d}`, so disjoint `--seed-start` ranges produce byte-identical
+output to one sequential run. Ten concurrent shards on 16 cores measured 0.635
+sheets/s, cutting 7.6 hours to ~2. Seeds run continuously across devices within
+one call, so a two-device 2500-each run covers 0-2499 (270) then 2500-4999 (570);
+shard each device separately with `--device`:
+
+```
+python -m inform.training.dataset --output-dir <dir> --device inbody_270 --seed-start 0    --n-per-device 625
+python -m inform.training.dataset --output-dir <dir> --device inbody_570 --seed-start 2500 --n-per-device 625
+```
+
+Use a disjoint `--seed-start` (e.g. 100000) for the held-out set so it never
+overlaps the training set.
 
 ## 2. Fine-tune
 
@@ -28,13 +45,28 @@ python -m inform.training.train \
   --data-dir data/synthetic \
   --output-dir checkpoints/donut-inbody \
   --model-name-or-path naver-clova-ix/donut-base \
-  --epochs 3 \
-  --batch-size 2 \
+  --epochs 5 \
+  --batch-size 1 \
+  --dataloader-num-workers 4 \
   --learning-rate 3e-5
 ```
 
-Needs a GPU in practice — `donut-base` fine-tuning on CPU is not
-practical at this dataset size. Produces a checkpoint directory loadable via
+**Needs a 16GB GPU.** Measured at `--batch-size 1` with fp16 and gradient
+checkpointing both on, torch reserves **15.64 GB**. The 16GB T4 on Colab or
+Kaggle is what this config is sized for.
+
+An 8GB card does not fail loudly, which is the trap. Under Windows WDDM the
+driver oversubscribes GPU memory into host RAM over PCIe rather than raising
+OOM, so training *runs*: 116s per optimizer step, about 29s per sheet, which
+is **8.4 days** for a 5-epoch 5,000-sheet run. Measured on an RTX 4060 Laptop
+8GB, at 100% GPU utilisation throughout, so utilisation is no signal here. If
+a step takes two minutes, check `torch.cuda.max_memory_reserved()` against the
+card's real capacity before looking anywhere else.
+
+CPU-only is not an alternative at this dataset size. `--batch-size 2` OOMs
+even on 16GB, so leave it at 1 and raise `--gradient-accumulation-steps`.
+
+Produces a checkpoint directory loadable via
 `inform.training.train.load_checkpoint`.
 
 ## 3. Score Donut vs. the VLM baseline

@@ -15,6 +15,10 @@ transformers = pytest.importorskip("transformers")
 
 from inform.engines.donut import TASK_TOKEN as _ENGINE_TASK_TOKEN  # noqa: E402
 from inform.training.dataset import TASK_TOKEN, generate_dataset  # noqa: E402
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from inform.training import train as train_module  # noqa: E402
 from inform.training.train import load_checkpoint, train  # noqa: E402
 
 
@@ -45,3 +49,33 @@ def test_train_produces_a_loadable_checkpoint(tmp_path):
     pixel_values = processor(Image.new("RGB", (32, 32)), return_tensors="pt").pixel_values
     generated = model.generate(pixel_values, max_new_tokens=5)
     assert generated.shape[0] == 1
+
+
+def test_dataloader_workers_reach_the_trainer(monkeypatch):
+    # Decoding a ~3000x4000 JPEG and resizing it onto Donut's 2560x1920 canvas
+    # happens every step. At the default of 0 workers that is serial with the
+    # GPU rather than overlapped, so the knob has to be reachable.
+    captured = {}
+    real_args = train_module.Seq2SeqTrainingArguments
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_args(**kwargs)
+
+    monkeypatch.setattr(train_module, "Seq2SeqTrainingArguments", spy)
+    monkeypatch.setattr(
+        train_module.Seq2SeqTrainer, "train", lambda self, **kw: None
+    )
+
+    data_dir = Path(tempfile.mkdtemp()) / "data"
+    generate_dataset(data_dir, n_per_device=1)
+    train_module.train(
+        data_dir=data_dir,
+        output_dir=data_dir.parent / "out",
+        model_name_or_path=_TINY_MODEL,
+        num_train_epochs=1,
+        max_target_length=64,
+        dataloader_num_workers=6,
+    )
+
+    assert captured["dataloader_num_workers"] == 6
