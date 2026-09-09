@@ -17,6 +17,15 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only in the torch-fr
 
 TASK_TOKEN = "<s_inbody>"
 
+# On-disk dataset format. generate_dataset writes DATASET_IMAGE_SUFFIX; readers
+# accept any of IMAGE_SUFFIXES so that PNG sets written by earlier runs still
+# load, and so a real phone photo (already .jpg) can be scored without being
+# converted first. inform.evaluate deliberately duplicates IMAGE_SUFFIXES rather
+# than importing it — that would make the light eval path depend on the training
+# package — and tests/test_evaluate.py asserts the two never drift.
+DATASET_IMAGE_SUFFIX = ".jpg"
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
+
 _DEVICES = ("inbody_270", "inbody_570")
 
 
@@ -41,7 +50,7 @@ def generate_dataset(
         for _ in range(n_per_device):
             image_bytes, payload = generate_sheet(device, seed)
             stem = f"{device}_{seed:06d}"
-            (output_dir / f"{stem}.png").write_bytes(image_bytes)
+            (output_dir / f"{stem}{DATASET_IMAGE_SUFFIX}").write_bytes(image_bytes)
             (output_dir / f"{stem}.json").write_text(payload.model_dump_json(), encoding="utf-8")
             seed += 1
 
@@ -58,7 +67,9 @@ class DonutInBodyDataset(Dataset):
         self._processor = processor
         self._max_target_length = max_target_length
         self._decoder_start_id = processor.tokenizer.convert_tokens_to_ids(TASK_TOKEN)
-        self._samples = sorted(Path(data_dir).glob("*.png"))
+        self._samples = sorted(
+            p for p in Path(data_dir).glob("*") if p.suffix.lower() in IMAGE_SUFFIXES
+        )
         if not self._samples:
             raise ValueError(f"No .png sheets found in {data_dir}")
 

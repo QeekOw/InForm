@@ -15,6 +15,24 @@ from inform.inbody import InBodyPayload, SegmentalLean
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 # Both devices render a full-page portrait clone of a real sheet.
 _WINDOW_SIZE = {"inbody_270": "1060,1320", "inbody_570": "1060,1440"}
+_SHEET_JPEG_QUALITY = 92
+
+# Render at higher pixel density than the CSS layout so a synthetic sheet lands
+# at roughly the pixel width of a real phone photo (~2300 px). Donut resizes
+# every input onto its fixed 2560x1920 canvas, so this decides the *direction*
+# of that resize: at 1x the synthetic sheet was upscaled onto the canvas while
+# real photos are downscaled onto it, and the model learned to read soft,
+# interpolated text it then never sees at inference. Layout is unchanged --
+# this multiplies device pixels only.
+_DEVICE_SCALE_FACTOR = 2.5
+
+# Sheets are emitted as JPEG, not PNG. _augment's last step (_jpeg_noise) has
+# already JPEG-compressed the image, so PNG was storing those artifacts
+# losslessly at ~3x the cost (1.73 MB vs 0.58 MB per sheet; 8.4 GB vs 2.8 GB for
+# a 5,000-sheet run, which is the difference between fitting on a Kaggle disk and
+# not). It is also the format a real phone upload arrives in. subsampling=0
+# (4:4:4) keeps the coloured section headings crisp -- this is a document the
+# model has to read, so chroma detail on text edges is worth the few percent.
 
 # ponytail: fixed physiological ranges/proportions, not learned from data.
 # Tune against real InBody sheets if the synthetic distribution drifts.
@@ -60,7 +78,7 @@ def generate_sheet(device: Literal["inbody_270", "inbody_570"], seed: int) -> tu
     image = _augment(image, random.Random(seed))
 
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="JPEG", quality=_SHEET_JPEG_QUALITY, subsampling=0)
     return buffer.getvalue(), payload
 
 
@@ -308,6 +326,7 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
                 "--disable-dev-shm-usage",
                 f"--screenshot={png_path}",
                 f"--window-size={_WINDOW_SIZE[device]}",
+                f"--force-device-scale-factor={_DEVICE_SCALE_FACTOR}",
                 "--hide-scrollbars",
                 html_path.as_uri(),
             ],
@@ -347,7 +366,12 @@ def _augment(image: Image.Image, rng: random.Random) -> Image.Image:
     if not easy:
         image = _glare(image, rng)
 
-    image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0, 0.8 if easy else 1.8)))
+    # Blur radius is in absolute pixels, so it must track the render resolution
+    # or raising _DEVICE_SCALE_FACTOR silently weakens the augmentation. These
+    # fractions reproduce the original 0.8 / 1.8 px ceilings at the ~1000 px
+    # render width they were tuned against.
+    blur_ceiling = (0.0008 if easy else 0.0018) * image.width
+    image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0, blur_ceiling)))
     image = ImageEnhance.Brightness(image).enhance(rng.uniform(0.9, 1.1) if easy else rng.uniform(0.8, 1.2))
     image = ImageEnhance.Contrast(image).enhance(rng.uniform(0.95, 1.05) if easy else rng.uniform(0.85, 1.15))
     return _jpeg_noise(image, rng, quality_range=(80, 95) if easy else (55, 85))

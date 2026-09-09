@@ -12,6 +12,11 @@ from inform.inbody import (
     InBodyPayload,
 )
 
+# Image formats a labeled set may hold. Duplicated from
+# inform.training.dataset.IMAGE_SUFFIXES so scoring stays importable without the
+# training package; tests/test_evaluate.py asserts the two never drift.
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
+
 # ponytail: fixed tolerance, not learned. Matches ADR-0006's default.
 _FIELD_TOLERANCE = 0.1
 
@@ -37,16 +42,17 @@ class AccuracyReport(BaseModel):
 
 
 def load_labeled_set(data_dir: Path) -> LabeledSet:
-    """Read a generate_dataset() output dir (png + ground-truth json pairs)
+    """Read a generate_dataset() output dir (image + ground-truth json pairs)
     into a LabeledSet — the held-out set an engine is scored against."""
     pairs: LabeledSet = []
-    for image_path in sorted(Path(data_dir).glob("*.png")):
+    images = (p for p in Path(data_dir).glob("*") if p.suffix.lower() in IMAGE_SUFFIXES)
+    for image_path in sorted(images):
         expected = InBodyPayload.model_validate_json(
             image_path.with_suffix(".json").read_text(encoding="utf-8")
         )
         pairs.append((image_path, expected))
     if not pairs:
-        raise ValueError(f"No labeled .png/.json pairs found in {data_dir}")
+        raise ValueError(f"No labeled image/.json pairs found in {data_dir}")
     return pairs
 
 

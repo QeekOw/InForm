@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from inform.errors import NotAnInBodySheetError
-from inform.evaluate import evaluate
+from inform.evaluate import IMAGE_SUFFIXES, evaluate, load_labeled_set
 from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody, SegmentalLean
 
 _TRUTH = InBodyPayload(
@@ -159,3 +159,26 @@ def test_averages_per_field_rate_across_multiple_sheets():
 
     assert report.per_field_accuracy["weight_kg"] == 0.5
     assert report.whole_sheet_accuracy == 0.5
+
+
+def test_eval_and_training_agree_on_accepted_image_formats():
+    # evaluate duplicates the tuple to stay importable without the training
+    # package (same pattern as donut.TASK_TOKEN); they must not drift.
+    from inform.training.dataset import IMAGE_SUFFIXES as TRAINING_SUFFIXES
+
+    assert IMAGE_SUFFIXES == TRAINING_SUFFIXES
+
+
+def test_load_labeled_set_reads_jpeg_and_png_alike(tmp_path):
+    # generate_dataset now writes .jpg, and a real phone photo is already .jpg,
+    # but PNG sets written by earlier runs must still load.
+    from PIL import Image
+
+    for stem, suffix in (("sheet_01", ".jpg"), ("sheet_02", ".png")):
+        Image.new("RGB", (4, 4), (255, 255, 255)).save(tmp_path / f"{stem}{suffix}")
+        (tmp_path / f"{stem}.json").write_text(_TRUTH.model_dump_json(), encoding="utf-8")
+
+    pairs = load_labeled_set(tmp_path)
+
+    assert [p.name for p, _ in pairs] == ["sheet_01.jpg", "sheet_02.png"]
+    assert all(expected == _TRUTH for _, expected in pairs)

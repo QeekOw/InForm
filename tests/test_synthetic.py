@@ -74,10 +74,10 @@ def test_same_seed_is_deterministic():
     assert first == second
 
 
-def test_generate_sheet_returns_png_matching_device_window():
+def test_generate_sheet_returns_jpeg_for_the_requested_device():
     image_bytes, payload = generate_sheet("inbody_570", seed=7)
     image = Image.open(io.BytesIO(image_bytes))
-    assert image.format == "PNG"
+    assert image.format == "JPEG"
     assert payload.source_device == "inbody_570"
 
 
