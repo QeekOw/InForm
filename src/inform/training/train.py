@@ -39,7 +39,7 @@ def train(
     data_dir: Path,
     output_dir: Path,
     model_name_or_path: str = DEFAULT_MODEL,
-    num_train_epochs: int = 3,
+    num_train_epochs: int = 5,
     per_device_train_batch_size: int = 1,
     learning_rate: float = 3e-5,
     max_target_length: int = 512,
@@ -71,7 +71,13 @@ def train(
         learning_rate=learning_rate,
         fp16=True,
         save_strategy="epoch",
-        save_total_limit=2,
+        # Keep every epoch's checkpoint, not just the last two: the shipped
+        # donut-both-v3 was a 1-epoch run scoring 48% on its own synthetic
+        # distribution, so how accuracy moves per epoch is a real open
+        # question. Retaining all of them turns one training run into an
+        # epoch sweep -- score each against the held-out and real sets and
+        # pick the best, instead of assuming the final epoch wins.
+        save_total_limit=None,
         logging_steps=10,
         remove_unused_columns=False,
         report_to=[],
@@ -89,7 +95,7 @@ def _main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--model-name-or-path", default=DEFAULT_MODEL)
-    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--learning-rate", type=float, default=3e-5)
