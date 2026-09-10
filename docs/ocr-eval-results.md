@@ -518,7 +518,8 @@ Pre-registered as the sharpest single indicator that geometry was the cause. It 
 did not stop the model crossing into the adjacent Segmental Fat panel. Those gutters are
 guessed, not measured (issue #46), so this does not refute the geometry story so much as show
 that **guessed geometry cannot test it** — the measurement is now a precondition for any
-further retrain, not a nice-to-have.
+further retrain, not a nice-to-have. ADR-0007's 2026-09-10 amendment records what this does
+and does not establish.
 
 ### Fat Free Mass improved; Percent Body Fat regressed
 

@@ -71,3 +71,48 @@ minimal look is out-of-distribution. The 270 template is therefore overhauled (5
 Ground-truth invariants (LBM = weight·(1−PBF/100), Katch-McArdle BMR, segments sum, seeded
 asymmetry) are unchanged — only the visual surround and the coherent distractors are new. The
 `InBodyPayload` contract is untouched.
+
+## Amendment (2026-09-10) — the geometry correction is kept; its stated rationale is not
+
+The 2026-09-08 diagnosis held that the synthetic sheets were the **wrong shape**: they rendered
+near-square (aspect ~0.949) and narrow (941–1251 px), so they were *upscaled* onto Donut's
+2560x1920 canvas while a real phone photo is *downscaled* onto it. The model therefore learned
+soft interpolated text and met sharp text at inference. The templates were corrected to A4
+(0.702 / 0.701 against 0.707), the dataset regenerated at 2352+ px as JPEG, and the model
+retrained from `donut-base`.
+
+**The retrain did not close the gap.** Best v4 checkpoint scores 30/36 core fields against
+`donut-both-v3`'s 33/36 on the real hold-out, level on the critical cut. `donut-both-v3` remains
+the shipped model. Full numbers in `docs/ocr-eval-results.md`.
+
+### What this does and does not establish
+
+**The geometry correction stands.** A synthetic InBody sheet should be A4-shaped because a real
+one is; that is right independently of what it does for accuracy, and reverting it would
+reintroduce a known-false property. v4 also emits well-formed JSON *more* often than v3
+(8/12 vs 6/12 on real photos), so the shape change was not simply harmful.
+
+**The rationale attached to it is not supported.** Aspect ratio and pixel scale were advanced as
+the explanation for the synthetic-to-real gap. Corrected, the gap did not close. Aspect alone
+cannot carry the explanation in either direction: v3 at 0.949 is further from a real photo
+(~0.563) than v4 at 0.702, and scores better.
+
+**The test was compromised, so this is not a refutation.** The same regeneration widened the
+Segmental Lean/Fat panel gutter on a **guess** rather than a measurement (issue #46), and the
+sheet_05 panel crossing that the guess targeted survived it (`right_arm_kg`, 1/6 to 2/6). Two
+changes shipped together, one of them unmeasured, and the pre-registered indicator did not move.
+The honest reading is that **guessed geometry cannot test a geometry hypothesis.**
+
+The same regeneration also regressed `percent_body_fat` from 6/6 to 3/6 (issue #48), which is
+unexplained and further weakens any single-cause account of v4's behaviour.
+
+### Consequence
+
+Measuring the #46 gutters off a real printout is now a **precondition for any further retrain**,
+not parallel work. A retrain on the current templates would be as uninterpretable as this one:
+its negative result would not distinguish "geometry is the wrong explanation" from "the guessed
+gutter is wrong".
+
+Ground-truth invariants and the `InBodyPayload` contract remain untouched, as in every amendment
+above.
+
