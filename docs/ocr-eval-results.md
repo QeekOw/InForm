@@ -491,6 +491,96 @@ Every number in this section belongs to the pre-fix generator and `donut-both-v3
 after regenerating and retraining from `donut-base`, and compare against the 3/6/3 split and
 the hand labels above.
 
+## v4 retrain: geometry fixed, hypothesis not supported (2026-09-10)
+
+The regenerate-and-retrain called for above is done. `synth_v4_both` (5000 sheets, aspect
+0.702, min width 2352 px, JPEG) trained from `donut-base` on Kaggle for 4 of a planned 5
+epochs before the 12 h session cap; epochs 1-4 are on disk, epoch 5 was never written.
+
+**The retrain did not beat `donut-both-v3`, and the sharpest indicator says geometry was not
+the cause.**
+
+| real hold-out (n=12, 6 labelled) | v3 | e1 | e2 | e3 | e4 |
+|---|---|---|---|---|---|
+| core fields | **33/36 (91.7%)** | 16/36 (44.4%) | 27/36 (75.0%) | 30/36 (83.3%) | 13/36 (36.1%) |
+| segmental lean | **23/30 (76.7%)** | 4/30 (13.3%) | 21/30 (70.0%) | 20/30 (66.7%) | 4/30 (13.3%) |
+| critical (LBM + limbs) | 26/36 (72.2%) | 9/36 (25.0%) | 26/36 (72.2%) | 26/36 (72.2%) | 9/36 (25.0%) |
+| usable / flagged / unread / refused | 3/6/3/0 | 0/4/8/0 | 1/10/1/0 | 4/5/3/0 | 0/4/8/0 |
+
+Best v4 checkpoint is epoch 3: worse than v3 on core fields and segmental lean, level on the
+critical cut, one more `usable` sheet. No checkpoint is a promotion candidate. **`donut-both-v3`
+remains the shipped model.**
+
+### The sheet_05 panel crossing did not disappear
+
+Pre-registered as the sharpest single indicator that geometry was the cause. It was not fixed:
+`segmental_lean.right_arm_kg` reads 1/6 under v3 and 2/6 under v4 epoch 3. The widened gutters
+did not stop the model crossing into the adjacent Segmental Fat panel. Those gutters are
+guessed, not measured (issue #46), so this does not refute the geometry story so much as show
+that **guessed geometry cannot test it** — the measurement is now a precondition for any
+further retrain, not a nice-to-have.
+
+### Fat Free Mass improved; Percent Body Fat regressed
+
+`lean_body_mass_kg` went 3/6 (v3) to 5/6 (epoch 3), which is the field this whole line of work
+started from. But `percent_body_fat` went 6/6 (v3) to 3/6 (epoch 3), and to 0/6 at epochs 1 and
+4. It is also where epoch 3's generation breaks (consistently at char 62 of the emitted JSON).
+That regression is v4-specific and unexplained.
+
+### Held-out synthetic
+
+`holdout_v4_both` (400 sheets), epoch 4: 49.0% on almost every field, whole-sheet 48.2%,
+uniform across fields. The uniformity is the parser defect below, not a per-field signal: whole
+sheets either read or scored zero. Worth re-measuring now that the defect is fixed.
+
+## A parser defect was discarding good reads, including v3's (2026-09-10)
+
+Found while diagnosing the v4 numbers above. Donut frequently emits every field correctly and
+then stops before the closing brace. `_to_partial` returned an empty read on any
+`JSONDecodeError`, so a sheet that was read correctly except for one missing character scored
+as a total refusal.
+
+**This was never a v4 problem.** On the real hold-out it discarded 6 of 12 reads for the shipped
+`donut-both-v3` and 8 of 12 for v4 epoch 4. v3's per-field accuracy never showed it, because the
+six discarded sheets happened to be the six that were never hand-labelled. Every `refused` count
+in the sections above is therefore inflated: v3's real split is 3 usable / 6 flagged / 3 unread /
+**0 refused**, not the 3/3/0/6 reported at 2026-09-08.
+
+Fixed in `57aa70d`: recovery cuts fall only on a field boundary, because every prefix of a number
+is itself a number and closing `58.0` at `5` would hand back a fabricated `lean_body_mass_kg`
+(ADR-0008 forbids exactly this). A generation ending on a bare digit is therefore not recoverable
+at all, and its last field reads unread.
+
+Per-field accuracy on the labelled six is unchanged by the fix; the outcome split and the
+unlabelled sheets are what moved.
+
+### Beam search does not help
+
+Tested directly, `num_beams=4` against greedy, well-formed JSON out of 12 real sheets:
+
+| model | greedy | 4 beams |
+|---|---|---|
+| `donut-both-v3` | 6/12 | 6/12 |
+| v4 epoch 3 | 8/12 | 8/12 |
+
+No difference. At ~1e-3 training loss the model is confident enough that beams converge on the
+greedy path; the truncation is not a search failure. Note also that **v4 emits well-formed JSON
+more often than v3** — v4's regression is in the values, not the structure.
+
+### Reproduction
+
+```bash
+# real hold-out, any checkpoint
+python -m inform.holdout --data-dir data/real_holdout --labels data/real_holdout/labels.json     --donut-checkpoint <ckpt>
+
+# held-out synthetic
+python -m inform.compare --data-dir D:/cera/data/holdout_v4_both --donut-checkpoint <ckpt> --skip-vlm
+```
+
+Checkpoints are at `D:/cera/kaggle_out_v4/donut-both-v4/checkpoint-{1250,2500,3750,5000}`. They
+were saved mid-run, so they carry no processor; rebuild it from `donut-base` plus the task token
+before scoring (`build_model_and_processor` does exactly this).
+
 ## Future Work
 
 - **Real *metric* 570 photo.** The adult 570 clone + both-device retrain is done
@@ -500,14 +590,18 @@ the hand labels above.
 - **Device-label robustness on real photos.** The both-device model reads real 270
   health fields perfectly but misclassifies `source_device` on the out-of-distribution
   photo. Worth a real-photo-aware fix (more real captures, or device-agnostic scoring).
-- **Regenerate and retrain (highest value).** Template geometry is fixed (0.702 /
-  0.701 against A4's 0.707); the dataset and the model still predate it. Regenerate,
-  retrain from `donut-base` rather than `donut-both-v3` because the input
-  distribution changed, and score every epoch checkpoint against the n=12 baseline
-  and the hand labels above. Whether the sheet_05 panel crossing disappears is the
-  sharpest single indicator that geometry was the cause.
-- **Hand-label the six refused sheets.** The six that produced a read are labelled;
-  the six refusals have no ground truth, so a checkpoint that stops refusing them
-  cannot yet be scored per-field.
-- **Beam-search decoding** for Donut — may recover some refusals with no
-  retrain; untested.
+- **~~Regenerate and retrain~~ — done 2026-09-10, negative.** See the v4 section
+  above. The retrain did not beat `donut-both-v3` and the sheet_05 crossing survived.
+  **Measure the #46 gutters before retraining again**: guessed geometry cannot test a
+  geometry hypothesis, so another run on the current templates would answer nothing.
+- **Hand-label the other six sheets (highest value).** They are no longer refused --
+  that was the parser defect, and all 12 now produce a read — but they still have no
+  ground truth. The evaluation is 6 labelled sheets, 36 field observations, so the v3
+  vs v4-epoch-3 gap is five fields. **Most improvements are currently too small for
+  this hold-out to see**, which makes labelling worth more than another retrain
+  (issue #24 also wants 20-30 sheets and some real 570s).
+- **~~Beam-search decoding~~ — tested 2026-09-10, no effect.** See above. The
+  remaining decoding idea is **schema-constrained decoding**: restrict the decoder to
+  tokens consistent with `InBodyPayload` so a malformed generation becomes impossible
+  rather than something to recover from. Untested, and it touches the `extract_inbody`
+  seam that Track B depends on, so design it before building it.
