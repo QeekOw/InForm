@@ -15,12 +15,12 @@ TASK_TOKEN = "<s_inbody>"
 _MAX_NEW_TOKENS = 512
 
 
-def load_engine(checkpoint_dir: Path):
+def load_engine(checkpoint_source: str | Path):
     """Bind a fine-tuned Donut checkpoint into an extract_inbody-shaped engine.
 
     Returns a `Callable[[Path], PartialInBody]` — the same seam the VLM engine
     fills (ADR-0002) — with the (heavy) model loaded once and reused per call.
-    Self-hosted: no cloud API (ADR-0005).
+    Self-hosted: no cloud API (ADR-0005). Supports local directories or Hugging Face Hub IDs.
     """
     # Lazy: heavy deps (torch/transformers, the training extra) — kept out of
     # module import so the parsing logic below stays importable without them.
@@ -29,7 +29,8 @@ def load_engine(checkpoint_dir: Path):
 
     from inform.training.train import load_checkpoint
 
-    processor, model = load_checkpoint(Path(checkpoint_dir))
+    source = checkpoint_source.as_posix() if isinstance(checkpoint_source, Path) else str(checkpoint_source)
+    processor, model = load_checkpoint(source)
     model.eval()
     # Use the GPU when one is present — donut-base's 2560x1920 canvas is ~10-20x
     # faster on CUDA than CPU. Falls back to CPU transparently.

@@ -28,10 +28,11 @@ def build_model_and_processor(model_name_or_path: str = DEFAULT_MODEL):
     return processor, model
 
 
-def load_checkpoint(checkpoint_dir: Path):
+def load_checkpoint(checkpoint_source: str | Path):
     """Load a saved fine-tune for inference — proves the checkpoint round-trips."""
-    processor = DonutProcessor.from_pretrained(str(checkpoint_dir))
-    model = VisionEncoderDecoderModel.from_pretrained(str(checkpoint_dir))
+    source = checkpoint_source.as_posix() if isinstance(checkpoint_source, Path) else str(checkpoint_source)
+    processor = DonutProcessor.from_pretrained(source)
+    model = VisionEncoderDecoderModel.from_pretrained(source)
     return processor, model
 
 
