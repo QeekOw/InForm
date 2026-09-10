@@ -59,3 +59,44 @@ def test_bad_typed_field_is_dropped_but_others_kept():
     assert partial.weight_kg is None  # the bad field is dropped -> unread
     assert partial.lean_body_mass_kg == 58.0  # the rest survives
     assert partial.segmental_lean.trunk_kg == 24.5
+
+
+def test_unclosed_generation_keeps_every_field_that_parsed():
+    # The model stops before the closing brace (observed on real photos: every
+    # field emitted correctly, generation ends at ~160 of 512 tokens). Closing
+    # the object recovers a complete read; dropping it discarded twelve correct
+    # fields over a missing character.
+    truncated = _GOOD.model_dump_json().rstrip("}")
+
+    assert _to_partial(truncated) == _GOOD_PARTIAL
+
+
+def test_corruption_midway_keeps_the_fields_before_it():
+    # Corruption partway through (observed after percent_body_fat) must not cost
+    # the fields the model already committed to. Everything from the breakage on
+    # reads unread; nothing is fabricated.
+    corrupted = '{"weight_kg":70.0,"lean_body_mass_kg":58.0,"percent_body_fat":skeletal_muscle'
+
+    partial = _to_partial(corrupted)
+
+    assert partial.weight_kg == 70.0
+    assert partial.lean_body_mass_kg == 58.0
+    assert partial.percent_body_fat is None
+    assert partial.skeletal_muscle_mass_kg is None
+
+
+def test_number_cut_in_half_is_unread_not_a_smaller_number():
+    # Every prefix of a number is a number, so a generation that stops inside
+    # 58.0 must not hand back 5. ADR-0008: never fabricate a number to fill a
+    # gap — a wrong lean_body_mass_kg poisons every downstream calculation.
+    partial = _to_partial('{"weight_kg":70.0,"lean_body_mass_kg":5')
+
+    assert partial.weight_kg == 70.0
+    assert partial.lean_body_mass_kg is None
+
+
+def test_nested_number_cut_in_half_is_unread():
+    partial = _to_partial('{"weight_kg":70.0,"segmental_lean":{"trunk_kg":2')
+
+    assert partial.weight_kg == 70.0
+    assert partial.segmental_lean is None
