@@ -165,6 +165,20 @@ finish() {
 
 TOTAL_STAGES=5
 
+# Detect python executable: check virtualenv first, then system python
+PYTHON_BIN="python"
+if [[ -f ".venv/Scripts/python.exe" ]]; then
+  PYTHON_BIN=".venv/Scripts/python.exe"
+elif [[ -f "/mnt/c/Users/sukse/InForm/.venv/Scripts/python.exe" ]]; then
+  PYTHON_BIN="/mnt/c/Users/sukse/InForm/.venv/Scripts/python.exe"
+elif [[ -f ".venv/bin/python" ]]; then
+  PYTHON_BIN=".venv/bin/python"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+fi
+
 banner "Hugging Face Space & Donut Model Deployment"
 
 # ── Stage 1: Hugging Face Authentication ──────────────────────────────────
@@ -181,9 +195,7 @@ set_secret HF_TOKEN "$HF_TOKEN"
 
 # Log in CLI using the captured token
 export HF_TOKEN
-if command -v python >/dev/null 2>&1; then
-  python -m huggingface_hub.cli.hf auth login --token "$HF_TOKEN" --add-to-git-credential >/dev/null 2>&1 || true
-fi
+"$PYTHON_BIN" -m huggingface_hub.cli.hf auth login --token "$HF_TOKEN" --add-to-git-credential >/dev/null 2>&1 || true
 
 # ── Stage 2: Create Model Repository on Hugging Face Hub ──────────────────
 stage "Hugging Face Hub: Model Repository"
@@ -197,9 +209,7 @@ ask HF_MODEL_REPO "Repository ID (default: ${DEFAULT_MODEL_REPO}):"
 HF_MODEL_REPO="${HF_MODEL_REPO:-$DEFAULT_MODEL_REPO}"
 
 say "Creating model repo '${HF_MODEL_REPO}' on Hugging Face Hub..."
-if command -v python >/dev/null 2>&1; then
-  python -m huggingface_hub.cli.hf repos create "$HF_MODEL_REPO" --type model || note "Repo may already exist; continuing."
-fi
+"$PYTHON_BIN" -m huggingface_hub.cli.hf repos create "$HF_MODEL_REPO" --type model || note "Repo may already exist; continuing."
 write_env INFORM_DONUT_CKPT "$HF_MODEL_REPO"
 set_var INFORM_DONUT_CKPT "$HF_MODEL_REPO"
 
@@ -212,11 +222,11 @@ note "This includes model.safetensors, config.json, tokenizer.json, and processo
 if [[ -d "models/donut-both-v3" ]]; then
   if confirm "Ready to upload models/donut-both-v3 to ${HF_MODEL_REPO}?"; then
     say "Uploading weights to Hugging Face Hub (this may take a couple of minutes)..."
-    python -m huggingface_hub.cli.hf upload "$HF_MODEL_REPO" models/donut-both-v3 . --repo-type model
+    "$PYTHON_BIN" -m huggingface_hub.cli.hf upload "$HF_MODEL_REPO" models/donut-both-v3 . --repo-type model
     say "Weights uploaded successfully!"
   else
     warn "Skipped model upload. Remember to run:"
-    note "  python -m huggingface_hub.cli.hf upload ${HF_MODEL_REPO} models/donut-both-v3 . --repo-type model"
+    note "  $PYTHON_BIN -m huggingface_hub.cli.hf upload ${HF_MODEL_REPO} models/donut-both-v3 . --repo-type model"
   fi
 else
   warn "Local directory 'models/donut-both-v3' not found!"
@@ -233,14 +243,10 @@ ask HF_SPACE_REPO "Space ID (default: ${DEFAULT_SPACE_REPO}):"
 HF_SPACE_REPO="${HF_SPACE_REPO:-$DEFAULT_SPACE_REPO}"
 
 say "Creating Space '${HF_SPACE_REPO}' (Gradio SDK, CPU Basic tier)..."
-if command -v python >/dev/null 2>&1; then
-  python -m huggingface_hub.cli.hf repos create "$HF_SPACE_REPO" --type space --space-sdk gradio || note "Space repo may already exist."
-fi
+"$PYTHON_BIN" -m huggingface_hub.cli.hf repos create "$HF_SPACE_REPO" --type space --space-sdk gradio || note "Space repo may already exist."
 
 say "Uploading Space application files from 'space/' to '${HF_SPACE_REPO}'..."
-if command -v python >/dev/null 2>&1; then
-  python -m huggingface_hub.cli.hf upload "$HF_SPACE_REPO" space/ . --repo-type space
-fi
+"$PYTHON_BIN" -m huggingface_hub.cli.hf upload "$HF_SPACE_REPO" space/ . --repo-type space
 
 step "Opening your Space settings to verify hardware tier (needs >= 2 GB RAM):"
 open_url "https://huggingface.co/spaces/${HF_SPACE_REPO}/settings"
