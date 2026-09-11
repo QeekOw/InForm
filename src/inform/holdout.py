@@ -12,9 +12,9 @@ ways that make it a sibling scorer rather than a flag on `evaluate()`:
   a None expectation means "legitimately absent on this device" (ADR-0004's
   visceral fat on a 270) and scores as a match.
 * **Not every sheet is labelled.** A refused sheet produced no read to check by
-  hand, so it has no ground truth at all. The outcome split (usable / flagged /
-  unread / refused) needs none and is reported over every sheet -- it is the one
-  real-photo number that is free.
+  hand, so it has no ground truth at all. The outcome split (unverified /
+  flagged / unread / refused) needs none and is reported over every sheet -- it
+  is the one real-photo number that is free.
 
 Match semantics are imported from `inform.evaluate`, so "correct" means the same
 thing here as on the synthetic set: within +/-0.1 unit, plus a 1% relative bound
@@ -69,10 +69,12 @@ from inform.inbody import (
 # InBodyPayload flows here without hand-editing (as in inform.evaluate).
 SCORED_FIELDS: tuple[str, ...] = REQUIRED_FIELDS + OPTIONAL_FIELDS + SEGMENTAL_DOTTED_FIELDS
 
-# The buckets a real sheet's read falls into, in order of decreasing usefulness.
-# `unread` is an incomplete read that no cross-check objected to; `flagged`
-# outranks it because a cross-check breach is the stronger signal.
-_OUTCOMES = ("usable", "flagged", "unread", "refused")
+# The read outcomes (CONTEXT.md), in order of decreasing usefulness. `unread`
+# is an incomplete read that no cross-check objected to; `flagged` outranks it
+# because a cross-check breach is the stronger signal. `unverified` is named for
+# the risk rather than the hope: the engine has no objection, which is not the
+# same as the read being right.
+_OUTCOMES = ("unverified", "flagged", "unread", "refused")
 
 Holdout = list[tuple[Path, PartialInBody | None]]
 
@@ -98,9 +100,51 @@ class Score(BaseModel):
         return f"{self.matched}/{self.labelled}"
 
 
+class SilentErrors(BaseModel):
+    """Wrong values inside `unverified` reads -- the headline measure of an
+    engine (CONTEXT.md, "Read outcomes").
+
+    Every other failure announces itself: a refusal explains itself, a
+    `flagged` value asks a person to check that value, an `unread` one asks
+    them to supply it. A silent error is the only failure that arrives looking
+    like a success, and the only thing standing between it and a plan is a
+    person reading a confirmation screen carefully.
+
+    Two cuts, because they answer different questions. `sheets_with_error` over
+    `sheets` is the headline: a sheet is what reaches a person, and one wrong
+    limb ruins it as surely as five. `field_errors` over `fields` is the
+    diagnostic underneath.
+
+    `unmeasurable` is the size of the blind spot, not part of either
+    denominator: an `unverified` read of a sheet nobody has hand-labelled
+    cannot be checked, and counting it clean would flatter the engine with
+    precisely the sheets that carry no ground truth (issue #24). Report it
+    beside the rate or the rate is not honest.
+
+    `fields` counts labelled fields on `unverified` sheets only, not every
+    labelled field in the set, so `field_rate` shares the headline's
+    denominator rather than the per-field table's. The report labels it that
+    way; read apart from that label it looks several times too small.
+    """
+
+    sheets: int
+    sheets_with_error: int
+    fields: int
+    field_errors: int
+    unmeasurable: int
+
+    @property
+    def sheet_rate(self) -> float | None:
+        return self.sheets_with_error / self.sheets if self.sheets else None
+
+    @property
+    def field_rate(self) -> float | None:
+        return self.field_errors / self.fields if self.fields else None
+
+
 class HoldoutReport(BaseModel):
-    """Per-field accuracy over the hand-labelled sheets, plus the outcome split
-    over all of them.
+    """The silent-error rate, per-field accuracy over the hand-labelled sheets,
+    and the outcome split over all of them.
 
     There is deliberately no whole-sheet figure. ADR-0006 calls it the headline
     number and defines it as "every required field correct", which this set
@@ -109,6 +153,9 @@ class HoldoutReport(BaseModel):
     over labelled fields only would carry the same name as the synthetic one
     with a different denominator, and would invite exactly the comparison
     ADR-0006 exists to make honest. The critical cut is reported instead.
+
+    ADR-0006's headline is superseded in any case: `silent` is what judges an
+    engine now, and per-field accuracy is a diagnostic beneath it (CONTEXT.md).
     """
 
     n_sheets: int
@@ -118,6 +165,7 @@ class HoldoutReport(BaseModel):
     core: Score
     segmental: Score
     critical: Score
+    silent: SilentErrors
 
 
 def load_labels(labels_path: Path) -> dict[str, PartialInBody]:
@@ -180,15 +228,26 @@ def score(
     matched = dict.fromkeys(SCORED_FIELDS, 0)
     labelled = dict.fromkeys(SCORED_FIELDS, 0)
     outcomes = dict.fromkeys(_OUTCOMES, 0)
+    silent = SilentErrors(sheets=0, sheets_with_error=0, fields=0, field_errors=0, unmeasurable=0)
 
     for image_path, label in holdout:
         try:
             result = extractor(image_path)
         except InBodyExtractionError:
-            outcomes["refused"] += 1
-            result = None
+            outcome, result = "refused", None
         else:
-            outcomes[_outcome(result)] += 1
+            outcome = _outcome(result)
+        outcomes[outcome] += 1
+
+        # A silent error can only live in an `unverified` read, and can only be
+        # seen on a labelled sheet. An unlabelled one is the blind spot, not a
+        # pass, so it is counted apart from either denominator.
+        unverified = outcome == "unverified"
+        if unverified and label is None:
+            silent.unmeasurable += 1
+        elif unverified:
+            silent.sheets += 1
+        sheet_errors = 0
 
         if label is None:
             continue
@@ -197,9 +256,16 @@ def score(
             if expected is None:  # not hand-read: unknown, not wrong
                 continue
             labelled[field] += 1
+            if unverified:
+                silent.fields += 1
             predicted = None if result is None else partial_field_value(result.data, field)
             if _matches(field, predicted, expected):
                 matched[field] += 1
+            elif unverified:
+                sheet_errors += 1
+        if unverified:
+            silent.field_errors += sheet_errors
+            silent.sheets_with_error += 1 if sheet_errors else 0
 
     return HoldoutReport(
         n_sheets=len(holdout),
@@ -211,6 +277,7 @@ def score(
         ),
         segmental=_total(matched, labelled, SEGMENTAL_DOTTED_FIELDS),
         critical=_total(matched, labelled, CRITICAL_FIELDS),
+        silent=silent,
     )
 
 
@@ -219,7 +286,7 @@ def _outcome(result: InBodyExtraction) -> str:
         return "flagged"
     if result.unread:
         return "unread"
-    return "usable"
+    return "unverified"
 
 
 def _matches(field: str, predicted: float | str | None, expected: float | str) -> bool:
@@ -244,6 +311,8 @@ def format_report(report: HoldoutReport) -> str:
     width = max(len(f) for f in SCORED_FIELDS) + 2
     lines = [f"{report.n_sheets} sheets, {report.n_labelled} hand-labelled", ""]
 
+    lines += _silent_lines(report.silent, width)
+
     lines.append("outcome split (needs no labels)")
     for outcome in _OUTCOMES:
         lines.append(f"  {outcome.ljust(width - 2)}{report.outcome_split[outcome]:>8}")
@@ -261,6 +330,31 @@ def format_report(report: HoldoutReport) -> str:
     ):
         lines.append(f"  {name.ljust(width)}{str(entry):>8}{_rate(entry):>9}")
     return "\n".join(lines)
+
+
+def _silent_lines(silent: SilentErrors, width: int) -> list[str]:
+    """The headline, printed as counts first.
+
+    The denominator is small enough that a bare percentage would be read as a
+    rate it cannot support, so the raw counts lead and the percentage is
+    suppressed entirely when there is nothing to divide by. `unmeasurable` is
+    printed unconditionally: a reader who does not see it will mistake the
+    blind spot for a clean result.
+    """
+    sheets = f"{silent.sheets_with_error}/{silent.sheets}"
+    fields = f"{silent.field_errors}/{silent.fields}"
+    return [
+        "silent errors -- wrong values inside unverified reads (headline)",
+        f"  {'unverified sheets, >=1 wrong'.ljust(width)}{sheets:>8}{_pct(silent.sheet_rate):>9}",
+        f"  {'their fields, wrong'.ljust(width)}{fields:>8}{_pct(silent.field_rate):>9}",
+        f"  {'unverified, unlabellable'.ljust(width)}{silent.unmeasurable:>8}"
+        "   not measurable",
+        "",
+    ]
+
+
+def _pct(rate: float | None) -> str:
+    return "     --" if rate is None else f"{rate:6.1%}"
 
 
 def _rate(entry: Score) -> str:

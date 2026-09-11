@@ -47,6 +47,39 @@ honestly*, not targeted.
 - Becomes the `tests/` fixture strategy for Module 1.
 - Requires collecting a small set of real, consented InBody photos for the hold-out.
 
+## Amendment (2026-09-11): the headline is the silent-error rate, and `usable` is `unverified`
+
+Two changes to what this ADR measures. Neither touches the match semantics above.
+
+**`usable` is renamed `unverified`.** The outcome meant "complete, and no cross-check
+objected", but the name read as a verdict on the read. Operationally it says only that nothing
+compels a person to look at the sheet, so the name now states the risk rather than the hope.
+The outcome split is `unverified / flagged / unread / refused`; every mention of `usable` in
+the body above and in results recorded before this date means `unverified`. Recorded results
+are **not** rewritten — they reported what was measured under the name in use at the time.
+
+**Whole-sheet accuracy is no longer this ADR's headline; the silent-error rate is.** The body
+above treats whole-sheet accuracy as the headline and then explains at length why the real
+hold-out cannot report it. That explanation stands, but the conclusion is now moot: the measure
+of an engine is the **silent error**, a wrong value inside an `unverified` read (CONTEXT.md,
+"Read outcomes"). Every other failure announces itself and costs a person a correction; a
+silent error is the only one that arrives looking like a success. Per-field accuracy is
+demoted to a diagnostic — it counts a thirty-second correction and a wrong number in someone's
+plan the same.
+
+Implemented as `inform.holdout.SilentErrors`, reported per sheet (the headline: a sheet is what
+reaches a person, and one wrong limb ruins it as surely as five) and per field (the diagnostic
+underneath). It is computable only where hand labels exist, so the report also carries
+`unmeasurable` — `unverified` reads of sheets nobody has labelled, which leave the denominator
+rather than counting clean. **The denominator is the constraint, not the metric.** Six of
+twelve sheets are labelled (issue #24), so the figure supports no comparison between engines
+yet; it is a floor on one checkpoint, and saying otherwise would be the dishonesty this ADR
+exists to prevent.
+
+The 20-30 sheet hold-out this ADR asks for is an ambition, not a gate. The concept paper it
+came from was written by one of the team's own developers and is a starting point rather than
+a specification.
+
 ## Amendment (2026-09-09): segmental limbs need a relative bound too
 
 The original decision set one tolerance for every field, exact within +/-0.1 unit. That is

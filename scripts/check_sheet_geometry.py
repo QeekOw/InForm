@@ -3,7 +3,7 @@
 Donut learned whatever geometry the synthetic set had. When that differs from a
 real photographed sheet, the model reads the training distribution well and the
 real one badly -- which is what `donut-both-v3` does (48% on its own synthetic
-270 set, 3 usable reads out of 12 real photos).
+270 set, 3 unverified reads out of 12 real photos).
 
 Two things have to line up, and this script measures both:
 

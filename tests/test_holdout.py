@@ -85,7 +85,7 @@ def test_a_perfect_read_scores_every_labelled_field():
     assert report.core.matched == 6 and report.core.labelled == 6
     assert report.segmental.matched == 5 and report.segmental.labelled == 5
     assert report.core.accuracy == 1.0
-    assert report.outcome_split["usable"] == 1
+    assert report.outcome_split["unverified"] == 1
 
 
 def test_an_unlabelled_field_leaves_the_denominator():
@@ -157,7 +157,7 @@ def test_outcome_split_counts_unlabelled_sheets_too():
 
     assert report.n_sheets == 3
     assert report.n_labelled == 1
-    assert report.outcome_split == {"usable": 1, "flagged": 1, "unread": 0, "refused": 1}
+    assert report.outcome_split == {"unverified": 1, "flagged": 1, "unread": 0, "refused": 1}
     assert report.core.labelled == 6  # only the labelled sheet contributes
 
 
@@ -168,7 +168,7 @@ def test_flagged_and_unread_are_counted_once_each():
         _reading(_LABEL, unread=["weight_kg"], flagged=["weight_kg"]), [(_IMAGE, _LABEL)]
     )
 
-    assert report.outcome_split == {"usable": 0, "flagged": 1, "unread": 0, "refused": 0}
+    assert report.outcome_split == {"unverified": 0, "flagged": 1, "unread": 0, "refused": 0}
 
 
 def test_replay_engine_reads_a_recorded_run_by_name_or_stem(tmp_path):
@@ -225,3 +225,93 @@ def test_the_critical_field_cut_is_lbm_plus_the_limbs():
     assert report.critical.labelled == 6  # LBM + five limbs
     assert report.critical.matched == 5  # limbs right, LBM wrong
     assert report.core.matched == 5  # LBM also sits in the scalar cut
+
+
+# --- silent error (CONTEXT.md: the headline measure) -------------------------
+# A wrong value inside an `unverified` read: wrong, and carrying no signal that
+# anything is wrong. Every other failure announces itself, so these tests pin
+# what does *not* count as silent as tightly as what does.
+
+
+def test_a_wrong_value_in_an_unverified_read_is_a_silent_error():
+    wrong = _LABEL.model_copy(deep=True)
+    wrong.weight_kg = 60.0
+
+    report = score(_reading(wrong), [(_IMAGE, _LABEL)])
+
+    assert report.outcome_split["unverified"] == 1
+    assert report.silent.sheets == 1
+    assert report.silent.sheets_with_error == 1
+    assert report.silent.field_errors == 1
+    assert report.silent.sheet_rate == 1.0
+
+
+def test_a_correct_unverified_read_carries_no_silent_error():
+    report = score(_reading(_LABEL), [(_IMAGE, _LABEL)])
+
+    assert report.silent.sheets == 1
+    assert report.silent.sheets_with_error == 0
+    assert report.silent.field_errors == 0
+    assert report.silent.sheet_rate == 0.0
+
+
+def test_a_wrong_value_that_was_flagged_is_not_silent():
+    # The whole point of the metric: an error that announced itself is not the
+    # one that reaches a person unnoticed. A flagged sheet leaves the
+    # denominator rather than scoring clean.
+    wrong = _LABEL.model_copy(deep=True)
+    wrong.weight_kg = 60.0
+
+    report = score(_reading(wrong, flagged=["weight_kg"]), [(_IMAGE, _LABEL)])
+
+    assert report.outcome_split["flagged"] == 1
+    assert report.silent.sheets == 0
+    assert report.silent.field_errors == 0
+    assert report.silent.sheet_rate is None
+
+
+def test_a_wrong_value_in_an_incomplete_read_is_not_silent():
+    # `unread` asks the person for the missing fields, so the read is already
+    # in front of them. Same reasoning as flagged.
+    wrong = _LABEL.model_copy(deep=True)
+    wrong.weight_kg = 60.0
+
+    report = score(_reading(wrong, unread=["visceral_fat_level"]), [(_IMAGE, _LABEL)])
+
+    assert report.outcome_split["unread"] == 1
+    assert report.silent.sheets == 0
+
+
+def test_an_unverified_read_on_an_unlabelled_sheet_is_unmeasurable_not_clean():
+    # Nothing to check it against. Counting it clean would flatter the engine
+    # with exactly the sheets nobody has labelled yet (#24), so it leaves the
+    # denominator and is reported as the size of the blind spot instead.
+    report = score(_reading(_LABEL), [(_IMAGE, None)])
+
+    assert report.silent.sheets == 0
+    assert report.silent.unmeasurable == 1
+    assert report.silent.sheet_rate is None
+
+
+def test_a_refusal_is_neither_silent_nor_unmeasurable():
+    # A refusal announces itself and produced no read to check, so it is
+    # outside the metric altogether rather than a gap in it.
+    report = score(_refusing(NotAnInBodySheetError()), [(_IMAGE, _LABEL)])
+
+    assert report.silent.sheets == 0
+    assert report.silent.unmeasurable == 0
+
+
+def test_silent_error_counts_sheets_and_fields_separately():
+    # Per-sheet is the headline -- a sheet is what reaches a person -- and
+    # per-field is the diagnostic underneath it.
+    wrong = _LABEL.model_copy(deep=True)
+    wrong.weight_kg = 60.0
+    wrong.percent_body_fat = 5.0
+
+    report = score(_reading(wrong), [(_IMAGE, _LABEL), (Path("sheet_07.png"), _LABEL)])
+
+    assert report.silent.sheets == 2
+    assert report.silent.sheets_with_error == 2
+    assert report.silent.field_errors == 4
+    assert report.silent.fields == 22  # 11 labelled fields on each of the two

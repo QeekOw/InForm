@@ -582,6 +582,61 @@ Checkpoints are at `D:/cera/kaggle_out_v4/donut-both-v4/checkpoint-{1250,2500,37
 were saved mid-run, so they carry no processor; rebuild it from `donut-base` plus the task token
 before scoring (`build_model_and_processor` does exactly this).
 
+## Silent-error baseline for `donut-both-v3` (2026-09-11)
+
+The measure of an engine is now the **silent error** — a wrong value inside an `unverified`
+read (CONTEXT.md, and the 2026-09-11 amendment to
+[ADR-0006](adr/0006-ocr-evaluation-protocol.md)). `inform.holdout` computes it, and this is
+the shipped model's figure. Per-field accuracy is unchanged; it is a diagnostic now.
+
+| `donut-both-v3`, real hold-out | value |
+|---|---|
+| unverified reads carrying one or more wrong values | **3 / 3 (100%)** |
+| wrong fields within those reads | 4 / 33 (12.1%) |
+| unverified reads with no hand label (not measurable) | 0 |
+| outcome split (unverified / flagged / unread / refused) | 3 / 6 / 3 / 0 |
+
+**Every read that the engine does not object to is wrong somewhere.** That is the honest
+headline for the shipped model, and it is a stronger statement than the per-field table above
+makes: 91.7% on core fields and 76.7% on segmental lean describe the same six sheets.
+
+It is also consistent with the hand analysis in "The segmental errors reach the user as a
+fabricated imbalance" above, and slightly stricter. That section found 2 of the 3 sheets
+produce a plan asserting an imbalance the subject does not have; the third has wrong arm
+values that happen not to flip the asymmetry verdict. A wrong value is a silent error whether
+or not a downstream threshold notices, so it counts here and did not count there.
+
+**n = 3. This supports no comparison between engines.** The denominator is three sheets
+because only three reads land `unverified` and all three happen to be hand-labelled; six of
+twelve sheets have labels at all (issue #24). Scoring a second checkpoint against this and
+declaring a winner would be the error ADR-0006 exists to prevent. The denominator is the work.
+
+### The recorded-reads baseline was stale, and is re-recorded
+
+`data/real_holdout/donut-both-v3-reads.json` predates the parser fix in
+"A parser defect was discarding good reads" above. Replaying it now gives an outcome split of
+3/3/0/6 — six refusals that the current parser does not produce — because the recorded reads
+are missing the fields that `_salvage` now recovers. Any silent-error figure computed from it
+is measured against a parser that no longer ships.
+
+Re-recorded from the local `donut-both-v3` checkpoint under the current parser as
+`data/real_holdout/donut-both-v3-reads-57aa760.json`, which reproduces the documented v3
+baseline exactly: 3/6/3/0, core 33/36, segmental lean 23/30, critical 26/36. **That file is
+the one to replay.** The stale one is left in place rather than overwritten, since neither is
+in the repo (`data/` is gitignored) and the older one is what earlier sections were measured
+against.
+
+Reproduce with, from a checkout with the hold-out data present:
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONPATH=src python -m inform.holdout \
+    --data-dir data/real_holdout --labels data/real_holdout/labels.json \
+    --reads data/real_holdout/donut-both-v3-reads-57aa760.json
+```
+
+A recorded-reads file is model output over real health records. It stays out of the repo, and
+its values stay out of issues, docs and artifacts — counts only, as above.
+
 ## Future Work
 
 - **Real *metric* 570 photo.** The adult 570 clone + both-device retrain is done
