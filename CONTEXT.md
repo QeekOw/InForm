@@ -115,6 +115,12 @@ corrects what the engine read before any plan is built.
   **headline measure** of an engine's fitness, because every other failure announces itself.
   Per-field accuracy is a diagnostic, not the headline: it counts a thirty-second correction
   and a wrong number in someone's plan the same.
+- **A silent-error rate alone does not rank an engine**, and is read beside the read outcomes
+  or not at all. An engine that flags or under-reads every sheet produces no `unverified` reads
+  and therefore no silent errors, which is a perfect score for something nobody can use.
+  Measured, not hypothetical: two of the four v4 checkpoints score exactly that way. Silent
+  error is the measure of **risk** and the outcome split is the measure of **cost** — what the
+  engine asks of a person — and an engine is judged on both.
 - **Measured field** — a value an engine read. **Corrected field** — a value a person typed,
   recorded alongside the measured fields and never merged into them. Confirming a `flagged`
   value leaves it a measured field; only changing it makes a corrected field.
