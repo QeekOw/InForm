@@ -72,6 +72,43 @@ Ground-truth invariants (LBM = weight·(1−PBF/100), Katch-McArdle BMR, segment
 asymmetry) are unchanged — only the visual surround and the coherent distractors are new. The
 `InBodyPayload` contract is untouched.
 
+## Amendment (2026-09-11) — the 270 fat-figure fix also changed the 570
+
+Found while preparing the v5 regeneration, by byte-comparing freshly rendered 570s against
+`synth_v4_both` on disk. **They do not match.** The fix commit says a sheet stays
+"byte-identical for a given (device, seed)"; that is true of the payloads, which were what it
+verified, and false of the 570 images.
+
+`_derive_render_values` is shared by both templates. Before the fix, `fat_la` and `fat_ra` were
+both `body_fat_mass_kg * 0.04` — identical for left and right on every sheet — and the fix
+skews them inversely against the seeded lean asymmetry so the arm carrying more lean carries
+proportionally less fat. The 570 template renders `$fat_la` and `$fat_ra` in its Segmental Fat
+bar rows, so its printed values moved too. Measured over 600 payloads, **23% of 570 sheets
+now render differently**; the rest are sheets with no seeded asymmetry, where left and right
+still coincide. The change is confined to those five values. Bars are unaffected (they use
+fixed fractions), and `$fat_*_pct` / `$fat_*_rate` are read by the 270 template only.
+
+**This is an improvement to the 570, not a regression.** "Left always equals right" is a
+training-only cue of the same family as the missing third line on the 270: no real sheet prints
+identical left and right segmental fat. It was not intended, recorded or measured, which is the
+part worth writing down.
+
+Two consequences.
+
+**The 570 half of `synth_v4_both` is not reproducible from this commit onward**, so it cannot be
+copied forward into a new set to save render time. A regeneration is 5,000 sheets, not 2,500.
+The manifest fingerprint in `inform.training.dataset` is what surfaced this, on its first real
+use.
+
+**A v5 retrain is not single-variable per device, and is single-variable per hypothesis.** Both
+halves of the change come from one commit and push the same way: remove a cue in the Segmental
+Fat panel that exists in training and not at inference. That is one hypothesis, and it is the
+level at which the result has to be attributable. Reverting the 570 side effect to keep the v4
+bytes would mean deliberately keeping the worse sheet, so it is not worth doing.
+
+Issue #50's 570 half stays open. It is about the panel being a structural clone of Segmental
+Lean, which this does not touch.
+
 ## Amendment (2026-09-10) — the geometry correction is kept; its stated rationale is not
 
 The 2026-09-08 diagnosis held that the synthetic sheets were the **wrong shape**: they rendered
