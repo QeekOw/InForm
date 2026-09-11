@@ -526,7 +526,43 @@ and does not establish.
 `lean_body_mass_kg` went 3/6 (v3) to 5/6 (epoch 3), which is the field this whole line of work
 started from. But `percent_body_fat` went 6/6 (v3) to 3/6 (epoch 3), and to 0/6 at epochs 1 and
 4. It is also where epoch 3's generation breaks (consistently at char 62 of the emitted JSON).
-That regression is v4-specific and unexplained.
+
+**It is a structural failure at that field's value slot, not a misread number** (2026-09-12,
+issue #48). Decoding all four v4 checkpoints and `donut-both-v3` over the twelve real sheets,
+reporting shape only with digits masked: on the malformed sheets the model emits the **next key**
+where the number belongs, e.g. `"percent_body_fat":"skeletal_muscle_mass_kg":##.#`, which is what
+breaks the JSON at char 62. Three modes appear — no value at all, the wrong integer-digit count
+(one or three where two belong), and the decimal dropped for a bare integer.
+
+Shape of the emitted `percent_body_fat` over 12 sheets:
+
+| | no value | 1 int digit | 2 int + 1 dec (correct) | 3 int digits |
+|---|---|---|---|---|
+| e1 | 7 | 3 | 2 | 0 |
+| e2 | 1 | 10 | 1 | 0 |
+| e3 | 3 | 3 | 5 | 1 |
+| e4 | 1 | 11 | 0 | 0 |
+| **v3** | 0 | 0 | **12** | 0 |
+
+v3 emits the correct shape on 12 of 12 and **never** breaks at this field; its own six malformed
+generations break after `weight_kg` (x2), `lean_body_mass_kg`, `skeletal_muscle_mass_kg`,
+`basal_metabolic_rate_kcal` and `trunk_kg`. So v3 learned the field's numeric form and no v4
+checkpoint did, at any epoch.
+
+**It is not a run-wide instability.** In the same generations where epoch 3 emits no value for
+`percent_body_fat`, it emits `skeletal_muscle_mass_kg` correctly as `##.#` — that is the key
+sitting in PBF's value slot above. **It is also not the PBF row's geometry**: the tick axis, the
+`pbf_history` drift and the row structure are byte-identical to the pre-v4 template, and the
+`.bv` / `.ticks` font bumps were cancelled by the sheet scaling down further onto Donut's canvas
+(0.817 to 0.765). Both directions the section above invited are closed.
+
+What remains, as a hypothesis: `percent_body_fat` is the only scored field whose value magnitude
+coincides with its own axis labels (10-35 against ticks 8..58), and the bar value overlaps the
+tick band with only a 2px halo between them (issue #52). A field that was always marginally
+segmentable stopped being so when v4's geometry change cost a little resolution. **Issue #48
+records a prediction for the v5 retrain to settle**: v5 keeps this geometry and the overlap
+untouched, so if v5 still fails the field the reading holds, and if v5 recovers it the reading is
+wrong.
 
 ### Held-out synthetic
 
