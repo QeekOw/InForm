@@ -54,6 +54,18 @@ _PBF_RANGE_PCT = (10.0, 35.0)
 _SMM_FRACTION_OF_LBM_RANGE = (0.55, 0.65)
 _VISCERAL_FAT_RANGE = (1, 20)
 _SEGMENT_FRACTIONS_OF_LBM = {"left_arm_kg": 0.08, "right_arm_kg": 0.08, "left_leg_kg": 0.17, "right_leg_kg": 0.17}
+
+# The fat analogue of the table above: each limb's share of total body fat, and
+# the reference physique its sufficiency is scored against. Segmental fat is
+# scored against a lean reference rather than against the person's own fat,
+# which is why a real sheet prints fat percentages well above 100% ("Over")
+# beside lean percentages near it ("Normal"). Trunk reads highest and legs
+# lowest, as on the hand-checked real 270.
+# ponytail: chosen to reproduce that ordering and rough magnitude (issue #50),
+# not measured off a calibration standard.
+_FAT_FRACTIONS_OF_BODY_FAT = {"arm": 0.04, "leg": 0.14, "trunk": 0.44}
+_FAT_SKEW = {"arm": 1.0, "leg": 0.80, "trunk": 1.27}
+_REFERENCE_PBF = 12.0
 _ASYMMETRY_PROBABILITY = 0.3
 _ASYMMETRY_DEVIATION_PCT = 8.0  # comfortably past the >5% bilateral-asymmetry threshold
 
@@ -143,6 +155,16 @@ def _generate_segmental(lean_body_mass_kg: float, rng: random.Random) -> Segment
     )
 
 
+# Both segmental figures label a percentage the same way; only what the
+# percentage is measured against differs between them.
+_NORMAL_BAND_PCT = (95.0, 105.0)
+
+
+def _rate_band(pct: float) -> str:
+    low, high = _NORMAL_BAND_PCT
+    return "Normal" if low <= pct <= high else ("Under" if pct < low else "Over")
+
+
 def _bar_pct(value: float, lo: float, hi: float) -> float:
     """Bar fill as a % of the plot width, clamped so the tip stays on-scale.
 
@@ -194,14 +216,44 @@ def _derive_render_values(payload: InBodyPayload) -> dict:
     def _seg(value: float, fraction: float) -> tuple[float, str]:
         expected = lbm * fraction
         pct = round(value / expected * 100, 1) if expected else 100.0
-        rate = "Normal" if 95 <= pct <= 105 else ("Under" if pct < 95 else "Over")
-        return pct, rate
+        return pct, _rate_band(pct)
 
     la_pct, la_rate = _seg(seg.left_arm_kg, _SEGMENT_FRACTIONS_OF_LBM["left_arm_kg"])
     ra_pct, ra_rate = _seg(seg.right_arm_kg, _SEGMENT_FRACTIONS_OF_LBM["right_arm_kg"])
     ll_pct, ll_rate = _seg(seg.left_leg_kg, _SEGMENT_FRACTIONS_OF_LBM["left_leg_kg"])
     rl_pct, rl_rate = _seg(seg.right_leg_kg, _SEGMENT_FRACTIONS_OF_LBM["right_leg_kg"])
     trunk_pct, trunk_rate = _seg(seg.trunk_kg, 0.5)
+
+    # Segmental fat is scored against a reference lean physique, not against the
+    # person's own fat, which is why a real sheet shows fat percentages well
+    # above 100% ("Over") beside lean percentages near it ("Normal"). Trunk
+    # carries proportionally more than the limbs and legs proportionally less,
+    # so the five percentages differ the way a measured sheet's do rather than
+    # all landing on one number.
+    # The percentage is derived from the kilograms the sheet prints, not computed
+    # alongside them, so the two can never contradict each other on the page --
+    # ADR-0007 requires the distractors stay human-verifiable.
+    def _seg_fat(value: float, part: str) -> tuple[float, str]:
+        expected = reference_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT[part] / _FAT_SKEW[part]
+        pct = round(value / expected * 100, 1) if expected else 100.0
+        return pct, _rate_band(pct)
+
+    # Fat mirrors the seeded lean asymmetry inversely: the arm carrying more lean
+    # carries proportionally less fat. Keeps left and right distinguishable
+    # without consuming another random draw.
+    reference_fat_mass_kg = weight * _REFERENCE_PBF / 100
+    arm_mean = (seg.left_arm_kg + seg.right_arm_kg) / 2 or 1.0
+    leg_mean = (seg.left_leg_kg + seg.right_leg_kg) / 2 or 1.0
+    fat_la = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["arm"] * (seg.right_arm_kg / arm_mean), 1)
+    fat_ra = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["arm"] * (seg.left_arm_kg / arm_mean), 1)
+    fat_ll = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["leg"] * (seg.right_leg_kg / leg_mean), 1)
+    fat_rl = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["leg"] * (seg.left_leg_kg / leg_mean), 1)
+    fat_trunk = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["trunk"], 1)
+    fat_la_pct, fat_la_rate = _seg_fat(fat_la, "arm")
+    fat_ra_pct, fat_ra_rate = _seg_fat(fat_ra, "arm")
+    fat_ll_pct, fat_ll_rate = _seg_fat(fat_ll, "leg")
+    fat_rl_pct, fat_rl_rate = _seg_fat(fat_rl, "leg")
+    fat_trunk_pct, fat_trunk_rate = _seg_fat(fat_trunk, "trunk")
 
     target_weight = round(ideal_weight, 1)
     fat_control = round(min(0.0, ideal_weight - weight), 1)
@@ -260,9 +312,12 @@ def _derive_render_values(payload: InBodyPayload) -> dict:
         "ecw_tbw_bar": _bar_pct(ecw_tbw, 0.32, 0.45),
         "ecw_tbw_history": _history_cells(ecw_tbw, 0.0, rng, 3),
         # segmental fat (estimated distractor); bars are fractions of total body fat
-        "fat_la": round(body_fat_mass_kg * 0.04, 1), "fat_ra": round(body_fat_mass_kg * 0.04, 1),
-        "fat_ll": round(body_fat_mass_kg * 0.14, 1), "fat_rl": round(body_fat_mass_kg * 0.14, 1),
-        "fat_trunk": round(body_fat_mass_kg * 0.44, 1),
+        "fat_la": fat_la, "fat_ra": fat_ra, "fat_ll": fat_ll, "fat_rl": fat_rl,
+        "fat_trunk": fat_trunk,
+        "fat_la_pct": fat_la_pct, "fat_ra_pct": fat_ra_pct, "fat_ll_pct": fat_ll_pct,
+        "fat_rl_pct": fat_rl_pct, "fat_trunk_pct": fat_trunk_pct,
+        "fat_la_rate": fat_la_rate, "fat_ra_rate": fat_ra_rate, "fat_ll_rate": fat_ll_rate,
+        "fat_rl_rate": fat_rl_rate, "fat_trunk_rate": fat_trunk_rate,
         "fat_la_bar": _bar_pct(0.04, 0, 0.5), "fat_ra_bar": _bar_pct(0.04, 0, 0.5),
         "fat_ll_bar": _bar_pct(0.14, 0, 0.5), "fat_rl_bar": _bar_pct(0.14, 0, 0.5),
         "fat_trunk_bar": _bar_pct(0.44, 0, 0.5),
