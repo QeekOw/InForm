@@ -97,6 +97,16 @@ def test_default_engine_missing_checkpoint_fails_loudly(monkeypatch, tmp_path):
     assert str(missing) in str(exc.value)
 
 
+def test_looks_like_hub_id_rejects_local_model_paths():
+    from inform.extract import _looks_like_hub_id
+
+    assert not _looks_like_hub_id("models/donut-both-v3")
+    assert not _looks_like_hub_id("models/nonexistent")
+    assert _looks_like_hub_id("QeekOw/donut-inbody")
+    assert _looks_like_hub_id("QeeeeK/donut-inbody")
+
+
+
 def test_default_engine_missing_training_extra_fails_loudly(monkeypatch, tmp_path):
     monkeypatch.setenv("INFORM_DONUT_CKPT", str(tmp_path))  # dir exists
 

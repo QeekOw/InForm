@@ -32,11 +32,12 @@ def _looks_like_hub_id(raw: str) -> bool:
     if not raw or "\\" in raw or ":" in raw or raw.startswith("."):
         return False
     parts = raw.split("/")
-    if len(parts) > 2:
+    if len(parts) != 2:
         return False
-    if Path(parts[0]).is_dir():
+    if parts[0] in ("models", "data", "src", "tests") or Path(parts[0]).is_dir():
         return False
     return all(p and all(c.isalnum() or c in "-_." for c in p) for p in parts)
+
 
 
 def default_engine() -> Engine:
