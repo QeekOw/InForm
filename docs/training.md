@@ -25,9 +25,8 @@ Writes one `<device>_<seed>.jpg` + matching `.json` ground truth per sheet.
 
 **Shard it.** A sheet depends only on its device and seed, and the filename is
 `{device}_{seed:06d}`, so disjoint `--seed-start` ranges produce byte-identical
-output to one sequential run. Ten concurrent shards on 16 cores measured 0.635
-sheets/s, cutting 7.6 hours to ~2. Seeds run continuously across devices within
-one call, so a two-device 2500-each run covers 0-2499 (270) then 2500-4999 (570);
+output to one sequential run. Seeds run continuously across devices within one
+call, so a two-device 2500-each run covers 0-2499 (270) then 2500-4999 (570);
 shard each device separately with `--device`:
 
 ```
@@ -37,6 +36,27 @@ python -m inform.training.dataset --output-dir <dir> --device inbody_570 --seed-
 
 Use a disjoint `--seed-start` (e.g. 100000) for the held-out set so it never
 overlaps the training set.
+
+**Shard by equal sheet count, not by how fast a device renders.** Measured on the
+v5 run (5,000 sheets, 16 cores): six concurrent shards gave **0.611 sheets/s**
+aggregate, against 0.635 for ten shards on an earlier run — throughput saturates
+well before ten, so a handful is enough and more shards mostly add contention.
+
+The v5 run split 2-way on the 270 (1250 each) and 4-way on the 570 (625 each),
+reasoning that a 570 renders in ~3.8s against the 270's ~1.8s measured *solo*.
+That was wrong: under contention the per-sheet cost converges, so the 270 shards
+finished in 136 min and the 570 shards in 99, and the 270 half was the long pole
+by half an hour. Equal sheet counts per shard would have finished in ~90 min.
+Solo render times do not predict sharded wall clock.
+
+**Each shard writes its own manifest.** `dataset.{seed_start}-{seed_end}.json`,
+naming the devices, the inclusive seed range and a fingerprint over the generator
+module and every device template (`inform.training.dataset.manifest_name`). A
+retrain is a comparison between two datasets, so before believing any comparison,
+check the fingerprints agree across a set's shards and match the commit you
+trained. It is what caught the 570 sheets changing under the 270 fat-figure fix
+(ADR-0007, 2026-09-11 amendment).
+
 
 ## 2. Fine-tune
 
