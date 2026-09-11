@@ -35,7 +35,20 @@ _DEVICES = ("inbody_270", "inbody_570")
 # always a comparison between two datasets, and the v4 retrain could not be
 # attributed partly because the link between a set on disk and the templates
 # that rendered it lived only in prose and memory.
-MANIFEST_NAME = "dataset.json"
+MANIFEST_GLOB = "dataset.*.json"
+
+
+def manifest_name(seed_start: int, seed_end: int) -> str:
+    """The manifest filename for one run, carrying its seed range.
+
+    A 5,000-sheet run is sharded over disjoint seed ranges to parallelise, and
+    the shards write into one directory. A single fixed filename would make
+    them overwrite each other and leave the last shard's manifest describing
+    the whole set, understating it. Naming each after its range means a
+    directory holds one manifest per shard, all findable by `MANIFEST_GLOB`,
+    and an unsharded run still leaves exactly one.
+    """
+    return f"dataset.{seed_start:06d}-{seed_end:06d}.json"
 
 
 def fingerprint_inputs() -> list[Path]:
@@ -84,9 +97,8 @@ def write_manifest(
         "seed_end": seed_start + sheets - 1,
         "generator_fingerprint": generator_fingerprint(),
     }
-    (Path(output_dir) / MANIFEST_NAME).write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
+    name = manifest_name(manifest["seed_start"], manifest["seed_end"])
+    (Path(output_dir) / name).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest
 
 
@@ -109,10 +121,10 @@ def generate_dataset(
     Seeds run `seed_start .. seed_start + len(devices)*n_per_device - 1`; use a
     disjoint `seed_start` for a held-out set so it never overlaps the train set.
 
-    Writes `MANIFEST_NAME` beside the sheets on completion, naming the devices,
-    the seed range and `generator_fingerprint()`. Shards each write their own,
-    so a sharded run leaves one per shard: they agree on the fingerprint and
-    differ on the seed range.
+    Writes a manifest beside the sheets on completion (`manifest_name`),
+    naming the devices, the seed range and `generator_fingerprint()`. Shards
+    each write their own, so a sharded run leaves one per shard: they agree on
+    the fingerprint and differ on the seed range.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     seed = seed_start

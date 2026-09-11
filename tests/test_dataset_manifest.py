@@ -14,9 +14,10 @@ torch import).
 import json
 
 from inform.training.dataset import (
-    MANIFEST_NAME,
+    MANIFEST_GLOB,
     fingerprint_inputs,
     generator_fingerprint,
+    manifest_name,
     write_manifest,
 )
 
@@ -43,7 +44,7 @@ def test_the_fingerprint_is_stable_across_calls():
 def test_the_manifest_records_what_a_retrain_needs_to_attribute_a_result(tmp_path):
     manifest = write_manifest(tmp_path, devices=("inbody_270",), n_per_device=3, seed_start=10)
 
-    written = json.loads((tmp_path / MANIFEST_NAME).read_text(encoding="utf-8"))
+    written = json.loads((tmp_path / manifest_name(10, 12)).read_text(encoding="utf-8"))
 
     assert written == manifest
     assert written["devices"] == ["inbody_270"]
@@ -54,6 +55,18 @@ def test_the_manifest_records_what_a_retrain_needs_to_attribute_a_result(tmp_pat
     assert written["seed_start"] == 10
     assert written["seed_end"] == 12
     assert written["generator_fingerprint"] == generator_fingerprint()
+
+
+def test_shards_into_one_directory_each_keep_their_own_manifest(tmp_path):
+    # A 5,000-sheet run is sharded over disjoint seed ranges into one output
+    # directory. One fixed filename would leave the last shard's manifest
+    # describing the whole set, claiming a fraction of the sheets present.
+    write_manifest(tmp_path, devices=("inbody_270",), n_per_device=2, seed_start=0)
+    write_manifest(tmp_path, devices=("inbody_270",), n_per_device=2, seed_start=2)
+
+    found = sorted(p.name for p in tmp_path.glob(MANIFEST_GLOB))
+
+    assert found == ["dataset.000000-000001.json", "dataset.000002-000003.json"]
 
 
 def test_the_manifest_counts_every_device(tmp_path):
