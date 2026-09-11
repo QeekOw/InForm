@@ -53,6 +53,13 @@ only — it must never mutate a deterministic number (enforced by validation).
   [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
 - **Segmental Lean Analysis** — per-segment lean mass for the five body segments: left arm,
   right arm, left leg, right leg, trunk. Basis for bilateral-asymmetry detection.
+- **Segmental Fat Analysis** — per-segment *fat* mass, printed for the same five segments and
+  in the same units. Nothing in InForm reads it: it is not in the schema and no module consumes
+  it. It matters because it is the nearest neighbour of **Segmental Lean Analysis** on the page,
+  and a read that strays into it returns a plausible number for the wrong quantity — the
+  sheet_05 panel crossing. A synthetic sheet must therefore render it the way the device does,
+  even though no value is scored, or the model learns to tell the two panels apart by a cue that
+  exists only in training ([ADR-0007](docs/adr/0007-synthetic-data-generation.md), issue #50).
 - **Bilateral asymmetry** — a lean-mass deviation between a left/right limb pair. A deviation
   **> 5%** triggers targeted unilateral corrective exercises (Module 3).
 - **Core fields** — the scalar values on a sheet (weight, LBM, PBF, SMM, BMR, Visceral Fat
