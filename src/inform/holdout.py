@@ -78,6 +78,15 @@ _OUTCOMES = ("unverified", "flagged", "unread", "refused")
 
 Holdout = list[tuple[Path, PartialInBody | None]]
 
+# The aggregate cuts every report carries, as (row label, HoldoutReport
+# attribute). Shared so the single-engine report and the comparison table
+# cannot drift into naming or ordering the same cuts differently.
+_FIELD_CUTS = (
+    ("core fields", "core"),
+    ("segmental lean", "segmental"),
+    ("critical (LBM + limbs)", "critical"),
+)
+
 
 class Score(BaseModel):
     """Matches over labelled opportunities.
@@ -323,11 +332,8 @@ def format_report(report: HoldoutReport) -> str:
         lines.append(f"  {field.ljust(width)}{str(entry):>8}{_rate(entry):>9}")
 
     lines.append("  " + "-" * (width + 16))
-    for name, entry in (
-        ("core fields", report.core),
-        ("segmental lean", report.segmental),
-        ("critical (LBM + limbs)", report.critical),
-    ):
+    for name, attr in _FIELD_CUTS:
+        entry = getattr(report, attr)
         lines.append(f"  {name.ljust(width)}{str(entry):>8}{_rate(entry):>9}")
     return "\n".join(lines)
 
@@ -357,6 +363,81 @@ def _pct(rate: float | None) -> str:
     return "     --" if rate is None else f"{rate:6.1%}"
 
 
+def format_comparison(reports: dict[str, HoldoutReport]) -> str:
+    """One column per engine, in the order given.
+
+    A retrain produces a checkpoint per epoch and ADR-0006 wants every one
+    scored. The tables in docs/ocr-eval-results.md were transcribed by hand and
+    that has already put a stale baseline into a training notebook, so the
+    table is generated from the reports instead of retyped from them.
+
+    The silent-error rate leads, per CONTEXT.md. It is printed with the outcome
+    split directly beneath it and never as a percentage over an empty
+    denominator: a checkpoint that flags or under-reads every sheet has no
+    `unverified` reads and therefore no silent errors, and a bare 0% there
+    would rank the worst checkpoints best. Such a column reads `--`, and the
+    split beneath says why.
+
+    Every report is expected to come from one `load_holdout()`, which is what
+    the CLI does, so the sheet counts are stated once at the foot rather than
+    per column.
+    """
+    labels = list(reports)
+
+    def cells(pick) -> list[str]:
+        return [str(pick(reports[k])) for k in labels]
+
+    # Build every row first, then measure. Sizing the columns from a constant
+    # that happens to fit the current labels is how a table silently
+    # misaligns when a longer field or a wider cell arrives later.
+    # Count and rate share one cell: split across two rows, a reader skimming
+    # the headline can miss that the denominator is empty.
+    sections: list[tuple[str, list[tuple[str, list[str]]]]] = [
+        (
+            "silent errors -- wrong values inside unverified reads (headline)",
+            [
+                (">=1 wrong, of unverified", cells(
+                    lambda r: f"{r.silent.sheets_with_error}/{r.silent.sheets}"
+                              f" {_pct(r.silent.sheet_rate).strip()}")),
+                ("their fields, wrong", cells(
+                    lambda r: f"{r.silent.field_errors}/{r.silent.fields}"
+                              f" {_pct(r.silent.field_rate).strip()}")),
+                ("unverified, unlabellable", cells(lambda r: r.silent.unmeasurable)),
+            ],
+        ),
+        (
+            "outcome split (needs no labels)",
+            [(o, cells(lambda r, o=o: r.outcome_split[o])) for o in _OUTCOMES],
+        ),
+        (
+            "field cuts (labelled sheets only)",
+            [(n, cells(lambda r, a=a: getattr(r, a))) for n, a in _FIELD_CUTS],
+        ),
+        (
+            "per field",
+            [(f, cells(lambda r, f=f: r.per_field[f])) for f in SCORED_FIELDS],
+        ),
+    ]
+
+    width = max(len(name) for _, rows in sections for name, _ in rows) + 2
+    col = max(
+        max((len(c) for _, rows in sections for _, row in rows for c in row), default=0),
+        max((len(x) for x in labels), default=0),
+    ) + 2
+
+    def line(name: str, row: Iterable[str]) -> str:
+        return "  " + name.ljust(width) + "".join(c.rjust(col) for c in row)
+
+    lines = [line("", labels), line("", ["-" * len(x) for x in labels])]
+    for title, rows in sections:
+        lines += ["", "  " + title]
+        lines += [line(name, row) for name, row in rows]
+
+    first = next(iter(reports.values()))
+    lines += ["", f"  {first.n_sheets} sheets, {first.n_labelled} hand-labelled"]
+    return "\n".join(lines)
+
+
 def _rate(entry: Score) -> str:
     return "     --" if entry.accuracy is None else f"{entry.accuracy:6.1%}"
 
@@ -365,14 +446,21 @@ def _main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--data-dir", type=Path, required=True, help="Hold-out images")
     parser.add_argument("--labels", type=Path, required=True, help="Hand-label JSON")
-    source = parser.add_mutually_exclusive_group()
-    source.add_argument(
+    # Repeatable, and not mutually exclusive: comparing a fresh checkpoint
+    # against a recorded baseline is the usual case after a retrain.
+    parser.add_argument(
         "--donut-checkpoint",
         type=Path,
-        help="Checkpoint to score; omit to use the default engine (ADR-0010)",
+        action="append",
+        default=[],
+        help="Checkpoint to score; repeatable. Omit to use the default engine (ADR-0010)",
     )
-    source.add_argument(
-        "--reads", type=Path, help="Score a recorded read file instead of running a model"
+    parser.add_argument(
+        "--reads",
+        type=Path,
+        action="append",
+        default=[],
+        help="Score a recorded read file instead of running a model; repeatable",
     )
     args = parser.parse_args()
 
@@ -380,16 +468,28 @@ def _main() -> None:
 
     from inform.extract import extract_inbody
 
-    engine = None
-    if args.reads is not None:
-        engine = replay_engine(args.reads)
-    elif args.donut_checkpoint is not None:
+    holdout = load_holdout(args.data_dir, args.labels)
+
+    sources: list[tuple[str, Callable[[Path], PartialInBody] | None]] = [
+        (path.stem, replay_engine(path)) for path in args.reads
+    ]
+    if args.donut_checkpoint:
         from inform.engines import donut
 
-        engine = donut.load_engine(args.donut_checkpoint)
+        sources += [(path.name, donut.load_engine(path)) for path in args.donut_checkpoint]
+    if not sources:
+        sources = [("default", None)]
 
-    holdout = load_holdout(args.data_dir, args.labels)
-    print(format_report(score(partial(extract_inbody, engine=engine), holdout)))
+    reports = {
+        label: score(partial(extract_inbody, engine=engine), holdout)
+        for label, engine in sources
+    }
+    # One source is the common case and gets the full single-engine report;
+    # several get the table, which is the thing a retrain is read from.
+    if len(reports) == 1:
+        print(format_report(next(iter(reports.values()))))
+    else:
+        print(format_comparison(reports))
 
 
 if __name__ == "__main__":

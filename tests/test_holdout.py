@@ -4,7 +4,13 @@ from pathlib import Path
 import pytest
 
 from inform.errors import MissingRequiredFieldsError, NotAnInBodySheetError
-from inform.holdout import load_holdout, load_labels, replay_engine, score
+from inform.holdout import (
+    format_comparison,
+    load_holdout,
+    load_labels,
+    replay_engine,
+    score,
+)
 from inform.inbody import InBodyExtraction, PartialInBody, PartialSegmentalLean
 
 # A hand-labelled sheet: what a person can read off a printout, which is a
@@ -315,3 +321,80 @@ def test_silent_error_counts_sheets_and_fields_separately():
     assert report.silent.sheets_with_error == 2
     assert report.silent.field_errors == 4
     assert report.silent.fields == 22  # 11 labelled fields on each of the two
+
+
+# --- comparing checkpoints ---------------------------------------------------
+# A retrain produces one checkpoint per epoch and every one has to be scored
+# (ADR-0006). The tables in docs/ocr-eval-results.md were transcribed by hand,
+# and that has already put a stale baseline into a training notebook, so the
+# table is generated from the reports instead.
+
+
+def test_the_comparison_puts_one_column_per_engine_under_its_own_label():
+    reports = {
+        "v3": score(_reading(_LABEL), [(_IMAGE, _LABEL)]),
+        "e1": score(_reading(_LABEL), [(_IMAGE, _LABEL)]),
+    }
+
+    table = format_comparison(reports)
+
+    header = table.splitlines()[0]
+    assert "v3" in header and "e1" in header
+    assert header.index("v3") < header.index("e1")  # insertion order, not sorted
+
+
+def test_the_comparison_leads_with_the_silent_error_rate():
+    reports = {"v3": score(_reading(_LABEL), [(_IMAGE, _LABEL)])}
+
+    lines = format_comparison(reports).splitlines()
+    first_metric = next(i for i, l in enumerate(lines) if "silent" in l.lower())
+    first_core = next(i for i, l in enumerate(lines) if "core fields" in l)
+
+    assert first_metric < first_core
+
+
+def test_a_zero_denominator_shows_as_unmeasured_not_as_a_clean_sheet():
+    # The v4 epoch-1 and epoch-4 case: every read flagged, so nothing is
+    # `unverified`, so there is no silent-error rate. Printing 0% there would
+    # rank the worst checkpoints best. It has to read as "no basis", and the
+    # outcome split has to be in the same table to make that legible.
+    flagged_everything = score(
+        _reading(_LABEL, flagged=["weight_kg"]), [(_IMAGE, _LABEL)]
+    )
+
+    table = format_comparison({"e1": flagged_everything})
+
+    silent_line = next(l for l in table.splitlines() if "wrong" in l and ">=1" in l)
+    assert "0.0%" not in silent_line
+    assert "--" in silent_line
+    assert "flagged" in table  # the split that explains the dash
+
+
+def test_each_engines_numbers_land_under_its_own_column():
+    # The table is read across a row to compare checkpoints, so a column that
+    # is off by one is worse than no table. Two engines that differ on a field
+    # the other gets right, checked by column position.
+    wrong = _LABEL.model_copy(deep=True)
+    wrong.weight_kg = 60.0
+    reports = {
+        "good": score(_reading(_LABEL), [(_IMAGE, _LABEL)]),
+        "bad": score(_reading(wrong), [(_IMAGE, _LABEL)]),
+    }
+
+    lines = format_comparison(reports).splitlines()
+    header = lines[0]
+    weight = next(l for l in lines if l.strip().startswith("weight_kg"))
+
+    # Each cell is right-justified in its column, so the cell's last character
+    # sits at its label's right edge.
+    assert weight[: header.index("good") + len("good")].endswith("1/1")
+    assert weight[: header.index("bad") + len("bad")].endswith("0/1")
+
+
+def test_the_comparison_carries_the_per_field_cut_too():
+    reports = {"v3": score(_reading(_LABEL), [(_IMAGE, _LABEL)])}
+
+    table = format_comparison(reports)
+
+    assert "percent_body_fat" in table
+    assert "segmental_lean.right_arm_kg" in table
