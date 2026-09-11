@@ -6,6 +6,8 @@ ADR-0010). Loads fine-tuned Donut weights from Hugging Face Hub. Never falls
 back to cloud VLM (ADR-0005).
 """
 
+import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -82,6 +84,40 @@ def build_app(engine: Engine | None = None):
     return demo
 
 
-if __name__ == "__main__":
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments for the Gradio server."""
+    parser = argparse.ArgumentParser(description="InForm Donut OCR Gradio Server")
+    parser.add_argument(
+        "--host",
+        default=os.getenv("HOST", "0.0.0.0"),
+        help="Host address to bind the server to (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("PORT", "7860")),
+        help="Port to bind the server to (default: 7860)",
+    )
+    parser.add_argument(
+        "--share",
+        action="store_true",
+        default=os.getenv("GRADIO_SHARE", "false").lower() in ("true", "1", "yes"),
+        help="Create a public Gradio share link (gradio.live)",
+    )
+    return parser.parse_args(args)
+
+
+def main(args: list[str] | None = None):
+    """Entrypoint for standalone Gradio server execution."""
+    parsed = parse_args(args)
     demo = build_app()
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(
+        server_name=parsed.host,
+        server_port=parsed.port,
+        share=parsed.share,
+    )
+
+
+if __name__ == "__main__":
+    main()
+

@@ -80,3 +80,30 @@ def test_predict_handles_floor_reject_all_missing():
     assert result["status"] == "refused"
     assert result["error"] == "missing_required_fields"
     assert len(result["unread"]) > 0
+
+
+def test_parse_args_defaults():
+    from space.app import parse_args
+
+    args = parse_args([])
+    assert args.host == "0.0.0.0"
+    assert args.port == 7860
+    assert args.share is False
+
+
+def test_parse_args_explicit_flags():
+    from space.app import parse_args
+
+    args = parse_args(["--host", "127.0.0.1", "--port", "8080", "--share"])
+    assert args.host == "127.0.0.1"
+    assert args.port == 8080
+    assert args.share is True
+
+
+def test_parse_args_env_share(monkeypatch):
+    from space.app import parse_args
+
+    monkeypatch.setenv("GRADIO_SHARE", "true")
+    args = parse_args([])
+    assert args.share is True
+
