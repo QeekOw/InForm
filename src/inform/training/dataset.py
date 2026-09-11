@@ -1,8 +1,11 @@
 import argparse
+import hashlib
+import json
 from pathlib import Path
 
 from PIL import Image
 
+from inform import synthetic
 from inform.synthetic import generate_sheet
 
 # Generation (generate_dataset / the CLI) is torch-free — it only renders sheets.
@@ -28,6 +31,64 @@ IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
 _DEVICES = ("inbody_270", "inbody_570")
 
+# What a dataset says about itself, written beside the sheets. A retrain is
+# always a comparison between two datasets, and the v4 retrain could not be
+# attributed partly because the link between a set on disk and the templates
+# that rendered it lived only in prose and memory.
+MANIFEST_NAME = "dataset.json"
+
+
+def fingerprint_inputs() -> list[Path]:
+    """The files that decide what a rendered sheet looks like.
+
+    The generator module and every device template. A change to any of them
+    makes a different sheet out of the same (device, seed), which is exactly
+    the change that must not go unnoticed across a retrain.
+
+    Deliberately not covered: this module's own loop, which decides filenames
+    and which seed goes to which device but not how a sheet renders, and the
+    augmentation applied at training time rather than at generation.
+    """
+    generator = Path(synthetic.__file__)
+    return [generator, *sorted((generator.parent / "templates").glob("*.html"))]
+
+
+def generator_fingerprint() -> str:
+    """sha256 over `fingerprint_inputs()`, path-tagged and in a fixed order.
+
+    Paths are hashed alongside content so that renaming a template registers
+    as a change; the sort keeps two shards of one run in agreement.
+    """
+    digest = hashlib.sha256()
+    for path in fingerprint_inputs():
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def write_manifest(
+    output_dir: Path, devices: tuple[str, ...], n_per_device: int, seed_start: int
+) -> dict:
+    """Record what rendered this set, and return the same dict.
+
+    Seeds are reported as an inclusive range because that is the property a
+    held-out set is defined by -- disjoint from the training set's -- so it
+    should be checkable without recomputing it from the device count.
+    """
+    sheets = len(devices) * n_per_device
+    manifest = {
+        "devices": list(devices),
+        "n_per_device": n_per_device,
+        "sheets": sheets,
+        "seed_start": seed_start,
+        "seed_end": seed_start + sheets - 1,
+        "generator_fingerprint": generator_fingerprint(),
+    }
+    (Path(output_dir) / MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    return manifest
+
 
 def generate_dataset(
     output_dir: Path,
@@ -47,6 +108,11 @@ def generate_dataset(
     `("inbody_270",)`) for a device-specific set — issue #13 retrains 270-only.
     Seeds run `seed_start .. seed_start + len(devices)*n_per_device - 1`; use a
     disjoint `seed_start` for a held-out set so it never overlaps the train set.
+
+    Writes `MANIFEST_NAME` beside the sheets on completion, naming the devices,
+    the seed range and `generator_fingerprint()`. Shards each write their own,
+    so a sharded run leaves one per shard: they agree on the fingerprint and
+    differ on the seed range.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     seed = seed_start
@@ -57,6 +123,9 @@ def generate_dataset(
             (output_dir / f"{stem}{DATASET_IMAGE_SUFFIX}").write_bytes(image_bytes)
             (output_dir / f"{stem}.json").write_text(payload.model_dump_json(), encoding="utf-8")
             seed += 1
+    # Last, so a run killed part-way through leaves no manifest claiming a
+    # sheet count it never rendered.
+    write_manifest(output_dir, devices, n_per_device, seed_start)
 
 
 class DonutInBodyDataset(Dataset):
