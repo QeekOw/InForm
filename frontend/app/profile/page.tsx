@@ -17,9 +17,15 @@ const ACTIVITY_LEVELS = [
   { label: "Extremely active", multiplier: 1.9 },
 ];
 
-function ageFromDob(dob: string): number {
-  if (!dob) return 30;
+// Issue #34 AC: "an implausible age is rejected before a plan is computed."
+const MIN_AGE = 13;
+const MAX_AGE = 100;
+const TODAY = new Date().toISOString().slice(0, 10);
+
+function ageFromDob(dob: string): number | null {
+  if (!dob) return null;
   const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return null;
   const now = new Date();
   let age = now.getFullYear() - birth.getFullYear();
   const hasHadBirthdayThisYear =
@@ -33,13 +39,24 @@ export default function Profile() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [dob, setDob] = useState("");
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [sex, setSex] = useState<UserProfile["biological_sex"]>("male");
   const [activityMultiplier, setActivityMultiplier] = useState(ACTIVITY_LEVELS[2].multiplier);
   const [goal, setGoal] = useState<UserProfile["fitness_goal"]>("fat_loss");
 
   const handleContinue = () => {
+    const age = ageFromDob(dob);
+    if (age === null) {
+      setAgeError("Enter your date of birth.");
+      return;
+    }
+    if (age < MIN_AGE || age > MAX_AGE) {
+      setAgeError(`Enter a date of birth that makes you between ${MIN_AGE} and ${MAX_AGE}.`);
+      return;
+    }
+
     const profile: UserProfile = {
-      age: ageFromDob(dob),
+      age,
       biological_sex: sex,
       activity_multiplier: activityMultiplier,
       fitness_goal: goal,
@@ -73,10 +90,18 @@ export default function Profile() {
         <input
           id="dob"
           type="date"
+          max={TODAY}
           value={dob}
-          onChange={(e) => setDob(e.target.value)}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
+          onChange={(e) => {
+            setDob(e.target.value);
+            setAgeError(null);
+          }}
+          aria-invalid={ageError !== null}
+          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] ${
+            ageError ? "border-red-500" : "border-[#d9d9d9]"
+          }`}
         />
+        {ageError && <p className="mt-1 text-[10px] text-red-600">{ageError}</p>}
 
         <p className="mt-6 text-[12px] text-black">Biological Sex</p>
         <div className="mt-[9px] flex gap-[42px]">
