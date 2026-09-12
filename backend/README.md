@@ -44,19 +44,32 @@ no `OPENAI_API_KEY` set — both true here), it catches the failure and falls ba
 to `generate_fallback_plan`, a deterministic template. So the narrative text is
 real prose, just not LLM-written, until an API key is wired up.
 
+## Deploying (Render)
+
+The `sys.path` trick above needs both `backend/` *and* the sibling `src/`
+present in the deployed container, so there's a `Dockerfile` at the **repo
+root** that makes this unambiguous: it `COPY`s exactly `backend/` and `src/`
+into the image and starts uvicorn from `backend/`, reading `$PORT` the way
+Render (and most PaaS hosts) inject it. Verified by reproducing that exact
+layout in an isolated directory (only those two folders present, nothing else
+from the repo) and confirming both `/health` and a real `/plan` call work
+from it.
+
+In Render's dashboard: **New → Web Service → connect this repo**, set
+**Environment: Docker**, leave the root directory as the repo root (default)
+so `Dockerfile Path` resolves to `./Dockerfile` and the build context includes
+both `backend/` and `src/`, and pick the **Free** instance type. No Build/Start
+command overrides needed — the Dockerfile is self-contained.
+
+(Originally targeted Railway — moved to Render because Railway's free tier
+now requires a paid plan. The Dockerfile itself is host-agnostic; the same
+one would also work on Fly.io, Cloud Run, or a Hugging Face Space with the
+Docker SDK, with only the dashboard-side steps changing.)
+
 ## Known gaps
 
-- **Not deployed.** Runs locally only right now. The intended target is Railway,
-  but there's an unverified risk worth checking first: the `sys.path` trick above
-  assumes the deployed container has the whole repo tree (`backend/` *and* the
-  sibling `src/`) present. If Railway's project root directory ends up set to
-  `backend/` only, `../src` won't exist and every request will fail at import
-  time. Point the root directory at the repo root with a
-  `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT` start command
-  instead, or confirm Railway actually clones the full repo regardless — untested
-  either way.
-- **CORS is wide open** (`allow_origins=["*"]`) — fine for local dev, needs
-  scoping down before this URL is public.
+- **CORS is wide open** (`allow_origins=["*"]`) — fine for an initial deploy,
+  worth scoping down to the Vercel origin once that URL is known.
 - **No real LLM narrative** — needs `OPENAI_API_KEY` in the environment; falls
   back safely without it, per above.
 - **No auth, no persistence** — every `/plan` call is stateless; nothing is
