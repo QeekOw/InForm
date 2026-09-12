@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
+import ReportPhoto from "@/components/ReportPhoto";
 import { loadJSON, saveJSON } from "@/lib/session";
 import { DEFAULT_READING, SESSION_KEYS, type InBodyReading } from "@/lib/inbody";
 
@@ -55,9 +56,7 @@ export default function Preview() {
       </div>
 
       <div className="relative mx-[30px] mt-[31px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
-        <p className="absolute inset-0 flex items-center justify-center text-[12px] text-white/40">
-          Your report photo
-        </p>
+        <ReportPhoto />
         <Link
           href="/upload/capture"
           className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white"

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PhoneFrame from "@/components/PhoneFrame";
+import ReportPhoto from "@/components/ReportPhoto";
 import { loadJSON } from "@/lib/session";
 import { DEFAULT_PROFILE, DEFAULT_READING, SESSION_KEYS, type InBodyReading, type UserProfile } from "@/lib/inbody";
 
@@ -151,8 +152,8 @@ export default function Result() {
       {state.status === "ready" && (
         <>
           <div className="mx-[24px] mt-[15px] grid grid-cols-[157px_1fr] gap-[8px]">
-            <div className="flex h-[217px] items-center justify-center rounded-[15px] bg-[#1f1f1f]">
-              <p className="px-3 text-center text-[11px] text-white/40">Your report photo</p>
+            <div className="h-[217px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
+              <ReportPhoto />
             </div>
             <div className="flex h-[217px] flex-col items-center justify-center rounded-[15px] border-[3px] border-[#f5f5f5] bg-white text-black">
               <p className="text-[11px] opacity-60">Daily Energy Target</p>

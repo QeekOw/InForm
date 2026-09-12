@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import { saveJSON } from "@/lib/session";
 import { SESSION_KEYS } from "@/lib/inbody";
+import { fileToDataUrl } from "@/lib/photo";
 
 const imgInBody270 = "/upload/inbody-270.png";
 const imgInBody570 = "/upload/inbody-570.png";
@@ -38,12 +39,21 @@ export default function Upload() {
     saveJSON(SESSION_KEYS.sheetType, sheetType);
   }, [sheetType]);
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     // No real upload yet (Module 1 OCR isn't wired) — picking a file just
-    // advances the flow the same way the camera capture does.
-    if (e.target.files?.length) {
-      router.push("/upload/analyzing");
+    // advances the flow the same way the camera capture does. When it's an
+    // image, it's still kept (client-side only) so Preview/Result can show
+    // what was actually picked instead of a placeholder.
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith("image/")) {
+      try {
+        saveJSON(SESSION_KEYS.photo, await fileToDataUrl(file));
+      } catch {
+        // Non-fatal — the flow still proceeds without a preview image.
+      }
     }
+    router.push("/upload/analyzing");
   };
 
   return (

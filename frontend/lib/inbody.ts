@@ -59,4 +59,5 @@ export const SESSION_KEYS = {
   reading: "inform:reading",
   sheetType: "inform:sheetType",
   name: "inform:name",
+  photo: "inform:photo",
 } as const;

@@ -1,5 +1,12 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
+import { saveJSON } from "@/lib/session";
+import { SESSION_KEYS } from "@/lib/inbody";
+import { captureFromVideo } from "@/lib/photo";
 
 const imgShutterOuter = "/icons/camera/shutter-outer.svg";
 const imgShutterInner = "/icons/camera/shutter-inner.svg";
@@ -7,15 +14,76 @@ const imgFlash = "/icons/camera/flash-button.svg";
 const imgGallery = "/icons/camera/gallery-button.svg";
 const imgBack = "/icons/camera/back-arrow.svg";
 
+type CameraState = "requesting" | "ready" | "denied" | "unsupported";
+
 export default function Capture() {
+  const router = useRouter();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [state, setState] = useState<CameraState>("requesting");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      // Feature detection of a browser-only external API, not derived state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setState("unsupported");
+      return;
+    }
+
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" }, audio: false })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+        setState("ready");
+      })
+      .catch(() => setState("denied"));
+
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const handleCapture = () => {
+    if (state !== "ready" || !videoRef.current) return;
+    const dataUrl = captureFromVideo(videoRef.current);
+    saveJSON(SESSION_KEYS.photo, dataUrl);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    router.push("/upload/analyzing");
+  };
+
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      {/* Live camera feed goes here once capture is wired up (no real device/photo
-          embedded here — the Figma mock used a real printed report with a visible
-          gym name and member ID; issue #29's privacy stance for Track B says data
-          like that must never ship in the app, so it's a placeholder instead). */}
-      <div className="absolute inset-x-0 top-8 bottom-6 flex items-center justify-center bg-black">
-        <p className="px-10 text-center text-[12px] text-white/40">Camera preview</p>
+      <div className="absolute inset-x-0 top-8 bottom-6 flex items-center justify-center overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`size-full object-cover ${state === "ready" ? "" : "hidden"}`}
+        />
+        {state === "requesting" && (
+          <p className="px-10 text-center text-[12px] text-white/40">Starting camera…</p>
+        )}
+        {(state === "denied" || state === "unsupported") && (
+          <div className="px-10 text-center text-[12px] text-white/70">
+            <p>
+              {state === "denied"
+                ? "Camera access was denied."
+                : "This browser can't access the camera."}
+            </p>
+            <Link href="/upload" className="mt-2 inline-block underline">
+              Upload from device instead
+            </Link>
+          </div>
+        )}
       </div>
 
       <Link
@@ -33,16 +101,22 @@ export default function Capture() {
       </div>
 
       <div className="absolute inset-x-0 bottom-[52px] flex items-center justify-center">
-        <button
-          type="button"
-          aria-label="Open gallery"
+        <Link
+          href="/upload"
+          aria-label="Upload from device instead"
           className="absolute left-[62px] size-[42px]"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt="" className="size-full" src={imgGallery} />
-        </button>
+        </Link>
 
-        <Link href="/upload/analyzing" aria-label="Capture photo" className="relative block">
+        <button
+          type="button"
+          aria-label="Capture photo"
+          onClick={handleCapture}
+          disabled={state !== "ready"}
+          className="relative block disabled:opacity-40"
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt="" className="size-[85px]" src={imgShutterOuter} />
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -51,12 +125,14 @@ export default function Capture() {
             className="absolute left-1/2 top-1/2 size-[61px] -translate-x-1/2 -translate-y-1/2"
             src={imgShutterInner}
           />
-        </Link>
+        </button>
 
         <button
           type="button"
           aria-label="Toggle flash"
-          className="absolute right-[62px] size-[42px]"
+          disabled
+          className="absolute right-[62px] size-[42px] opacity-40"
+          title="Flash control isn't supported across browsers yet"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt="" className="size-full" src={imgFlash} />
