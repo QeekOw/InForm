@@ -159,55 +159,47 @@ same epoch across runs prints `donut-both-v4/checkpoint-3750` against
 `donut-both-v5/checkpoint-3750` rather than silently scoring one and showing the
 other.
 
-### Measured: what the hold-out says depends on how the photo is framed
+### Measured: v5 is the engine, and n=6 said the opposite
 
-Both retrains since v3 have been scored this way, over 12 real sheets of which 6
-are hand-labelled. That is 66 labelled field observations, 36 core and 30
-segmental.
+All 12 real sheets are hand-labelled as of 2026-09-12, which is 132 labelled field
+observations: 72 core and 60 segmental. Every checkpoint below was scored live
+through the same engine, so all of them get ADR-0011's crop.
 
-Score them on the hold-out photos as they come off the phone, and v3 wins
-everything:
-
-| uncropped | v3 | v4-e3750 | v5-e3750 |
+| n=12 | v3 | v4-e3750 | v5-e3750 |
 |---|---|---|---|
-| core fields | **33/36** | 30/36 | 28/36 |
-| segmental lean | **23/30** | 20/30 | 15/30 |
-| critical (LBM + limbs) | **26/36** | **26/36** | 21/36 |
-| `percent_body_fat` | **6/6** | 3/6 | 1/6 |
-| `segmental_lean.right_arm_kg` | 1/6 | **2/6** | 1/6 |
+| core fields | 61/72 | 56/72 | **63/72** |
+| segmental lean | 31/60 | 42/60 | **52/60** |
+| critical (LBM + limbs) | 43/72 | 53/72 | **64/72** |
+| silent errors, sheets | 4/7 57.1% | 2/3 66.7% | **1/5 20.0%** |
+| silent errors, fields | 4/77 5.2% | 3/33 9.1% | **1/55 1.8%** |
+| unverified / flagged / unread | 7 / 0 / 5 | 3 / 8 / 1 | 5 / 6 / 1 |
+| `percent_body_fat` | **12/12** | 3/12 | 6/12 |
+| `segmental_lean.right_arm_kg` | 5/12 | 7/12 | **10/12** |
 
-Crop each photo to the sheet first (#53) and the ranking changes:
+v5 leads every cut, and leads the two that matter most — segmental lean and
+critical fields — by 21 observations. It is also the safest by the headline
+measure: it leaves one sheet partly unread against v3's five, flags six sheets
+against v3's none, and carries a wrong value in 1 of 5 unverified reads against
+v3's 4 of 7. `models/donut-both-v5` is the default (ADR-0010, second 2026-09-12
+amendment).
 
-| cropped to the sheet | v3 | v4-e3750 | v5-e3750 |
-|---|---|---|---|
-| core fields | **36/36** | 28/36 | 31/36 |
-| segmental lean | 27/30 | 22/30 | **28/30** |
-| critical (LBM + limbs) | 33/36 | 27/36 | **34/36** |
-| `percent_body_fat` | **6/6** | 2/6 | 1/6 |
-| `segmental_lean.right_arm_kg` | 4/6 | 3/6 | **5/6** |
+`percent_body_fat` is the single field v3 still wins, 12/12 against 6/12. It
+feeds the LBM cross-check, so a misread PBF is much of *why* v5 flags six sheets
+— the error announces itself rather than shipping. #52's template fix targets
+exactly this field and is **not** in v5, so the next retrain has a specific
+prediction to test.
 
-**Read the two tables together or neither.** Uncropped, v5 looks like a failed
-retrain that gave up eight segmental observations. Cropped, v5 has the best
-segmental lean and the best critical-field score of any engine we have, and its
-`right_arm_kg` (the field the whole 270 Segmental Fat fix targeted) goes 1/6 to
-5/6. The fix worked. The uncropped hold-out could not see it, because the
-framing mismatch was costing more accuracy than the fix was buying.
+**Half this hold-out gave the opposite answer.** At n=6, v3 led core fields
+36/36 to 31/36 and the engines were within a field of each other elsewhere;
+ADR-0010 was amended that morning to keep v3 as the default and amended back
+that afternoon. The six sheets labelled first were the ones that flattered v3.
+An under-powered hold-out does not return noisy answers, it returns confident
+wrong ones — which is the whole of #24's argument, now demonstrated rather than
+asserted.
 
-`percent_body_fat` is the exception and survives cropping untouched: 1/6 either
-way, against v3's 6/6. That is now v5's only real deficit and it is #52.
-
-**v3 stays the default checkpoint** (ADR-0010, 2026-09-12 amendment) because it
-is the only engine that reads every core field, and the five observations it
-wins on `percent_body_fat` outweigh the two v5 wins elsewhere. That is a
-narrower margin than the uncropped numbers suggest, and it turns on one field.
-
-**The resolution here is a real constraint** (#24). A three-field swing is
-comfortably visible at 66 observations, so the cropping result is safe. A
-one-field margin between v3 and v5 is not, and neither is a silent-error
-denominator of one to three: v5-e3750 leaves four of its five `unverified`
-sheets unlabellable, a blind spot larger than the measurement it reports.
-Labelling the remaining six sheets is what would let this table settle the
-narrow comparisons it currently only gestures at.
+Still one subject, one device family and one photo session, so the
+synthetic-to-real gap this measures is that subject's. Widening it is the next
+thing worth doing to the hold-out.
 
 ## What this session verified vs. what it didn't
 

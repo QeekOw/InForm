@@ -24,13 +24,13 @@ _BMR_TOLERANCE_KCAL = 100.0
 # download works without extra config. (Hub-id support is a future option; it
 # needs the loader to stop Path-wrapping, which mangles "org/name" on Windows.)
 _DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
-_DEFAULT_DONUT_CKPT = "models/donut-both-v3"
+_DEFAULT_DONUT_CKPT = "models/donut-both-v5"
 
 
 def default_engine() -> Engine:
     """Build the default runtime engine: self-hosted Donut (ADR-0010).
 
-    Points at INFORM_DONUT_CKPT (default `models/donut-both-v3`). Fails loudly
+    Points at INFORM_DONUT_CKPT (default `models/donut-both-v5`). Fails loudly
     (DonutCheckpointError) when the checkpoint is absent or the training extra
     (torch/transformers) is not installed. It never silently falls back to the
     cloud VLM, which ADR-0005 forbids from ever seeing real PHI. The VLM remains

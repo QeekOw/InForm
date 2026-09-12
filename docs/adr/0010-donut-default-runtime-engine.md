@@ -47,6 +47,10 @@ VLM.
 
 ## Amendment (2026-09-12) — v3 stays the default, on a narrower margin than it first looked
 
+> **Superseded the same day** by the amendment at the end of this file, once the hold-out
+> reached 12 of 12 labelled sheets and every cut reversed. Kept because how it went wrong
+> is the point.
+
 The decision above names `models/donut-both-v3` as the default checkpoint and calls
 accuracy "a follow-up gate, not a blocker". That gate has now been run against the
 hand-labelled real photos rather than synthetic hold-out (ADR-0006), for both retrains
@@ -77,3 +81,69 @@ Three consequences that outlive this comparison:
   labelled sheets, with a silent-error denominator between one and three. It separates v3
   from v4 comfortably; it cannot settle v3 against v5 at a one-field margin. #24 is the
   constraint on every number quoted here.
+
+## Amendment (2026-09-12, later) — v5 becomes the default; the amendment above was decided at n=6
+
+**This supersedes the amendment immediately above, which is left in place deliberately.** It
+concluded "v3 stays the default" from a hold-out where 6 of 12 sheets were labelled. The
+remaining six were hand-labelled the same day, and at n=12 every engine cut reverses. The
+earlier amendment was not reasoned badly; it was reasoned on half the evidence, and #24 had
+been saying so for weeks.
+
+All three checkpoints scored live through the same engine, so all three get ADR-0011's crop:
+
+| n=12, 132 labelled field observations | v3 | v4-e3750 | v5-e3750 |
+|---|---|---|---|
+| core fields | 61/72 | 56/72 | **63/72** |
+| segmental lean | 31/60 | 42/60 | **52/60** |
+| critical (LBM + limbs) | 43/72 | 53/72 | **64/72** |
+| silent errors, sheets | 4/7 57.1% | 2/3 66.7% | **1/5 20.0%** |
+| silent errors, fields | 4/77 5.2% | 3/33 9.1% | **1/55 1.8%** |
+| unverified / flagged / unread | 7 / 0 / 5 | 3 / 8 / 1 | 5 / 6 / 1 |
+
+At n=6 v3 led core fields 36/36 to 31/36 and the two engines were within a field of each other
+elsewhere. At n=12 v5 leads every cut, and on segmental lean and critical fields it is not close:
+52/60 against 31/60, and 64/72 against 43/72. The six sheets that happened to be labelled first
+were the ones that flattered v3.
+
+### Decision
+
+**`INFORM_DONUT_CKPT` now defaults to `models/donut-both-v5`.**
+
+The safety argument is the one CONTEXT.md asks for, and it points the same way as the accuracy:
+
+- v3 leaves **5 of 12 sheets partly unread and flags nothing at all** — 0 flagged, 7 unverified,
+  and 4 of those 7 carry a wrong value. Its errors arrive with no signal attached.
+- v5 reads all but one sheet, flags 6, and **1 of its 5 unverified reads carries a wrong value**.
+  Per field, 1.8% against v3's 5.2%.
+
+v5 is both more accurate and more honest about what it got wrong. A wrong value that trips a
+cross-check costs someone thirty seconds; a wrong value in an `unverified` read is the failure
+this project is organised around avoiding.
+
+### The one regression, stated plainly
+
+`percent_body_fat` is **6/12 under v5 against v3's 12/12**. It is the only field where v3 wins,
+and it is the reason v5's core-field lead is 2 observations rather than 10.
+
+It does not outweigh the rest. PBF feeds the LBM cross-check (`lbm ≈ weight × (1 - pbf/100)`), so
+a misread PBF is largely *why* v5 flags 6 sheets — the error is caught rather than shipped. Trading
+a caught PBF error for 21 recovered critical-field observations is the trade this project's own
+metric says to take.
+
+It is also the field #52 was about, and #52's template fix is **not** in v5 — v5 trained before it.
+So there is a specific, testable expectation for the next retrain rather than a hope.
+
+### Consequences
+
+- **The checkpoint has to be deployed.** `models/donut-both-v5` does not exist on any machine yet;
+  v5's weights are at `D:/cera/kaggle_out_v5/donut-both-v5`. The failure is loud
+  (`DonutCheckpointError`) and never falls back to the cloud VLM, so a missing checkpoint is an
+  outage rather than a privacy incident. `errors.py`'s download hint now names the v5 kernel.
+- **Per-epoch checkpoint dirs need the run root's processor files** copied in before they load
+  (`processor_config.json`, `tokenizer.json`, `tokenizer_config.json`). v5's do not carry their own.
+- **The v3 recorded reads are no longer a usable baseline.** They predate ADR-0011, so they replay
+  uncropped. Re-record against the current engine before using them to compare anything.
+- **This ADR has now been amended twice in one day in opposite directions.** That is the strongest
+  available argument for #24's premise: an under-powered hold-out does not produce noisy answers,
+  it produces confident wrong ones.

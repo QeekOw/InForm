@@ -17,7 +17,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "inbody_sample.png"
 
 # The default checkpoint dir (ADR-0010). If a real download is present, one test
 # below round-trips it; otherwise that test skips.
-_REAL_CKPT = Path("models/donut-both-v3")
+_REAL_CKPT = Path("models/donut-both-v5")
 
 
 def _complete_partial() -> PartialInBody:
