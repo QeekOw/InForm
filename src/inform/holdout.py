@@ -43,7 +43,7 @@ ignored:
 import argparse
 import json
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Sequence
 
 from pydantic import BaseModel
 
@@ -223,6 +223,33 @@ def replay_engine(reads_path: Path) -> Callable[[Path], PartialInBody]:
         raise KeyError(f"{reads_path} has no recorded read for {image_path.name}")
 
     return engine
+
+
+def _source_labels(paths: Sequence[Path], bases: Sequence[str]) -> list[str]:
+    """Name each source distinctly, using the shortest suffix that separates them.
+
+    Every run numbers its checkpoints by step, so the same epoch across two runs
+    is `checkpoint-3750` twice -- and that is exactly the comparison a retrain
+    asks for. Keying the report table by the basename let the second one
+    overwrite the first and print a column short, which is worse than refusing,
+    because the table still looks complete.
+
+    `bases` is the preferred name per path, since a recorded read is named by
+    its stem and a checkpoint by its directory.
+    """
+    if len(set(bases)) == len(bases):
+        return list(bases)
+
+    parts = [path.resolve().parts for path in paths]
+    for depth in range(1, max(len(part) for part in parts)):
+        labels = [
+            "/".join((*part[-depth - 1 : -1], base))
+            for base, part in zip(bases, parts)
+        ]
+        if len(set(labels)) == len(labels):
+            return labels
+    # Distinct paths cannot exhaust this, but a label is never worth an exception.
+    return [f"{base}#{index}" for index, base in enumerate(bases)]
 
 
 def score(
@@ -470,13 +497,21 @@ def _main() -> None:
 
     holdout = load_holdout(args.data_dir, args.labels)
 
-    sources: list[tuple[str, Callable[[Path], PartialInBody] | None]] = [
-        (path.stem, replay_engine(path)) for path in args.reads
+    engines: list[Callable[[Path], PartialInBody] | None] = [
+        replay_engine(path) for path in args.reads
     ]
     if args.donut_checkpoint:
         from inform.engines import donut
 
-        sources += [(path.name, donut.load_engine(path)) for path in args.donut_checkpoint]
+        engines += [donut.load_engine(path) for path in args.donut_checkpoint]
+    # Labelled in one pass, so a recorded read cannot collide with a checkpoint either.
+    labels = _source_labels(
+        [*args.reads, *args.donut_checkpoint],
+        [path.stem for path in args.reads] + [path.name for path in args.donut_checkpoint],
+    )
+    sources: list[tuple[str, Callable[[Path], PartialInBody] | None]] = list(
+        zip(labels, engines)
+    )
     if not sources:
         sources = [("default", None)]
 

@@ -5,6 +5,7 @@ import pytest
 
 from inform.errors import MissingRequiredFieldsError, NotAnInBodySheetError
 from inform.holdout import (
+    _source_labels,
     format_comparison,
     load_holdout,
     load_labels,
@@ -398,3 +399,52 @@ def test_the_comparison_carries_the_per_field_cut_too():
 
     assert "percent_body_fat" in table
     assert "segmental_lean.right_arm_kg" in table
+
+
+def test_checkpoints_sharing_a_basename_get_distinct_labels():
+    # Every run names its checkpoints by step, so comparing the same epoch
+    # across two runs is the normal retrain question -- and both are called
+    # `checkpoint-3750`. Keying a report by the basename drops one silently.
+    paths = [
+        Path("D:/cera/kaggle_out_v4/donut-both-v4/checkpoint-3750"),
+        Path("D:/cera/kaggle_out_v5/donut-both-v5/checkpoint-3750"),
+    ]
+
+    labels = _source_labels(paths, [path.name for path in paths])
+
+    assert len(set(labels)) == 2
+    assert "donut-both-v4" in labels[0]
+    assert "donut-both-v5" in labels[1]
+
+
+def test_labels_stay_short_when_the_basenames_already_differ():
+    paths = [Path("out/donut-both-v3"), Path("out/donut-both-v5")]
+
+    assert _source_labels(paths, [path.name for path in paths]) == [
+        "donut-both-v3",
+        "donut-both-v5",
+    ]
+
+
+def test_labels_deepen_only_as_far_as_they_must_to_separate():
+    # Two runs three directories apart still only need the one that differs.
+    paths = [
+        Path("a/run-one/donut/checkpoint-100"),
+        Path("a/run-two/donut/checkpoint-100"),
+    ]
+
+    labels = _source_labels(paths, [path.name for path in paths])
+
+    assert len(set(labels)) == 2
+    assert all(label.endswith("checkpoint-100") for label in labels)
+
+
+def test_a_recorded_read_cannot_collide_with_a_checkpoint_of_the_same_name():
+    # Reads are named by stem and checkpoints by directory, so the two can
+    # produce the same label. Labelling them in separate passes would let one
+    # silently replace the other in the report table.
+    paths = [Path("baseline/donut-both-v3.json"), Path("out/donut-both-v3")]
+
+    labels = _source_labels(paths, [paths[0].stem, paths[1].name])
+
+    assert len(set(labels)) == 2

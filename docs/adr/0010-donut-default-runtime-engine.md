@@ -45,31 +45,35 @@ VLM.
 - **Tests do not need the 809 MB blob.** Engine selection is verified with a stub engine and
   a fail-loud path pointed at a nonexistent dir; a real-checkpoint test skips when absent.
 
-## Amendment (2026-09-12) — v3 stays the default; v4 and v5 were measured and both lost
+## Amendment (2026-09-12) — v3 stays the default, on a narrower margin than it first looked
 
 The decision above names `models/donut-both-v3` as the default checkpoint and calls
-accuracy "a follow-up gate, not a blocker". That gate has now been run twice, against
-the hand-labelled real photos rather than synthetic hold-out (ADR-0006), and it changes
-nothing about the default — which is worth recording, because two retrains produced no
-promotion and a reader would otherwise assume the newest checkpoint ships.
+accuracy "a follow-up gate, not a blocker". That gate has now been run against the
+hand-labelled real photos rather than synthetic hold-out (ADR-0006), for both retrains
+since v3, and the default does not change. The reasoning is worth recording, because the
+obvious reading of the numbers is wrong.
 
-v3 leads or ties every field cut: core 33/36 against v4-e3750's 30 and
-v5-e3750's 28, segmental lean 23/30 against 20 and 15, critical 26/36 against
-v4's 26 and v5's 21. The full table, and the command that prints it, are in
-`docs/training.md` §4.
+Scored on the photos as they arrive, v3 leads or ties every field cut and both retrains
+look like regressions. Scored on the same photos cropped to the sheet (#53), v5-e3750 has
+the best segmental lean (28/30 against v3's 27/30) and the best critical-field score
+(34/36 against 33/36) of any engine, and its `segmental_lean.right_arm_kg` goes from 1/6
+to 5/6. The 270 Segmental Fat fix that v5 was built for did work; the framing mismatch
+was costing more than the fix was buying, so the uncropped hold-out scored it as a
+regression. `docs/training.md` §4 carries both tables.
 
-**`INFORM_DONUT_CKPT` continues to default to `models/donut-both-v3`.** v4 regressed
-`percent_body_fat` from 6/6 to 3/6 (#48, closed 2026-09-12) and v5 took it to 1/6 while
-also losing eight field observations elsewhere. v5's `unread = 0` is the part to notice:
-it declines nothing, so its errors arrive as confident values rather than as gaps a
-person is asked to fill.
+**`INFORM_DONUT_CKPT` continues to default to `models/donut-both-v3`**, because it is the
+only engine that reads every core field, and its five-observation win on
+`percent_body_fat` (6/6 against v5's 1/6) outweighs v5's two-observation lead elsewhere.
+That margin rests on one field, and that field is #52.
 
-Two consequences that outlive this comparison:
+Three consequences that outlive this comparison:
 
-- **A retrain is promoted on the real hold-out or not at all.** Both v4 and v5 were built
-  to fix a defect visible in the synthetic geometry, and both did fix it there. Neither
-  improved the engine. `docs/training.md` §4 is the procedure.
+- **A retrain is promoted on the real hold-out, and the hold-out has to be measuring the
+  right thing.** This one was scoring an input-framing gap and attributing it to the
+  training data, which cost two retrains and an issue's worth of misattribution.
+- **An engine ranking is only as good as the preprocessing both sides share.** Cropping
+  did not change any checkpoint; it changed which one wins.
 - **The comparison is under-powered and known to be.** 66 field observations across 6
-  labelled sheets, with a silent-error denominator between one and three. It can separate
-  v3 from v5; it cannot resolve a small improvement. #24 is the constraint on every
-  number quoted here, and reading these results as precise would be a mistake.
+  labelled sheets, with a silent-error denominator between one and three. It separates v3
+  from v4 comfortably; it cannot settle v3 against v5 at a one-field margin. #24 is the
+  constraint on every number quoted here.

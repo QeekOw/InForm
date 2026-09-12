@@ -142,32 +142,66 @@ in `checkpoint-N/`. Load the model from the checkpoint and the processor from th
 root. Its presence at the root is also the cheapest evidence a run finished
 rather than being cut off by a wall-clock cap.
 
-### Measured: v3 remains the engine to beat
+**Score every engine on identically preprocessed images.** Cropping the hold-out
+photos to the sheet changes which checkpoint wins (#53) without touching any
+checkpoint, so a comparison is only meaningful when both sides got the same
+picture. Say which in whatever you write down.
+
+**Two runs both name a checkpoint `checkpoint-3750`.** The table labels a column
+by the shortest path suffix that separates it from the others, so comparing the
+same epoch across runs prints `donut-both-v4/checkpoint-3750` against
+`donut-both-v5/checkpoint-3750` rather than silently scoring one and showing the
+other.
+
+### Measured: what the hold-out says depends on how the photo is framed
 
 Both retrains since v3 have been scored this way, over 12 real sheets of which 6
 are hand-labelled. That is 66 labelled field observations, 36 core and 30
-segmental:
+segmental.
 
-| | v3 | v4-e3750 | v5-e3750 |
+Score them on the hold-out photos as they come off the phone, and v3 wins
+everything:
+
+| uncropped | v3 | v4-e3750 | v5-e3750 |
 |---|---|---|---|
 | core fields | **33/36** | 30/36 | 28/36 |
 | segmental lean | **23/30** | 20/30 | 15/30 |
 | critical (LBM + limbs) | **26/36** | **26/36** | 21/36 |
 | `percent_body_fat` | **6/6** | 3/6 | 1/6 |
 | `segmental_lean.right_arm_kg` | 1/6 | **2/6** | 1/6 |
-| outcome split (unverified/flagged/unread/refused) | 3/6/3/0 | 4/5/3/0 | 5/7/0/0 |
 
-Neither replaces v3 as the default checkpoint (ADR-0010, 2026-09-12 amendment).
-v5 also reads every sheet — `unread = 0` — so it declines nothing while reading
-less accurately than the engine it was meant to improve on.
+Crop each photo to the sheet first (#53) and the ranking changes:
 
-**The resolution here is the binding constraint, not the modelling** (#24).
-Both regressions are large enough for 66 observations to see: v4 gives up 6 of
-them against v3 and v5 gives up 13. A small *improvement* is the case this
-hold-out cannot call, and the silent-error denominator of one to three is where
-it fails first. v5-e3750 leaves four of its five `unverified` sheets
-unlabellable, a blind spot larger than the measurement it reports. Labelling the
-remaining six sheets is worth more than another retrain.
+| cropped to the sheet | v3 | v4-e3750 | v5-e3750 |
+|---|---|---|---|
+| core fields | **36/36** | 28/36 | 31/36 |
+| segmental lean | 27/30 | 22/30 | **28/30** |
+| critical (LBM + limbs) | 33/36 | 27/36 | **34/36** |
+| `percent_body_fat` | **6/6** | 2/6 | 1/6 |
+| `segmental_lean.right_arm_kg` | 4/6 | 3/6 | **5/6** |
+
+**Read the two tables together or neither.** Uncropped, v5 looks like a failed
+retrain that gave up eight segmental observations. Cropped, v5 has the best
+segmental lean and the best critical-field score of any engine we have, and its
+`right_arm_kg` (the field the whole 270 Segmental Fat fix targeted) goes 1/6 to
+5/6. The fix worked. The uncropped hold-out could not see it, because the
+framing mismatch was costing more accuracy than the fix was buying.
+
+`percent_body_fat` is the exception and survives cropping untouched: 1/6 either
+way, against v3's 6/6. That is now v5's only real deficit and it is #52.
+
+**v3 stays the default checkpoint** (ADR-0010, 2026-09-12 amendment) because it
+is the only engine that reads every core field, and the five observations it
+wins on `percent_body_fat` outweigh the two v5 wins elsewhere. That is a
+narrower margin than the uncropped numbers suggest, and it turns on one field.
+
+**The resolution here is a real constraint** (#24). A three-field swing is
+comfortably visible at 66 observations, so the cropping result is safe. A
+one-field margin between v3 and v5 is not, and neither is a silent-error
+denominator of one to three: v5-e3750 leaves four of its five `unverified`
+sheets unlabellable, a blind spot larger than the measurement it reports.
+Labelling the remaining six sheets is what would let this table settle the
+narrow comparisons it currently only gestures at.
 
 ## What this session verified vs. what it didn't
 
