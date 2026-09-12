@@ -46,8 +46,20 @@ The v5 run split 2-way on the 270 (1250 each) and 4-way on the 570 (625 each),
 reasoning that a 570 renders in ~3.8s against the 270's ~1.8s measured *solo*.
 That was wrong: under contention the per-sheet cost converges, so the 270 shards
 finished in 136 min and the 570 shards in 99, and the 270 half was the long pole
-by half an hour. Equal sheet counts per shard would have finished in ~90 min.
-Solo render times do not predict sharded wall clock.
+by half an hour. Solo render times do not predict sharded wall clock.
+
+**Balancing the shards does not make the run faster, though.** This doc used to
+predict equal sheet counts would finish in ~90 min. v6 ran six equal shards of
+~833 and finished in **135.7 min at 0.614 sheets/s**, against v5's 136 min at
+0.611 — the same run, to within noise. What changed is the tail: the spread
+between the first and last shard to finish went from ~37 min to 18.8.
+
+The ~90 min estimate assumed the stragglers' time could be reclaimed. It cannot:
+throughput is saturated on aggregate CPU well before six shards, so while the
+270 shards were still going they had the cores to themselves and were not
+waiting on anything. Balance the shards to shorten the tail and make the finish
+predictable, not to shorten the run. To actually make it faster you need more
+cores or a cheaper render, not a better split.
 
 **Each shard writes its own manifest.** `dataset.{seed_start}-{seed_end}.json`,
 naming the devices, the inclusive seed range and a fingerprint over the generator
