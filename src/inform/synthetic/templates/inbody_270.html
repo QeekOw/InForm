@@ -43,7 +43,14 @@
   .ticks { position: absolute; inset: 0; display: flex; font-size: 9px; color: #999; }
   .ticks span { flex: 1; border-left: 1px solid #eee; padding-left: 1px; white-space: nowrap; }
   .bar { position: absolute; top: 20px; height: 8px; background: #222; }
-  .bar .bv { position: absolute; right: -32px; top: -17px; font-size: 13px; font-weight: 700; color:#111; background: #fff; padding: 0 2px; box-shadow: 0 0 2px 2px #fff; white-space: nowrap; }
+  /* The value sits on the bar's own line, clear of the tick labels above it.
+     It used to be lifted to top:-17px, into the tick row, and the collision
+     masked with a white background and halo -- which left percent_body_fat,
+     the one scored field whose magnitude matches its own axis labels, a
+     resolution change away from being unsegmentable from a tick (#52). A real
+     sheet prints the value on a line below the ticks; so does this now, and
+     with nothing behind it there is nothing to mask. */
+  .bar .bv { position: absolute; right: -32px; top: -4px; font-size: 13px; font-weight: 700; color:#111; white-space: nowrap; }
   /* ponytail: PROVISIONAL gutter, a considered guess rather than a
      measurement. On the real 270 hold-out the model read the left-arm *fat*
      value as the right-arm *lean* value, crossing the panel boundary

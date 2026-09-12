@@ -53,7 +53,17 @@
   .right .ticks { font-size: 8px; }
   .right .grow .lab, .right .graph .ghead .lab { width: 86px; }
   .bar { position: absolute; top: 16px; height: 8px; background: #222; }
-  .bar .bv { position: absolute; right: -32px; top: -17px; font-size: 13px; font-weight: 700; color:#111; background: #fff; padding: 0 2px; box-shadow: 0 0 2px 2px #fff; white-space: nowrap; }
+  /* The value sits on the bar's own line, clear of the tick labels above it.
+     It used to be lifted to top:-17px, into the tick row, and the collision
+     masked with a white background and halo -- which left percent_body_fat,
+     the one scored field whose magnitude matches its own axis labels, a
+     resolution change away from being unsegmentable from a tick (#52). A real
+     sheet prints the value on a line below the ticks; so does this now, and
+     with nothing behind it there is nothing to mask.
+     This row is 32px against the 270's 40px, so the value can only clear the
+     ticks by ~3px here rather than the 270's ~9px. That is the row height
+     talking, not a choice; see #55. */
+  .bar .bv { position: absolute; right: -32px; top: -2px; font-size: 13px; font-weight: 700; color:#111; white-space: nowrap; }
   .hist td { border: 1px solid #ccc; font-size: 11.5px; padding: 7px 3px; text-align: center; }
   .hist .rl { text-align: left; font-weight: 700; width: 70px; }
   .hist .rl i { display:block; color:#888; font-weight:400; font-size:9px; }
