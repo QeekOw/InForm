@@ -45,7 +45,7 @@
   .grow .lab { width: 100px; padding: 5px; font-size: 12.5px; }
   .grow .lab b { display: block; font-size: 12.5px; }
   .grow .lab i { color: #888; font-style: normal; font-size: 9.5px; }
-  .grow .plot { flex: 1; position: relative; height: 32px; }
+  .grow .plot { flex: 1; position: relative; height: 40px; }
   .ticks { position: absolute; inset: 0; display: flex; font-size: 9px; color: #999; }
   .ticks span { flex: 1; border-left: 1px solid #eee; padding-left: 1px; white-space: nowrap; }
   /* The right column's graphs are half the width of the left's, so their
@@ -60,10 +60,12 @@
      resolution change away from being unsegmentable from a tick (#52). A real
      sheet prints the value on a line below the ticks; so does this now, and
      with nothing behind it there is nothing to mask.
-     This row is 32px against the 270's 40px, so the value can only clear the
-     ticks by ~3px here rather than the 270's ~9px. That is the row height
-     talking, not a choice; see #55. */
-  .bar .bv { position: absolute; right: -32px; top: -2px; font-size: 13px; font-weight: 700; color:#111; white-space: nowrap; }
+     The row is 40px to match the 270, so the value clears the ticks by the same
+     9.2px here. At the old 32px it managed 3.2px, which is why #55 existed; the
+     rows turned out to be sized by their two-line label rather than by the plot,
+     so the extra 8px costs 47px of sheet height and leaves the aspect at 0.694,
+     inside the A4 tolerance scripts/check_sheet_geometry.py enforces. */
+  .bar .bv { position: absolute; right: -32px; top: 4px; font-size: 13px; font-weight: 700; color:#111; white-space: nowrap; }
   .hist td { border: 1px solid #ccc; font-size: 11.5px; padding: 7px 3px; text-align: center; }
   .hist .rl { text-align: left; font-weight: 700; width: 70px; }
   .hist .rl i { display:block; color:#888; font-weight:400; font-size:9px; }

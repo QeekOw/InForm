@@ -17,7 +17,10 @@ _TEMPLATES = Path("src/inform/synthetic/templates")
 # Chrome's default line box for a run of digits, as a multiple of font-size.
 # Only used to turn font sizes into bands; the assertions have px of slack.
 _LINE_HEIGHT = 1.2
-_MIN_GAP_PX = 3.0
+# Both devices clear their tick line by 9.2px. 8.0 leaves room for a font or
+# row-height tweak without a false failure, and is far enough above the ~4-6px
+# that separates digits *inside* a number (#52) to mean something.
+_MIN_GAP_PX = 8.0
 
 
 def _rule(css: str, selector: str) -> dict[str, str]:
