@@ -1,13 +1,8 @@
-"""The sheet has to come out of the frame before the engine sees it (#53)."""
-
-import sys
-from pathlib import Path
+"""The sheet has to come out of the frame before Donut sees it (#53)."""
 
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from crop_to_sheet import crop_to_sheet, sheet_box  # noqa: E402
+from inform.preprocess import crop_if_misframed, crop_to_sheet, sheet_box
 
 # A phone frame: 9:16, a wooden table, a near-A4 sheet lying on it.
 _FRAME = (574, 1020)
@@ -24,6 +19,13 @@ def _photo(shadow: bool = False) -> Image.Image:
         # A hand's shadow across the lower third, which is in every real photo
         # and is what breaks a largest-contiguous-run cropper.
         draw.rectangle((_SHEET[0], 560, _SHEET[2], _SHEET[3]), fill=(120, 119, 116))
+    return image
+
+
+def _already_framed() -> Image.Image:
+    """A synthetic training image: sheet at ~0.706 with a thin surface border."""
+    image = Image.new("RGB", (600, 850), _WOOD)
+    ImageDraw.Draw(image).rectangle((20, 20, 580, 830), fill=_PAPER)
     return image
 
 
@@ -48,6 +50,7 @@ def test_a_shadow_across_the_sheet_does_not_truncate_the_crop():
 def test_cropping_moves_the_aspect_toward_the_training_distribution():
     photo = _photo()
     frame_aspect = photo.width / photo.height
+
     cropped = crop_to_sheet(photo)
 
     assert abs(cropped.width / cropped.height - 0.707) < abs(frame_aspect - 0.707)
@@ -59,3 +62,23 @@ def test_a_frame_with_no_sheet_in_it_is_left_alone():
     blank = Image.new("RGB", _FRAME, _WOOD)
 
     assert sheet_box(blank) == (0, 0, *_FRAME)
+
+
+def test_a_misframed_photo_is_cropped():
+    photo = _photo()
+
+    assert crop_if_misframed(photo).size != photo.size
+
+
+def test_an_image_already_framed_like_the_training_set_is_untouched():
+    # Cropping these costs ~2 points on synthetic sheets, so the guard has to
+    # decline. Identity, not merely a similar size.
+    framed = _already_framed()
+
+    assert crop_if_misframed(framed) is framed
+
+
+def test_a_frame_with_no_sheet_is_never_cropped():
+    blank = Image.new("RGB", _FRAME, _WOOD)
+
+    assert crop_if_misframed(blank) is blank

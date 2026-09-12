@@ -147,6 +147,12 @@ photos to the sheet changes which checkpoint wins (#53) without touching any
 checkpoint, so a comparison is only meaningful when both sides got the same
 picture. Say which in whatever you write down.
 
+Since ADR-0011 the Donut engine crops for itself, so `--donut-checkpoint` on the
+raw photos already gets the cropped numbers. A recorded `--reads` baseline does
+not: it replays whatever the engine emitted when the file was written. Reads
+recorded before 2026-09-12 are uncropped, and comparing one against a live
+checkpoint measures the crop, not the checkpoint.
+
 **Two runs both name a checkpoint `checkpoint-3750`.** The table labels a column
 by the shortest path suffix that separates it from the others, so comparing the
 same epoch across runs prints `donut-both-v4/checkpoint-3750` against

@@ -6,6 +6,9 @@ dependencies = [
     "pydantic>=2",
     "openai>=1.40",
     "Pillow>=10",
+    # inform.preprocess masks the sheet out of a photo before the engine sees
+    # it; percentiles over a pixel mask are not something Pillow does well.
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]

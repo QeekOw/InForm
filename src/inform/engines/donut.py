@@ -27,6 +27,7 @@ def load_engine(checkpoint_dir: Path):
     import torch
     from PIL import Image
 
+    from inform.preprocess import crop_if_misframed
     from inform.training.train import load_checkpoint
 
     processor, model = load_checkpoint(Path(checkpoint_dir))
@@ -38,6 +39,10 @@ def load_engine(checkpoint_dir: Path):
 
     def extract(image_path: Path) -> PartialInBody:
         image = Image.open(image_path).convert("RGB")
+        # A phone photo is a picture of a table with a sheet on it; the model
+        # trained on sheets. Declines to crop anything already framed like the
+        # training set, so synthetic input is untouched (#53).
+        image = crop_if_misframed(image)
         pixel_values = processor(image, return_tensors="pt").pixel_values.to(device)
         outputs = model.generate(
             pixel_values,
