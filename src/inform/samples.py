@@ -18,14 +18,18 @@ from inform.errors import (
     MissingRequiredFieldsError,
     NotAnInBodySheetError,
 )
-from inform.extract import Engine, default_engine, extract_inbody
+from inform.extract import (
+    _DEFAULT_DONUT_CKPT,
+    _DONUT_CKPT_ENV,
+    Engine,
+    default_engine,
+    extract_inbody,
+)
 from inform.inbody import PartialInBody
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_MANIFEST_PATH = _REPO_ROOT / "data" / "samples" / "manifest.json"
 _DEFAULT_EXTRACTIONS_PATH = _REPO_ROOT / "data" / "samples" / "extractions.json"
-_DEFAULT_CKPT = "models/donut-both-v3"
-_DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
 
 
 class SampleSheet(BaseModel):
@@ -73,27 +77,26 @@ def default_extractions_path() -> Path:
 
 
 def current_checkpoint_id() -> str:
-    return os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_CKPT)
+    return os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
+
+
+def _load_json_model[T: BaseModel](model_cls: type[T], path: Path | str | None, default_path: Path) -> T:
+    p = Path(path) if path is not None else default_path
+    if not p.is_absolute():
+        p = _REPO_ROOT / p
+    if not p.exists():
+        raise FileNotFoundError(f"{model_cls.__name__} not found at {p}")
+    return model_cls.model_validate_json(p.read_text(encoding="utf-8"))
 
 
 def load_manifest(path: Path | str | None = None) -> SampleManifest:
     """Load the Sample sheet manifest from disk."""
-    p = Path(path) if path is not None else default_manifest_path()
-    if not p.is_absolute():
-        p = _REPO_ROOT / p
-    if not p.exists():
-        raise FileNotFoundError(f"Sample manifest not found at {p}")
-    return SampleManifest.model_validate_json(p.read_text(encoding="utf-8"))
+    return _load_json_model(SampleManifest, path, default_manifest_path())
 
 
 def load_extractions(path: Path | str | None = None) -> SampleExtractionsArtifact:
     """Load the pre-computed Sample extractions artifact from disk."""
-    p = Path(path) if path is not None else default_extractions_path()
-    if not p.is_absolute():
-        p = _REPO_ROOT / p
-    if not p.exists():
-        raise FileNotFoundError(f"Sample extractions artifact not found at {p}")
-    return SampleExtractionsArtifact.model_validate_json(p.read_text(encoding="utf-8"))
+    return _load_json_model(SampleExtractionsArtifact, path, default_extractions_path())
 
 
 def extract_sheet_for_sample(
@@ -139,7 +142,7 @@ def generate_extractions(
     root = base_dir or _REPO_ROOT
     ckpt = checkpoint_id or current_checkpoint_id()
     if engine is None:
-        engine = default_engine()
+        engine = default_engine(ckpt)
 
     extractions: dict[str, ExtractionItem] = {}
     for sample in manifest.samples:

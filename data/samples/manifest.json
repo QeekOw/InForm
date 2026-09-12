@@ -18,11 +18,11 @@
     },
     {
       "id": "real_270_clean",
-      "name": "Real InBody 270 Printout (Clean, Redacted)",
+      "name": "Real InBody 270 Printout (Redacted, Misread LBM)",
       "provenance": "real",
       "source_device": "inbody_270",
       "image_path": "data/samples/real_270_clean.png",
-      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Read cleanly."
+      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Triggers cross-check flags due to misread LBM."
     },
     {
       "id": "real_270_flagged",

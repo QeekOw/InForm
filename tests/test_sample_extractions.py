@@ -218,6 +218,40 @@ def test_diff_extractions_detects_changes():
     assert any("extraction differs" in d for d in diff_extractions(base, candidate_status))
 
 
+def test_generate_extractions_wires_checkpoint_to_engine(monkeypatch):
+    """Passing checkpoint_id to generate_extractions resolves that checkpoint in default_engine."""
+    called_with = []
+
+    def mock_default_engine(checkpoint=None):
+        called_with.append(checkpoint)
+
+        def stub(path):
+            return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.0)
+
+        return stub
+
+    import inform.samples
+    monkeypatch.setattr(inform.samples, "default_engine", mock_default_engine)
+
+    manifest = SampleManifest(
+        samples=[
+            SampleSheet(
+                id="test_s",
+                name="Test",
+                provenance="synthetic",
+                image_path="data/samples/synthetic_270_clean.png",
+                description="test",
+            )
+        ]
+    )
+
+    artifact = inform.samples.generate_extractions(
+        manifest, checkpoint_id="custom/checkpoint-v1"
+    )
+    assert artifact.checkpoint == "custom/checkpoint-v1"
+    assert called_with == ["custom/checkpoint-v1"]
+
+
 def test_committed_extractions_match_live_checkpoint():
     """A check fails when the committed extractions differ from what the script produces."""
     ckpt_path = Path("models/donut-both-v3")

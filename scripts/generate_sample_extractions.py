@@ -75,7 +75,6 @@ def main() -> int:
     candidate_artifact = generate_extractions(
         manifest,
         checkpoint_id=args.checkpoint,
-        base_dir=args.manifest.parent.parent.parent,
     )
 
     if args.check:
