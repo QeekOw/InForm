@@ -13,18 +13,20 @@ function NumberField({
   value,
   onChange,
   unit,
+  integer = false,
 }: {
   value: number;
   onChange: (v: number) => void;
   unit: string;
+  integer?: boolean;
 }) {
   return (
     <span className="flex items-center gap-1 rounded-md border-[1.5px] border-[#d9d9d9] px-2 py-0.5">
       <input
         type="number"
-        step="0.01"
+        step={integer ? "1" : "0.01"}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(integer ? Math.round(Number(e.target.value)) : Number(e.target.value))}
         className="w-12 text-right text-[12px] font-bold outline-none"
       />
       <span className="text-[8px] font-medium">{unit}</span>
@@ -37,16 +39,18 @@ function Row({
   value,
   unit,
   onChange,
+  integer = false,
 }: {
   label: string;
   value: number;
   unit: string;
   onChange: (v: number) => void;
+  integer?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-1 text-[12px]">
       <span>{label}</span>
-      <NumberField value={value} onChange={onChange} unit={unit} />
+      <NumberField value={value} onChange={onChange} unit={unit} integer={integer} />
     </div>
   );
 }
@@ -127,6 +131,7 @@ export default function PreviewEdit() {
             label="Visceral Fat Level"
             value={reading.visceral_fat_level}
             unit=""
+            integer
             onChange={(v) => set("visceral_fat_level", v)}
           />
         </div>

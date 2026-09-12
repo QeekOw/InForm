@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import { saveJSON } from "@/lib/session";
 import { SESSION_KEYS } from "@/lib/inbody";
@@ -29,12 +30,21 @@ const SHEETS: { value: SheetType; label: string; caption: string; thumb: string 
 ];
 
 export default function Upload() {
+  const router = useRouter();
   const [sheetType, setSheetType] = useState<SheetType>("inbody_570");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     saveJSON(SESSION_KEYS.sheetType, sheetType);
   }, [sheetType]);
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // No real upload yet (Module 1 OCR isn't wired) — picking a file just
+    // advances the flow the same way the camera capture does.
+    if (e.target.files?.length) {
+      router.push("/upload/analyzing");
+    }
+  };
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -93,7 +103,13 @@ export default function Upload() {
             Upload from device
           </span>
         </button>
-        <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
         <p className="mt-2 text-right text-[8px] font-bold tracking-[0.02em] text-white opacity-80">
           Supported formats: JPG, PNG, PDF
         </p>

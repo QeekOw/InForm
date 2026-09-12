@@ -12,7 +12,8 @@ export default function Capture() {
     <PhoneFrame bg="bg-[#3e3e3e]">
       {/* Live camera feed goes here once capture is wired up (no real device/photo
           embedded here — the Figma mock used a real printed report with a visible
-          gym name and member ID, which per ADR-0011 must never ship in the app). */}
+          gym name and member ID; issue #29's privacy stance for Track B says data
+          like that must never ship in the app, so it's a placeholder instead). */}
       <div className="absolute inset-x-0 top-8 bottom-6 flex items-center justify-center bg-black">
         <p className="px-10 text-center text-[12px] text-white/40">Camera preview</p>
       </div>

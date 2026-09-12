@@ -19,6 +19,9 @@ env/
 .ruff_cache/
 .mypy_cache/
 
+# Local dev server logs (frontend/backend)
+*.log
+
 # Environment / secrets
 .env
 .env.*

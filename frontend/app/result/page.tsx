@@ -46,7 +46,7 @@ type PlanResponse = {
 
 type State =
   | { status: "loading" }
-  | { status: "error"; message: string }
+  | { status: "error"; message: string; kind: "network" | "validation" }
   | { status: "ready"; plan: PlanResponse };
 
 export default function Result() {
@@ -57,7 +57,7 @@ export default function Result() {
   useEffect(() => {
     const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile) ?? DEFAULT_PROFILE;
     const loadedReading = loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING;
-    const loadedName = loadJSON<string>("inform:name") ?? "John Doe";
+    const loadedName = loadJSON<string>(SESSION_KEYS.name) ?? "John Doe";
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
@@ -69,12 +69,22 @@ export default function Result() {
       body: JSON.stringify({ user: loadedProfile, inbody: loadedReading }),
     })
       .then(async (res) => {
-        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        if (!res.ok) {
+          // A 4xx here means the request itself was rejected (e.g. a typed
+          // value out of range) — a different problem from not reaching the
+          // API at all, and worth telling apart in the UI.
+          const detail = await res.text().catch(() => "");
+          const error = new Error(detail || `API returned ${res.status}`) as Error & {
+            kind: "network" | "validation";
+          };
+          error.kind = res.status >= 400 && res.status < 500 ? "validation" : "network";
+          throw error;
+        }
         const plan = (await res.json()) as PlanResponse;
         setState({ status: "ready", plan });
       })
-      .catch((err: Error) => {
-        setState({ status: "error", message: err.message });
+      .catch((err: Error & { kind?: "network" | "validation" }) => {
+        setState({ status: "error", message: err.message, kind: err.kind ?? "network" });
       });
   }, []);
 
@@ -120,7 +130,15 @@ export default function Result() {
         </div>
       )}
 
-      {state.status === "error" && (
+      {state.status === "error" && state.kind === "validation" && (
+        <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-center text-[12px] text-black">
+          <p className="font-bold text-red-600">The API rejected one of the values</p>
+          <p className="mt-1 whitespace-pre-wrap opacity-70">{state.message}</p>
+          <p className="mt-2 opacity-70">Go back and check the edited fields.</p>
+        </div>
+      )}
+
+      {state.status === "error" && state.kind === "network" && (
         <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-center text-[12px] text-black">
           <p className="font-bold text-red-600">Couldn&apos;t reach the API</p>
           <p className="mt-1 opacity-70">{state.message}</p>

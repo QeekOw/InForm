@@ -45,7 +45,7 @@ export default function Profile() {
       fitness_goal: goal,
     };
     saveJSON(SESSION_KEYS.profile, profile);
-    saveJSON("inform:name", name || "John Doe");
+    saveJSON(SESSION_KEYS.name, name || "John Doe");
     router.push("/upload");
   };
 
