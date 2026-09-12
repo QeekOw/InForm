@@ -110,6 +110,65 @@ honest number. `--skip-vlm` scores Donut only (no OpenAI calls / cost).
 To plug the fine-tuned engine into the production seam instead of the VLM
 default: `extract_inbody(img, engine=donut.load_engine(checkpoint))`.
 
+## 4. Read the retrain against the real hold-out
+
+`inform.compare` (step 3) answers "Donut or the VLM". A retrain asks a different
+question — "is this checkpoint better than the one we ship" — and that is
+`inform.holdout`, scored against the hand-labelled real photos (ADR-0006).
+
+`--reads` and `--donut-checkpoint` are both repeatable, and mixing them is the
+usual case: a new checkpoint against recorded baselines. More than one source
+prints the comparison table instead of the single-engine report.
+
+```
+python -m inform.holdout \
+  --data-dir data/real_holdout --labels data/real_holdout/labels.json \
+  --reads data/real_holdout/probe-donut-both-v3-reads.json \
+  --donut-checkpoint D:/cera/kaggle_out_v5/donut-both-v5/checkpoint-3750
+```
+
+Recorded reads for the shipped baselines live beside the images (gitignored), so
+a baseline costs no GPU and no re-inference. That is what keeps a published
+number checkable after the checkpoint it came from has moved on.
+
+**Read the silent-error rate beside the outcome split, never alone.** An engine
+that flags or under-reads every sheet has no `unverified` reads and therefore a
+perfect headline. The table prints both together for that reason; CONTEXT.md
+states the rule.
+
+**Per-epoch checkpoint dirs may carry no processor.** `save_pretrained` runs once
+after `trainer.train()` returns, so the processor lands at the run root and not
+in `checkpoint-N/`. Load the model from the checkpoint and the processor from the
+root. Its presence at the root is also the cheapest evidence a run finished
+rather than being cut off by a wall-clock cap.
+
+### Measured: v3 remains the engine to beat
+
+Both retrains since v3 have been scored this way, over 12 real sheets of which 6
+are hand-labelled. That is 66 labelled field observations, 36 core and 30
+segmental:
+
+| | v3 | v4-e3750 | v5-e3750 |
+|---|---|---|---|
+| core fields | **33/36** | 30/36 | 28/36 |
+| segmental lean | **23/30** | 20/30 | 15/30 |
+| critical (LBM + limbs) | **26/36** | **26/36** | 21/36 |
+| `percent_body_fat` | **6/6** | 3/6 | 1/6 |
+| `segmental_lean.right_arm_kg` | 1/6 | **2/6** | 1/6 |
+| outcome split (unverified/flagged/unread/refused) | 3/6/3/0 | 4/5/3/0 | 5/7/0/0 |
+
+Neither replaces v3 as the default checkpoint (ADR-0010, 2026-09-12 amendment).
+v5 also reads every sheet — `unread = 0` — so it declines nothing while reading
+less accurately than the engine it was meant to improve on.
+
+**The resolution here is the binding constraint, not the modelling** (#24).
+Both regressions are large enough for 66 observations to see: v4 gives up 6 of
+them against v3 and v5 gives up 13. A small *improvement* is the case this
+hold-out cannot call, and the silent-error denominator of one to three is where
+it fails first. v5-e3750 leaves four of its five `unverified` sheets
+unlabellable, a blind spot larger than the measurement it reports. Labelling the
+remaining six sheets is worth more than another retrain.
+
 ## What this session verified vs. what it didn't
 
 This pipeline (dataset generation, task-token setup, the training loop, and
