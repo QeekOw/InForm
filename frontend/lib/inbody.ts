@@ -47,13 +47,6 @@ export const DEFAULT_READING: InBodyReading = {
   },
 };
 
-export const DEFAULT_PROFILE: UserProfile = {
-  age: 30,
-  biological_sex: "male",
-  activity_multiplier: 1.55,
-  fitness_goal: "fat_loss",
-};
-
 export type SampleProvenance = "synthetic" | "real";
 
 export type SampleSheetMeta = {
@@ -73,6 +66,36 @@ export type SampleExtraction = {
   error?: string | null;
   message?: string | null;
 };
+
+// A read the plan can be built from with no human input: nothing unread,
+// nothing flagged, not refused (ADR-0008).
+export function isCleanRead(extraction: SampleExtraction): boolean {
+  return (
+    extraction.status === "complete" &&
+    extraction.data !== null &&
+    extraction.unread.length === 0 &&
+    extraction.flagged.length === 0
+  );
+}
+
+// Every extracted value as label, value and unit.
+export const READING_ROWS: {
+  label: string;
+  unit: string;
+  value: (r: InBodyReading) => number | null;
+}[] = [
+  { label: "Weight", unit: "kg", value: (r) => r.weight_kg },
+  { label: "Lean Body Mass", unit: "kg", value: (r) => r.lean_body_mass_kg },
+  { label: "Percent Body Fat", unit: "%", value: (r) => r.percent_body_fat },
+  { label: "Skeletal Muscle Mass", unit: "kg", value: (r) => r.skeletal_muscle_mass_kg },
+  { label: "Basal Metabolic Rate", unit: "kcal", value: (r) => r.basal_metabolic_rate_kcal },
+  { label: "Visceral Fat Level", unit: "level", value: (r) => r.visceral_fat_level },
+  { label: "Left Arm", unit: "kg", value: (r) => r.segmental_lean.left_arm_kg },
+  { label: "Right Arm", unit: "kg", value: (r) => r.segmental_lean.right_arm_kg },
+  { label: "Left Leg", unit: "kg", value: (r) => r.segmental_lean.left_leg_kg },
+  { label: "Right Leg", unit: "kg", value: (r) => r.segmental_lean.right_leg_kg },
+  { label: "Trunk", unit: "kg", value: (r) => r.segmental_lean.trunk_kg },
+];
 
 export const SESSION_KEYS = {
   profile: "inform:profile",

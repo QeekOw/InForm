@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import { saveJSON } from "@/lib/session";
 import {
+  isCleanRead,
   SESSION_KEYS,
   type SampleExtraction,
   type SampleSheetMeta,
@@ -69,8 +70,9 @@ export default function Upload() {
         saveJSON(SESSION_KEYS.reading, null);
       }
 
-      // Return stored extraction immediately and navigate to preview (AC #2, #3)
-      router.push("/preview");
+      // A clean read goes straight to results with no extra taps; anything
+      // unread, flagged or refused stops at the preview for a person.
+      router.push(isCleanRead(extraction) ? "/result" : "/preview");
     } catch (err) {
       console.error("Error loading sample:", err);
     } finally {
@@ -175,7 +177,7 @@ export default function Upload() {
                       <div className="mt-1 text-[10px] font-semibold text-[#117d69]">
                         {isSelected && loadingSample
                           ? "Loading extraction…"
-                          : "Tap to inspect stored extraction →"}
+                          : "Tap to read this sheet →"}
                       </div>
                     </div>
                   </button>

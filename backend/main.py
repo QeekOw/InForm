@@ -9,15 +9,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from inform.exercise import ExercisePlan
 from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
-from inform.inbody import InBodyPayload
+from inform.inbody import InBodyExtraction, InBodyPayload
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
@@ -26,7 +26,8 @@ from inform.samples import (
     load_extractions,
     load_manifest,
 )
-from inform.synthesis.generate import synthesize_plan
+from inform.synthesis.generate import OpenAIClientProtocol, synthesize_plan
+from inform.synthesis.validate import generate_fallback_plan
 from inform.user import UserProfile
 
 app = FastAPI(title="InForm API")
@@ -108,7 +109,51 @@ def get_sample_image(sample_id: str):
 
 class PlanRequest(BaseModel):
     user: UserProfile
-    inbody: InBodyPayload
+    # Exactly one: a Sample sheet whose stored read the server plans from, or
+    # a reading the caller supplies (the edit screen, until the correction flow).
+    sample_id: str | None = None
+    inbody: InBodyPayload | None = None
+
+    @model_validator(mode="after")
+    def _one_reading_source(self) -> "PlanRequest":
+        if (self.sample_id is None) == (self.inbody is None):
+            raise ValueError("Provide exactly one of sample_id or inbody")
+        return self
+
+
+def get_llm_client() -> OpenAIClientProtocol | None:
+    """Module 4's LLM client; None lets synthesize_plan build the default one.
+
+    A FastAPI dependency so tests can inject a fake client."""
+    return None
+
+
+def _inbody_for_plan(request: PlanRequest) -> InBodyPayload:
+    if request.inbody is not None:
+        return request.inbody
+    extraction = load_extractions().extractions.get(request.sample_id)
+    if extraction is None:
+        raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
+    # A refused read carries no data; as_payload refuses an unread or flagged one.
+    inbody = (
+        InBodyExtraction(
+            data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
+        ).as_payload()
+        if extraction.data is not None
+        else None
+    )
+    if inbody is None:
+        # Fail-closed (ADR-0008): an unread, flagged or refused read never
+        # becomes a plan without a person acting on it.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
+                "unread": extraction.unread,
+                "flagged": extraction.flagged,
+            },
+        )
+    return inbody
 
 
 class PlanResponse(BaseModel):
@@ -119,27 +164,34 @@ class PlanResponse(BaseModel):
     nutrition: NutritionTargets
     exercises: ExercisePlan
     narrative_text: str
+    # "fallback" when Module 4 dropped the LLM's text (unavailable, or it
+    # mutated a number) and returned the plain deterministic plan instead.
+    narrative_source: Literal["generated", "fallback"]
 
 
 @app.post("/plan")
-def plan(request: PlanRequest) -> PlanResponse:
-    """Modules 2 -> 3 -> 4, given an already-complete InBody reading.
+def plan(
+    request: PlanRequest,
+    llm_client: OpenAIClientProtocol | None = Depends(get_llm_client),
+) -> PlanResponse:
+    """Modules 2 -> 3 -> 4, given a Sample sheet's stored read or a complete reading.
 
-    No OCR (Module 1) here — the caller supplies the reading values directly,
-    same shape a completed correction flow would produce. Module 4 falls back
-    to a deterministic plan automatically when no OPENAI_API_KEY is set.
+    No OCR (Module 1) here. Module 4 falls back to a deterministic plan when
+    the LLM is unavailable or mutates a number.
     """
-    nutrition = compute_targets(request.user, request.inbody)
-    exercises = recommend_exercises(request.user, request.inbody, DEFAULT_EXERCISE_POOL)
+    inbody = _inbody_for_plan(request)
+    nutrition = compute_targets(request.user, inbody)
+    exercises = recommend_exercises(request.user, inbody, DEFAULT_EXERCISE_POOL)
     master = MasterPayload(
         user=request.user,
-        inbody=request.inbody,
+        inbody=inbody,
         nutrition=nutrition,
         exercises=exercises,
     )
-    daily_plan = synthesize_plan(master, client=None)
+    daily_plan = synthesize_plan(master, client=llm_client)
     return PlanResponse(
         nutrition=nutrition,
         exercises=exercises,
         narrative_text=daily_plan.narrative_text,
+        narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
     )
