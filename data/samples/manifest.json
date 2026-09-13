@@ -1,0 +1,44 @@
+{
+  "samples": [
+    {
+      "id": "synthetic_270_clean",
+      "name": "Synthetic InBody 270 (Clean)",
+      "provenance": "synthetic",
+      "source_device": "inbody_270",
+      "image_path": "data/samples/synthetic_270_clean.png",
+      "description": "Clean synthetic InBody 270 scan; all required fields read without flags."
+    },
+    {
+      "id": "synthetic_570_clean",
+      "name": "Synthetic InBody 570 (Clean)",
+      "provenance": "synthetic",
+      "source_device": "inbody_570",
+      "image_path": "data/samples/synthetic_570_clean.png",
+      "description": "Clean synthetic InBody 570 scan; includes segmental lean analysis and visceral fat level."
+    },
+    {
+      "id": "real_270_clean",
+      "name": "Real InBody 270 Printout (Redacted, Misread LBM)",
+      "provenance": "real",
+      "source_device": "inbody_270",
+      "image_path": "data/samples/real_270_clean.png",
+      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Triggers cross-check flags due to misread LBM."
+    },
+    {
+      "id": "real_270_flagged",
+      "name": "Real InBody 270 Printout (Flagged LBM, Redacted)",
+      "provenance": "real",
+      "source_device": "inbody_270",
+      "image_path": "data/samples/real_270_flagged.png",
+      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Triggers deterministic physiological cross-check flags."
+    },
+    {
+      "id": "refused_non_sheet",
+      "name": "Non-InBody Document (Refusal)",
+      "provenance": "synthetic",
+      "source_device": null,
+      "image_path": "data/samples/refused_non_sheet.png",
+      "description": "Non-InBody document correctly declined by the extraction model (fail-closed refusal)."
+    }
+  ]
+}

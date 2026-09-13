@@ -40,7 +40,7 @@ def _looks_like_hub_id(raw: str) -> bool:
 
 
 
-def default_engine() -> Engine:
+def default_engine(checkpoint: str | Path | None = None) -> Engine:
     """Build the default runtime engine: self-hosted Donut (ADR-0010).
 
     Points at INFORM_DONUT_CKPT (default `models/donut-both-v3`), which can be a
@@ -50,7 +50,10 @@ def default_engine() -> Engine:
     the cloud VLM, which ADR-0005 forbids from ever seeing real PHI. The VLM
     remains reachable only as an explicitly-passed engine (the eval oracle).
     """
-    ckpt_raw = os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
+    if checkpoint is not None:
+        ckpt_raw = str(checkpoint)
+    else:
+        ckpt_raw = os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
     ckpt_path = Path(ckpt_raw)
     if ckpt_path.exists():
         ckpt: Path | str = ckpt_path
