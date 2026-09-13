@@ -90,7 +90,7 @@ remaining six were hand-labelled the same day, and at n=12 every engine cut reve
 earlier amendment was not reasoned badly; it was reasoned on half the evidence, and #24 had
 been saying so for weeks.
 
-All three checkpoints scored live through the same engine, so all three get ADR-0011's crop:
+All three checkpoints scored live through the same engine, so all three get ADR-0012's crop:
 
 | n=12, 132 labelled field observations | v3 | v4-e3750 | v5-e3750 |
 |---|---|---|---|
@@ -142,7 +142,7 @@ So there is a specific, testable expectation for the next retrain rather than a 
   outage rather than a privacy incident. `errors.py`'s download hint now names the v5 kernel.
 - **Per-epoch checkpoint dirs need the run root's processor files** copied in before they load
   (`processor_config.json`, `tokenizer.json`, `tokenizer_config.json`). v5's do not carry their own.
-- **The v3 recorded reads are no longer a usable baseline.** They predate ADR-0011, so they replay
+- **The v3 recorded reads are no longer a usable baseline.** They predate ADR-0012, so they replay
   uncropped. Re-record against the current engine before using them to compare anything.
 - **This ADR has now been amended twice in one day in opposite directions.** That is the strongest
   available argument for #24's premise: an under-powered hold-out does not produce noisy answers,

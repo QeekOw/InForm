@@ -1,4 +1,4 @@
-# ADR-0011: Crop the sheet out of the photo before Donut sees it
+# ADR-0012: Crop the sheet out of the photo before Donut sees it
 
 **Status:** Accepted
 **Date:** 2026-09-12

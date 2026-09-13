@@ -159,7 +159,7 @@ photos to the sheet changes which checkpoint wins (#53) without touching any
 checkpoint, so a comparison is only meaningful when both sides got the same
 picture. Say which in whatever you write down.
 
-Since ADR-0011 the Donut engine crops for itself, so `--donut-checkpoint` on the
+Since ADR-0012 the Donut engine crops for itself, so `--donut-checkpoint` on the
 raw photos already gets the cropped numbers. A recorded `--reads` baseline does
 not: it replays whatever the engine emitted when the file was written. Reads
 recorded before 2026-09-12 are uncropped, and comparing one against a live
@@ -175,7 +175,7 @@ other.
 
 All 12 real sheets are hand-labelled as of 2026-09-12, which is 132 labelled field
 observations: 72 core and 60 segmental. Every checkpoint below was scored live
-through the same engine, so all of them get ADR-0011's crop.
+through the same engine, so all of them get ADR-0012's crop.
 
 | n=12 | v3 | v4-e3750 | v5-e3750 |
 |---|---|---|---|
