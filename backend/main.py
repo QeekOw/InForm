@@ -7,8 +7,9 @@ from pathlib import Path
 # sys.path addition is enough rather than packaging/installing inform here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from inform.exercise import ExercisePlan
@@ -18,6 +19,11 @@ from inform.inbody import InBodyPayload
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
+from inform.samples import (
+    ExtractionItem,
+    load_extractions,
+    load_manifest,
+)
 from inform.synthesis.generate import synthesize_plan
 from inform.user import UserProfile
 
@@ -39,6 +45,63 @@ def root() -> dict[str, str]:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "inform-api"}
+
+
+class SampleGalleryItem(BaseModel):
+    id: str
+    name: str
+    provenance: str
+    source_device: str | None = None
+    image_url: str
+    description: str
+
+
+@app.get("/samples", response_model=list[SampleGalleryItem])
+@app.get("/api/samples", response_model=list[SampleGalleryItem])
+def list_samples() -> list[SampleGalleryItem]:
+    """Return all sample sheets in the gallery manifest with provenance labels."""
+    manifest = load_manifest()
+    return [
+        SampleGalleryItem(
+            id=s.id,
+            name=s.name,
+            provenance=s.provenance,
+            source_device=s.source_device,
+            image_url=f"/samples/{s.id}/image",
+            description=s.description,
+        )
+        for s in manifest.samples
+    ]
+
+
+@app.get("/samples/{sample_id}", response_model=ExtractionItem)
+@app.get("/api/samples/{sample_id}", response_model=ExtractionItem)
+def get_sample_extraction(sample_id: str) -> ExtractionItem:
+    """Return precomputed extraction for a sample sheet instantly without running OCR."""
+    extractions_artifact = load_extractions()
+    if sample_id not in extractions_artifact.extractions:
+        raise HTTPException(status_code=404, detail=f"Sample '{sample_id}' not found")
+    return extractions_artifact.extractions[sample_id]
+
+
+@app.get("/samples/{sample_id}/image")
+@app.get("/api/samples/{sample_id}/image")
+def get_sample_image(sample_id: str):
+    """Serve the thumbnail/photo of a sample sheet from the repository."""
+    manifest = load_manifest()
+    sample = next((s for s in manifest.samples if s.id == sample_id), None)
+    if sample is None:
+        raise HTTPException(status_code=404, detail=f"Sample '{sample_id}' not found")
+
+    img_path = Path(sample.image_path)
+    if not img_path.is_absolute():
+        repo_root = Path(__file__).resolve().parent.parent
+        img_path = repo_root / img_path
+
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail=f"Sample image not found on disk")
+
+    return FileResponse(img_path, media_type="image/png")
 
 
 class PlanRequest(BaseModel):
