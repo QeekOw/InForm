@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import PhoneFrame from "@/components/PhoneFrame";
+import ReportPhoto from "@/components/ReportPhoto";
 import { loadJSON } from "@/lib/session";
 import {
   isCleanRead,
@@ -235,8 +236,8 @@ export default function Result() {
                 />
               </a>
             ) : (
-              <div className="flex h-[210px] items-center justify-center rounded-lg bg-[#1f1f1f]">
-                <p className="px-2 text-center text-[10px] text-white/40">Your report photo</p>
+              <div className="h-[210px] overflow-hidden rounded-lg bg-[#1f1f1f]">
+                <ReportPhoto />
               </div>
             )}
             <dl className="text-[10px]">

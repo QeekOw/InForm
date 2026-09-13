@@ -104,4 +104,5 @@ export const SESSION_KEYS = {
   name: "inform:name",
   sampleId: "inform:sampleId",
   extraction: "inform:extraction",
+  photo: "inform:photo",
 } as const;

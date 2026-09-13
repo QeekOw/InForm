@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
+import ReportPhoto from "@/components/ReportPhoto";
 import { loadJSON, saveJSON } from "@/lib/session";
 import {
   DEFAULT_READING,
@@ -115,9 +116,7 @@ export default function Preview() {
               }}
             />
           ) : (
-            <p className="absolute inset-0 flex items-center justify-center text-[12px] text-white/40">
-              Your report photo
-            </p>
+            <ReportPhoto />
           )}
 
           <Link

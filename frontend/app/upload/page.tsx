@@ -11,6 +11,7 @@ import {
   type SampleExtraction,
   type SampleSheetMeta,
 } from "@/lib/inbody";
+import { fileToDataUrl } from "@/lib/photo";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -80,10 +81,21 @@ export default function Upload() {
     }
   };
 
-  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.length) {
-      router.push("/upload/analyzing");
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // No real upload yet (Module 1 OCR isn't wired) — picking a file just
+    // advances the flow the same way the camera capture does. When it's an
+    // image, it's still kept (client-side only) so Preview/Result can show
+    // what was actually picked instead of a placeholder.
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith("image/")) {
+      try {
+        saveJSON(SESSION_KEYS.photo, await fileToDataUrl(file));
+      } catch {
+        // Non-fatal — the flow still proceeds without a preview image.
+      }
     }
+    router.push("/upload/analyzing");
   };
 
   return (
