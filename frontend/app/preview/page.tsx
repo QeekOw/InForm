@@ -52,28 +52,41 @@ function Row({
 
 export default function Preview() {
   const router = useRouter();
-  const [reading, setReading] = useState<InBodyReading>(DEFAULT_READING);
+  const [reading, setReading] = useState<InBodyReading | null>(null);
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReading(loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING);
+    const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExtraction(loadJSON<SampleExtraction>(SESSION_KEYS.extraction));
+    const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSampleId(loadJSON<string>(SESSION_KEYS.sampleId));
+    const storedReading = loadJSON<InBodyReading>(SESSION_KEYS.reading);
+
+    setExtraction(loadedExtraction);
+    setSampleId(loadedSampleId);
+
+    if (loadedExtraction?.status === "refused") {
+      setReading(null);
+    } else if (storedReading) {
+      setReading(storedReading);
+    } else {
+      setReading(DEFAULT_READING);
+    }
   }, []);
 
   const handleConfirm = () => {
-    saveJSON(SESSION_KEYS.reading, reading);
-    router.push("/result");
+    if (reading) {
+      saveJSON(SESSION_KEYS.reading, reading);
+      router.push("/result");
+    }
   };
 
   const isRefused = extraction?.status === "refused";
   const flaggedFields = new Set(extraction?.flagged ?? []);
-  const { segmental_lean: seg } = reading;
+  const seg = reading?.segmental_lean;
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -133,7 +146,7 @@ export default function Preview() {
             <div className="mt-4 rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
               <p className="font-bold text-zinc-800">Why did this happen?</p>
               <p className="mt-1">
-                The product strictly fails closed on non-InBody documents and obscured fields to prevent fabricating clinical metrics.
+                InForm strictly fails closed on non-InBody documents and obscured fields to prevent fabricating clinical metrics (ADR-0008).
               </p>
             </div>
             <Link
@@ -143,7 +156,7 @@ export default function Preview() {
               ← Choose another sample sheet
             </Link>
           </div>
-        ) : (
+        ) : reading && seg ? (
           /* Normal / Flagged Extraction View */
           <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black">
             {flaggedFields.size > 0 && (
@@ -249,6 +262,16 @@ export default function Preview() {
             >
               Confirm
             </button>
+          </div>
+        ) : (
+          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-center text-zinc-600">
+            <p className="text-[13px]">No InBody reading data available.</p>
+            <Link
+              href="/upload"
+              className="mt-3 inline-block text-[12px] font-bold text-[#117d69]"
+            >
+              ← Return to Upload
+            </Link>
           </div>
         )}
       </div>

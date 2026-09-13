@@ -7,6 +7,8 @@ from pathlib import Path
 # sys.path addition is enough rather than packaging/installing inform here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -50,8 +52,8 @@ def health() -> dict[str, str]:
 class SampleGalleryItem(BaseModel):
     id: str
     name: str
-    provenance: str
-    source_device: str | None = None
+    provenance: Literal["synthetic", "real"]
+    source_device: Literal["inbody_270", "inbody_570"] | None = None
     image_url: str
     description: str
 
