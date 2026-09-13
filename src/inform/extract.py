@@ -71,10 +71,11 @@ def extract_inbody(image_path: Path, engine: Engine | None = None) -> InBodyExtr
 
 
 def _cross_check(payload: PartialInBody) -> list[str]:
-    """Return the fields implicated by a failed cross-check (ADR-0003), or [].
+    """Return the fields implicated by a failed cross-check (ADR-0003, ADR-0008), or [].
 
-    Each check runs only when its inputs are all present. A breach can't isolate
-    the single misread, so every field feeding the check is flagged "verify".
+    Each check runs only when its inputs are all present. The LBM and BMR checks
+    can't isolate the single misread, so every field feeding one is flagged
+    "verify". The arm-precision check (ADR-0008, 2026-09-13) names the arm itself.
     """
     flagged: list[str] = []
 
@@ -90,4 +91,19 @@ def _cross_check(payload: PartialInBody) -> list[str]:
         if abs(bmr - recomputed_bmr) > _BMR_TOLERANCE_KCAL:
             flagged += ["basal_metabolic_rate_kcal", "lean_body_mass_kg"]
 
+    segmental = payload.segmental_lean
+    if segmental is not None and any(
+        _has_second_decimal(leg) for leg in (segmental.left_leg_kg, segmental.right_leg_kg)
+    ):
+        # A leg at two decimals means the sheet prints limbs to two, so a
+        # one-decimal arm has most likely lost a digit (ADR-0008, #59).
+        for arm in ("left_arm_kg", "right_arm_kg"):
+            value = getattr(segmental, arm)
+            if value is not None and not _has_second_decimal(value):
+                flagged.append(f"segmental_lean.{arm}")
+
     return list(dict.fromkeys(flagged))  # de-dup, preserve order
+
+
+def _has_second_decimal(value: float | None) -> bool:
+    return value is not None and round(value, 1) != value

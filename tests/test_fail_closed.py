@@ -68,6 +68,72 @@ def test_bmr_cross_check_breach_is_flagged_not_raised(fake_openai, raw_segmental
     assert result.flagged == ["basal_metabolic_rate_kcal", "lean_body_mass_kg"]
 
 
+def test_a_one_decimal_arm_on_a_two_decimal_sheet_is_flagged(fake_openai, raw_segmental):
+    # ADR-0008 (2026-09-13): the legs carry two decimals, so the one-decimal
+    # arm is flagged, and only that arm.
+    segmental = raw_segmental(
+        left_arm_kg=3.2, right_arm_kg=3.31, left_leg_kg=8.86, right_leg_kg=8.83
+    )
+    fake_openai(_raw(raw_segmental, segmental_lean=segmental))
+
+    result = extract_inbody(FIXTURE)
+
+    assert result.flagged == ["segmental_lean.left_arm_kg"]
+    assert result.data.segmental_lean.left_arm_kg == 3.2  # value kept, just flagged
+
+
+def test_two_decimal_arms_on_a_two_decimal_sheet_are_not_flagged(fake_openai, raw_segmental):
+    segmental = raw_segmental(
+        left_arm_kg=3.27, right_arm_kg=3.31, left_leg_kg=8.86, right_leg_kg=8.83
+    )
+    fake_openai(_raw(raw_segmental, segmental_lean=segmental))
+
+    assert extract_inbody(FIXTURE).flagged == []
+
+
+def test_one_decimal_limbs_throughout_are_not_flagged(fake_openai, raw_segmental):
+    # A sheet that prints every limb to one decimal, as every synthetic sheet
+    # does today, shows no sign of a missing digit.
+    fake_openai(_raw(raw_segmental))
+
+    assert extract_inbody(FIXTURE).flagged == []
+
+
+def test_an_arm_is_not_flagged_when_no_leg_was_read(fake_openai, raw_segmental):
+    # Without a leg there is no evidence of how many decimals the sheet prints.
+    segmental = raw_segmental(left_arm_kg=3.2, left_leg_kg=None, right_leg_kg=None)
+    fake_openai(_raw(raw_segmental, segmental_lean=segmental))
+
+    assert extract_inbody(FIXTURE).flagged == []
+
+
+def test_one_two_decimal_leg_is_enough_and_the_arm_flag_follows_the_others(
+    fake_openai, raw_segmental
+):
+    # One leg unread and the other past 10 kg, the short arm on the right, and
+    # the same LBM breach as the LBM test above on the same read.
+    segmental = raw_segmental(
+        left_arm_kg=3.27, right_arm_kg=3.3, left_leg_kg=None, right_leg_kg=10.46
+    )
+    fake_openai(
+        _raw(
+            raw_segmental,
+            segmental_lean=segmental,
+            lean_body_mass_kg=40.0,
+            basal_metabolic_rate_kcal=1234.0,
+        )
+    )
+
+    result = extract_inbody(FIXTURE)
+
+    assert result.flagged == [
+        "weight_kg",
+        "percent_body_fat",
+        "lean_body_mass_kg",
+        "segmental_lean.right_arm_kg",
+    ]
+
+
 def test_non_inbody_image_is_rejected(fake_openai):
     fake_openai(_RawExtraction(is_inbody_sheet=False))
 
