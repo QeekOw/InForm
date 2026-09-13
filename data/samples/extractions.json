@@ -1,0 +1,128 @@
+{
+  "checkpoint": "models/donut-both-v3",
+  "generated_at": "2026-09-12T17:46:59.077116+00:00",
+  "extractions": {
+    "synthetic_270_clean": {
+      "status": "complete",
+      "data": {
+        "weight_kg": 56.7,
+        "lean_body_mass_kg": 39.0,
+        "percent_body_fat": 31.2,
+        "skeletal_muscle_mass_kg": 24.4,
+        "basal_metabolic_rate_kcal": 1212.4,
+        "segmental_lean": {
+          "left_arm_kg": 3.1,
+          "right_arm_kg": 3.1,
+          "left_leg_kg": 6.9,
+          "right_leg_kg": 6.4,
+          "trunk_kg": 19.5
+        },
+        "visceral_fat_level": 9,
+        "source_device": "inbody_270"
+      },
+      "unread": [],
+      "flagged": [],
+      "error": null,
+      "message": null
+    },
+    "synthetic_570_clean": {
+      "status": "complete",
+      "data": {
+        "weight_kg": 56.7,
+        "lean_body_mass_kg": 39.0,
+        "percent_body_fat": 31.2,
+        "skeletal_muscle_mass_kg": 24.4,
+        "basal_metabolic_rate_kcal": 1212.4,
+        "segmental_lean": {
+          "left_arm_kg": 3.1,
+          "right_arm_kg": 3.1,
+          "left_leg_kg": 6.9,
+          "right_leg_kg": 6.4,
+          "trunk_kg": 19.5
+        },
+        "visceral_fat_level": 9,
+        "source_device": "inbody_570"
+      },
+      "unread": [],
+      "flagged": [],
+      "error": null,
+      "message": null
+    },
+    "real_270_clean": {
+      "status": "complete",
+      "data": {
+        "weight_kg": 86.9,
+        "lean_body_mass_kg": 7.0,
+        "percent_body_fat": 29.5,
+        "skeletal_muscle_mass_kg": 34.8,
+        "basal_metabolic_rate_kcal": 1693.0,
+        "segmental_lean": {
+          "left_arm_kg": 3.5,
+          "right_arm_kg": 3.7,
+          "left_leg_kg": 9.4,
+          "right_leg_kg": 9.44,
+          "trunk_kg": 27.6
+        },
+        "visceral_fat_level": 10,
+        "source_device": "inbody_270"
+      },
+      "unread": [],
+      "flagged": [
+        "weight_kg",
+        "percent_body_fat",
+        "lean_body_mass_kg",
+        "basal_metabolic_rate_kcal"
+      ],
+      "error": null,
+      "message": null
+    },
+    "real_270_flagged": {
+      "status": "complete",
+      "data": {
+        "weight_kg": 84.8,
+        "lean_body_mass_kg": 76.0,
+        "percent_body_fat": 26.3,
+        "skeletal_muscle_mass_kg": 35.6,
+        "basal_metabolic_rate_kcal": 1721.0,
+        "segmental_lean": {
+          "left_arm_kg": 3.5,
+          "right_arm_kg": 3.3,
+          "left_leg_kg": 9.84,
+          "right_leg_kg": 9.88,
+          "trunk_kg": 27.6
+        },
+        "visceral_fat_level": 9,
+        "source_device": "inbody_270"
+      },
+      "unread": [],
+      "flagged": [
+        "weight_kg",
+        "percent_body_fat",
+        "lean_body_mass_kg",
+        "basal_metabolic_rate_kcal"
+      ],
+      "error": null,
+      "message": null
+    },
+    "refused_non_sheet": {
+      "status": "refused",
+      "data": null,
+      "unread": [
+        "weight_kg",
+        "lean_body_mass_kg",
+        "percent_body_fat",
+        "skeletal_muscle_mass_kg",
+        "basal_metabolic_rate_kcal",
+        "source_device",
+        "segmental_lean.left_arm_kg",
+        "segmental_lean.right_arm_kg",
+        "segmental_lean.left_leg_kg",
+        "segmental_lean.right_leg_kg",
+        "segmental_lean.trunk_kg"
+      ],
+      "flagged": [],
+      "error": "missing_required_fields",
+      "message": "Could not confidently read: weight_kg, lean_body_mass_kg, percent_body_fat, skeletal_muscle_mass_kg, basal_metabolic_rate_kcal, source_device, segmental_lean.left_arm_kg, segmental_lean.right_arm_kg, segmental_lean.left_leg_kg, segmental_lean.right_leg_kg, segmental_lean.trunk_kg. Please re-upload a clearer photo."
+    }
+  }
+}

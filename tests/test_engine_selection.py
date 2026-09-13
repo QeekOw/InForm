@@ -52,6 +52,37 @@ def test_default_engine_builds_donut_from_env(monkeypatch, tmp_path):
     assert seen["path"] == tmp_path
 
 
+def test_default_engine_builds_donut_from_hub_id(monkeypatch):
+    monkeypatch.setenv("INFORM_DONUT_CKPT", "QeekOw/donut-inbody")
+    seen: dict[str, str | Path] = {}
+    sentinel: extract_mod.Engine = lambda _p: _complete_partial()
+
+    def fake_load_engine(checkpoint_source: str | Path):
+        seen["source"] = checkpoint_source
+        return sentinel
+
+    monkeypatch.setattr(donut, "load_engine", fake_load_engine)
+
+    engine = default_engine()
+
+    assert engine is sentinel
+    assert seen["source"] == "QeekOw/donut-inbody"
+
+
+def test_default_engine_failed_hub_load_fails_loudly(monkeypatch):
+    monkeypatch.setenv("INFORM_DONUT_CKPT", "QeekOw/nonexistent-model")
+
+    def raise_hub_error(_p):
+        raise OSError("Repository Not Found")
+
+    monkeypatch.setattr(donut, "load_engine", raise_hub_error)
+
+    with pytest.raises(DonutCheckpointError) as exc:
+        default_engine()
+
+    assert "QeekOw/nonexistent-model" in str(exc.value)
+
+
 def test_default_engine_missing_checkpoint_fails_loudly(monkeypatch, tmp_path):
     missing = tmp_path / "not-downloaded"
     monkeypatch.setenv("INFORM_DONUT_CKPT", str(missing))
@@ -64,6 +95,16 @@ def test_default_engine_missing_checkpoint_fails_loudly(monkeypatch, tmp_path):
         default_engine()
 
     assert str(missing) in str(exc.value)
+
+
+def test_looks_like_hub_id_rejects_local_model_paths():
+    from inform.extract import _looks_like_hub_id
+
+    assert not _looks_like_hub_id("models/donut-both-v3")
+    assert not _looks_like_hub_id("models/nonexistent")
+    assert _looks_like_hub_id("QeekOw/donut-inbody")
+    assert _looks_like_hub_id("QeeeeK/donut-inbody")
+
 
 
 def test_default_engine_missing_training_extra_fails_loudly(monkeypatch, tmp_path):

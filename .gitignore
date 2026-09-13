@@ -37,3 +37,6 @@ graphify-out/
 
 # Trained model checkpoints (809 MB Donut weights) — loaded by local path, never committed (ADR-0010)
 models/
+
+# Raw real InBody holdout photos (unredacted personal health data, ADR-0011)
+data/real_holdout/
