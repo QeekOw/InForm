@@ -119,10 +119,10 @@ export default function SignIn() {
 
         <div className="mt-[35px] flex items-center gap-[16px] opacity-60">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="h-px flex-1" src={imgDivider} />
+          <img alt="" className="h-px min-w-0 flex-1" src={imgDivider} />
           <span className="text-[10px] text-black">or</span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="h-px flex-1" src={imgDivider} />
+          <img alt="" className="h-px min-w-0 flex-1" src={imgDivider} />
         </div>
 
         <div className="mt-[13px] flex justify-center gap-[21px]">

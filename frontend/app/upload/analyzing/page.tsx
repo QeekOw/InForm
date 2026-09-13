@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
+import ReportPhoto from "@/components/ReportPhoto";
 
 const imgScanLine = "/icons/scan/scan-line.svg";
 
@@ -23,9 +24,7 @@ export default function Analyzing() {
       </h1>
 
       <div className="relative mx-auto mt-[60px] h-[370px] w-[265px] overflow-hidden rounded-[15px] border-6 border-[#117d69] bg-[#1f1f1f]">
-        <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-[12px] text-white/40">
-          Reading your report…
-        </p>
+        <ReportPhoto />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt="" className="absolute inset-x-0 w-full animate-scan" src={imgScanLine} />
       </div>
