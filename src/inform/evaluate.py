@@ -24,7 +24,7 @@ IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 FIELD_TOLERANCE = 0.1
 
 # Segmental limbs need a relative bound as well (ADR-0006, amended). +/-0.1 kg
-# is 0.1% of an 85 kg weight but 2.9% of a 3.5 kg arm, and exercise_filter
+# is about 0.1% of an 80 kg weight but 2.9% of a 3.5 kg arm, and exercise_filter
 # fires on a bilateral asymmetry above 5%: a limb read that passes a 2.9% check
 # can still fabricate the imbalance the user is shown. At 1% per limb the
 # induced asymmetry error stays near 2 points, well inside the 5-point trigger.
@@ -148,7 +148,7 @@ def segmental_matches(predicted: float | None, expected: float | None) -> bool:
     """Correct within *both* the absolute and the relative bound (ADR-0006).
 
     A limb spans an order of magnitude on one sheet -- a 3.5 kg arm beside a
-    28 kg trunk -- so a single absolute tolerance is either useless on the arm
+    25 kg trunk -- so a single absolute tolerance is either useless on the arm
     or unreachable on the trunk. Requiring both means whichever is tighter at
     that magnitude binds. See SEGMENTAL_RELATIVE_TOLERANCE.
     """

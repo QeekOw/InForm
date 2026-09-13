@@ -84,21 +84,21 @@ a specification.
 
 The original decision set one tolerance for every field, exact within +/-0.1 unit. That is
 right for the scalars and wrong for the limbs, because the segmental values on a single
-sheet span an order of magnitude: +/-0.1 kg is 0.1% of an 85 kg weight and 2.9% of a
+sheet span an order of magnitude: +/-0.1 kg is about 0.1% of an 80 kg weight and 2.9% of a
 3.5 kg arm.
 
 2.9% is not a small error at that magnitude. Module 3 treats a bilateral asymmetry above
 5% as a finding worth acting on (CONTEXT.md), and computes it from values around 3.5 kg.
 Two arm reads that each pass a 2.9% check can therefore differ by enough to invent an
 asymmetry that is not on the printout. This is not hypothetical. On sheet_02 of the real
-hold-out, printed arms of 3.53 and 3.50 kg, 0.85% apart, were read as 3.5 and 3.7, which
-computes to 5.41% and clears the trigger. That read passed the accuracy protocol and still
+hold-out, two printed arms under 1% apart were read as one-decimal values that compute to an
+asymmetry over 5%, which clears the trigger. That read passed the accuracy protocol and still
 produced a plan telling the subject to correct an imbalance they do not have.
 
 **A segmental limb field now counts as correct only within both bounds: +/-0.1 unit
 absolute AND 1% relative.** Whichever is tighter at that magnitude binds, so the relative
-bound governs an arm (+/-0.035 kg) and the absolute one governs a trunk (+/-0.1 kg is 0.35%
-of 28 kg). Scalar fields are unchanged.
+bound governs an arm (+/-0.035 kg) and the absolute one governs a trunk (+/-0.1 kg is 0.4%
+of 25 kg). Scalar fields are unchanged.
 
 The 1% figure comes from the threshold it protects: at 1% per limb the induced error in a
 computed asymmetry stays near 2 points, inside the 5-point trigger with margin. It was
@@ -110,8 +110,8 @@ chosen against that threshold, not fitted to a score.
   reproduce them, and this is defensible. Rejected because it makes every accuracy figure
   hostage to a rounding difference and carries no argument about how much error is
   tolerable.
-- *A relative bound alone.* Looser than the status quo on the trunk (1% of 28.2 kg is
-  +/-0.28), which would weaken scoring on a field that currently reads correctly.
+- *A relative bound alone.* Looser than the status quo on the trunk (1% of 25 kg is
+  +/-0.25), which would weaken scoring on a field that currently reads correctly.
 
 **What the real hold-out can and cannot report.** The hand-labelled set carries the
 critical-field cut (`lean_body_mass_kg` plus the five limbs) and per-field accuracy, but

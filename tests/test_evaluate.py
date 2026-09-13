@@ -185,17 +185,18 @@ def test_load_labeled_set_reads_jpeg_and_png_alike(tmp_path):
 
 
 def test_segmental_match_needs_both_the_absolute_and_the_relative_bound():
-    # Values are printed/read pairs off the real 270 hold-out, not recomputed
-    # here. A limb spans an order of magnitude on one sheet, so one absolute
-    # tolerance is either useless on an arm or unreachable on a trunk:
-    #   arm   3.59 read as 3.5   -> 0.09 kg, within +/-0.1, but 2.5% off
-    #   arm   3.53 read as 3.5   -> 0.03 kg, 0.85% off
-    #   trunk 28.2 read as 28.1  -> 0.10 kg, 0.35% off
-    #   trunk 28.2 read as 27.9  -> 0.30 kg, over the absolute bound
-    assert segmental_matches(3.5, 3.53) is True
-    assert segmental_matches(3.5, 3.59) is False  # relative bound binds
-    assert segmental_matches(28.1, 28.2) is True
-    assert segmental_matches(27.9, 28.2) is False  # absolute bound binds
+    # Invented printed/read pairs shaped like the real 270 hold-out's, whose
+    # values stay out of the repo. A limb spans an order of magnitude on one
+    # sheet, so one absolute tolerance is either useless on an arm or
+    # unreachable on a trunk:
+    #   arm   3.04 read as 3.0   -> 0.04 kg, within +/-0.1, but 1.3% off
+    #   arm   3.37 read as 3.4   -> 0.03 kg, 0.89% off
+    #   trunk 24.4 read as 24.3  -> 0.10 kg, 0.41% off
+    #   trunk 24.4 read as 24.2  -> 0.20 kg, over the absolute bound, 0.82% off
+    assert segmental_matches(3.4, 3.37) is True
+    assert segmental_matches(3.0, 3.04) is False  # relative bound binds
+    assert segmental_matches(24.3, 24.4) is True
+    assert segmental_matches(24.2, 24.4) is False  # absolute bound binds
 
 
 def test_evaluate_scores_segmental_limbs_by_the_relative_bound_too():

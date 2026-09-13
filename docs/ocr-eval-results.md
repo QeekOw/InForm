@@ -104,7 +104,7 @@ A single real **InBody 270** phone photo was hand-labeled and run through Donut
 | Donut (1-epoch) | **0% — complete failure, but a safe fail-closed refusal** |
 
 The raw generation was malformed pseudo-JSON. The model attended to *some* real
-content (it emitted the height `172cm` and the InBody score `80/100`) but could
+content (it emitted the printed height and InBody score) but could
 not produce valid structured output — the real sheet's layout is far
 out-of-distribution from the clean synthetic sheets. The parser rejected the
 output → `MissingRequiredFieldsError` (ADR-0008). **Crucially, Donut did not
@@ -146,10 +146,10 @@ new-look sheets) on Kaggle. `InBodyPayload` contract unchanged.
 | Failure mode | safe fail-closed | safe fail-closed (per-field > whole-sheet) |
 
 **The real-photo result is the headline: 0% → 100%.** The retrained model
-extracted all twelve fields of the hand-labeled real 270 correctly (weight 82.0,
-FFM 63.2, PBF 22.9, SMM 36.3, BMR 1735, visceral fat 7, all five segmental
-leans). This confirms the issue-#13 hypothesis: the synthetic→real gap was
-*visual/distributional*, not model capacity — cloning the real layout plus
+extracted all twelve fields of the hand-labeled real 270 correctly (weight, FFM,
+PBF, SMM, BMR, visceral fat and all five segmental leans). This confirms the
+issue-#13 hypothesis: the synthetic→real gap was *visual/distributional*, not
+model capacity — cloning the real layout plus
 stronger augmentation closed it. **n=1 remains anecdotal** (only one real sheet
 exists), so this is a decisive existence-proof of transfer, not a measured
 accuracy.
@@ -198,7 +198,7 @@ device right (per-device health-only == full whole-sheet).
 
 | Field group | Result |
 | --- | --- |
-| All 11 health fields (weight 82.0, LBM 63.2, PBF 22.9, SMM, BMR, visceral, 5× segmental) | **100% — every value exact** |
+| All 11 health fields (weight, LBM, PBF, SMM, BMR, visceral, 5× segmental) | **100% — every value exact** |
 | `source_device` | ✗ predicted `inbody_570` (truth `inbody_270`) |
 | Whole-sheet (metric counts `source_device`) | **0%** |
 
@@ -287,44 +287,46 @@ above describes held-out *synthetic* sheets only.
 ### The cross-checks earned their keep
 
 Every flagged sheet was caught by ADR-0003's LBM cross-check, on real data, for the first
-time. Example (sheet 06):
+time. Example (sheet 06), digits masked:
 
 ```
-printed Fat Free Mass          62.5 kg
-donut-both-v3 read             30.0 kg
-weight x (1 - PBF/100)         84.8 x 0.737 = 62.5
+printed Fat Free Mass          ##.# kg
+donut-both-v3 read             ##.# kg   (about half the printed value)
+weight x (1 - PBF/100)         ##.# x #.### = ##.#   (agrees with the printed value)
 flagged: weight_kg, percent_body_fat, lean_body_mass_kg, basal_metabolic_rate_kcal
 ```
 
-Both guards fired independently — the LBM identity, and Katch-McArdle recomputing 1018 kcal
-against a printed 1721. `is_complete()` returned False, `as_payload()` returned None, and the
-pipeline raised rather than computing a plan from a 32 kg error.
+Both guards fired independently — the LBM identity, and Katch-McArdle recomputing a BMR
+several hundred kcal below the printed one. `is_complete()` returned False, `as_payload()`
+returned None, and the pipeline raised rather than computing a plan from an LBM read at half
+its printed value.
 
 **What this does not establish.** The cross-checks cover LBM and BMR only. An error in SMM,
 visceral fat level, or a single segmental lean has nothing to contradict it and would pass
 through a "usable" read unnoticed. The three usable sheets are **unverified** — no
 ground-truth labels exist for this set yet. Hand-checking sheet 06 against the printout did
-turn up an uncaught `right_arm_kg` error (3.3 read against 3.53 printed) that the cross-checks
-had no way to see; that sheet was flagged for other reasons, so it never reached a plan, but
-it shows the gap is real. The honest claim is **no usable read was contradicted by the checks
-that exist**, not that none is wrong.
+turn up an uncaught `right_arm_kg` error (a `#.#` read against a `#.##` print, outside
+tolerance) that the cross-checks had no way to see; that sheet was flagged for other reasons,
+so it never reached a plan, but it shows the gap is real. The honest claim is **no usable
+read was contradicted by the checks that exist**, not that none is wrong.
 
 ### Fat Free Mass is the failing field
 
 Weight, PBF, SMM, BMR and visceral fat read well; LBM was wrong on three of the six
 non-refused sheets, twice emitting *the same* wrong value:
 
-| Sheet | LBM read | weight x (1 - PBF/100) |
-|---|---|---|
-| sheet_06 | 30.0 | 62.5 |
-| sheet_10 | 30.0 | 62.7 |
-| sheet_08 | 67.0 | 62.3 |
+| Sheet | LBM read, against weight x (1 - PBF/100) |
+|---|---|
+| sheet_06 | about half |
+| sheet_10 | about half, and the same value sheet_06 emitted |
+| sheet_08 | a few kg high |
 
-30.0 twice is a lead, not noise. This section originally proposed that the model was
-reading BMI, which sits nearby as a bold left-column figure while Fat Free Mass is small
-print in the right-hand Research Parameters block. **That hypothesis was tested against the
-printouts and refuted** -- see "Hand-labelled" below. It matters which value is wrong, since
-ADR-0003 makes LBM authoritative for BMR, TDEE and every macro target downstream.
+The same wrong value on two sheets is a lead, not noise. This section originally proposed
+that the model was reading BMI, which sits nearby as a bold left-column figure while Fat
+Free Mass is small print in the right-hand Research Parameters block. **That hypothesis was
+tested against the printouts and refuted** -- see "Hand-labelled" below. It matters which
+value is wrong, since ADR-0003 makes LBM authoritative for BMR, TDEE and every macro target
+downstream.
 
 ### Root cause: the synthetic sheets are the wrong shape
 
@@ -368,31 +370,28 @@ default of 3.
 The six non-refused sheets were hand-read off the printouts. This is the per-field
 ground truth the section above said did not exist. It changes two conclusions.
 
-**BMI is not the source of the 30.0 reads.** Printed BMI on the three failing sheets is
-28.7, 27.8 and 28.0 — never 30.0, and never the value emitted:
+**BMI is not the source of the repeated value.** Printed BMI on the three failing sheets
+never equals the value emitted for LBM.
 
-| Sheet | LBM read | BMI printed | Fat Free Mass printed |
-|---|---|---|---|
-| sheet_06 | 30.0 | 28.7 | 62.5 |
-| sheet_10 | 30.0 | 27.8 | 62.8 |
-| sheet_08 | 67.0 | 28.0 | 62.3 |
-
-Both sheets that emit 30.0 do carry a literal `30.0` in the Body Composition History PBF
-row, which is a plausible source for the token. It is not an explanation of *when* the
-failure fires: the same row also appears, containing 30.0, on sheets that read Fat Free
-Mass correctly. `67.0` appears nowhere on sheet_08 at all. **The designer task that was
-going to compare the BMI and Fat Free Mass positions visually is no longer worth doing.**
+Both sheets that emit the repeated value carry that same literal in the Body Composition
+History PBF row, which is a plausible source for the token. It is not an explanation of
+*when* the failure fires: the same row, containing it, also appears on sheets that read Fat
+Free Mass correctly. sheet_08's wrong value appears nowhere on sheet_08 at all. **The
+designer task that was going to compare the BMI and Fat Free Mass positions visually is no
+longer worth doing.**
 
 **The model reads across a panel boundary.** Sheet_05 was scored *usable* — every
 cross-checked field on it is correct — and its segmental lean is wrong on two limbs:
 
 ```
-printed  Segmental Lean:  LA 3.63  RA 3.68  trunk 28.2  LL 9.59  RL 9.59
-printed  Segmental Fat:   LA 1.4   RA 1.3   trunk 12.2  LL 3.1   RL 3.2
-read                      LA 3.63  RA 1.4   trunk 28.2  LL 9.59  RL 3.1
+printed  Segmental Lean:  LA #.##  RA #.##  trunk ##.#  LL #.##  RL #.##
+printed  Segmental Fat:   LA #.#   RA #.#   trunk ##.#  LL #.#   RL #.#
+read                      LA = lean LA     RA = fat LA
+                          trunk = lean trunk
+                          LL = lean LL     RL = fat LL
 ```
 
-`1.4` and `3.1` are the printed left-arm and left-leg **fat** figures. The model reads the
+The two wrong reads are the printed left-arm and left-leg **fat** figures. The model reads the
 left column of the Segmental Lean panel and then continues rightward into the adjacent
 Segmental Fat panel, taking that panel's left column as the lean panel's right column.
 This is a page-layout failure, not a glyph-recognition one, and it supports the geometry
@@ -426,29 +425,30 @@ that trigger from the labels against the reads:
 
 | Sheet | Outcome | Arm asymmetry truth → read | Leg asymmetry truth → read | Verdict flips |
 |---|---|---|---|---|
-| sheet_02 | usable | 0.85% → **5.41%** | 0.42% → 0.42% | **yes** |
-| sheet_05 | usable | 1.36% → **61.43%** | 0.00% → **67.67%** | **yes** |
-| sheet_07 | usable | 1.37% → 0.00% | 0.42% → 0.42% | no |
-| sheet_06 | flagged | 1.67% → 5.71% | 0.40% → 0.40% | (never reaches a plan) |
-| sheet_08 | flagged | 1.57% → 1.57% | 0.22% → 0.22% | no |
-| sheet_10 | flagged | 1.90% → 1.90% | 1.35% → 1.35% | no |
+| sheet_02 | usable | under 2% → **over 5%** | under 2% → unchanged | **yes** |
+| sheet_05 | usable | under 2% → **over 60%** | under 2% → **over 60%** | **yes** |
+| sheet_07 | usable | under 2% → under 2% | under 2% → unchanged | no |
+| sheet_06 | flagged | under 2% → over 5% | under 2% → unchanged | (never reaches a plan) |
+| sheet_08 | flagged | under 2% → unchanged | under 2% → unchanged | no |
+| sheet_10 | flagged | under 2% → unchanged | under 2% → unchanged | no |
 
 **Two of the three sheets that produce a plan produce a plan asserting a muscle imbalance
-the subject does not have**, one of them a 61% arm deficit in a person whose arms differ by
-1.4%. The honest headline for this hold-out is not "3 usable out of 12" but **3 reach a
+the subject does not have**, one of them an arm deficit over 60% in a person whose arms differ
+by under 2%. The honest headline for this hold-out is not "3 usable out of 12" but **3 reach a
 plan and 1 of those is correct**.
 
-Sheet_02 shows how little error it takes. Printed arms are 3.53 and 3.50 — a 0.03 kg
-difference. Read as 3.5 and 3.7, that clears the 5% threshold. Arm values lose their second
-decimal consistently across the set (3.5, 3.6, 3.7) while leg values keep it (9.40, 9.42,
-9.44, 9.46), and a 5% threshold on ~3.5 kg figures has no tolerance for a dropped decimal.
+Sheet_02 shows how little error it takes. Its printed arms differ by a few hundredths of a
+kilogram. Read with one arm a digit short and the other misread, they clear the 5% threshold.
+Arm values lose their second decimal across the set (`#.##` printed, `#.#` read) while leg
+values keep it, and a 5% threshold on ~3.5 kg figures has no tolerance for a dropped decimal.
+Why arms and not legs is issue #59.
 
 **Two consequences for the work queue.** For Track A, the designer's layout spec should
 additionally pin the *horizontal* gap and alignment between the Segmental Lean and
 Segmental Fat panels, and the decimal precision of the arm figures. For the application,
 `recommend_exercises` currently states an imbalance with the same confidence whether the
-limb pair differs by 0.9% or 61%, on the two fields that have no cross-check behind them —
-that is a product-safety question independent of OCR quality.
+limb pair differs by under 1% or by over 60%, on the two fields that have no cross-check
+behind them — that is a product-safety question independent of OCR quality.
 
 Labels are real health data and are not committed, as with the sheets themselves.
 

@@ -15,16 +15,17 @@ from inform.holdout import (
 from inform.inbody import InBodyExtraction, PartialInBody, PartialSegmentalLean
 
 # A hand-labelled sheet: what a person can read off a printout, which is a
-# subset of the schema. Everything absent here is *unknown*, not zero.
+# subset of the schema. Everything absent here is *unknown*, not zero. The
+# numbers are invented: real hold-out values never enter the repo.
 _LABEL = PartialInBody(
-    weight_kg=85.5,
-    lean_body_mass_kg=63.1,
-    percent_body_fat=26.2,
-    skeletal_muscle_mass_kg=35.9,
-    basal_metabolic_rate_kcal=1732,
-    visceral_fat_level=9,
+    weight_kg=78.4,
+    lean_body_mass_kg=58.9,
+    percent_body_fat=24.9,
+    skeletal_muscle_mass_kg=33.2,
+    basal_metabolic_rate_kcal=1642,
+    visceral_fat_level=11,
     segmental_lean=PartialSegmentalLean(
-        left_arm_kg=3.63, right_arm_kg=3.68, left_leg_kg=9.59, right_leg_kg=9.59, trunk_kg=28.2
+        left_arm_kg=3.27, right_arm_kg=3.31, left_leg_kg=8.86, right_leg_kg=8.83, trunk_kg=25.7
     ),
 )
 _IMAGE = Path("sheet_05.png")
@@ -55,14 +56,14 @@ def test_load_labels_reads_sheet_stems_and_ignores_notes(tmp_path):
         {
             "_note": "hand-read off the printouts, do not commit",
             "_unlabelled": ["sheet_01"],
-            "sheet_05": {"weight_kg": 85.5, "percent_body_fat": 26.2},
+            "sheet_05": {"weight_kg": 78.4, "percent_body_fat": 24.9},
         },
     )
 
     labels = load_labels(path)
 
     assert list(labels) == ["sheet_05"]
-    assert labels["sheet_05"].weight_kg == 85.5
+    assert labels["sheet_05"].weight_kg == 78.4
     # An unmentioned field stays unknown rather than defaulting to a value.
     assert labels["sheet_05"].skeletal_muscle_mass_kg is None
 
@@ -70,7 +71,7 @@ def test_load_labels_reads_sheet_stems_and_ignores_notes(tmp_path):
 def test_load_holdout_pairs_every_image_labelled_or_not(tmp_path):
     (tmp_path / "sheet_01.png").write_bytes(b"")
     (tmp_path / "sheet_05.png").write_bytes(b"")
-    path = _write_labels(tmp_path, {"sheet_05": {"weight_kg": 85.5}})
+    path = _write_labels(tmp_path, {"sheet_05": {"weight_kg": 78.4}})
 
     holdout = load_holdout(tmp_path, path)
 
@@ -99,7 +100,7 @@ def test_an_unlabelled_field_leaves_the_denominator():
     # Only weight was hand-read. The other fields are unknown, so a correct
     # weight is 1/1 and not 1/6 -- scoring unknowns as misses would make every
     # checkpoint look broken.
-    sparse = PartialInBody(weight_kg=85.5)
+    sparse = PartialInBody(weight_kg=78.4)
 
     report = score(_reading(_LABEL), [(_IMAGE, sparse)])
 
@@ -182,24 +183,23 @@ def test_replay_engine_reads_a_recorded_run_by_name_or_stem(tmp_path):
     # Scoring a recorded run needs neither the checkpoint nor a GPU, which is
     # what keeps a published baseline checkable later.
     reads = tmp_path / "reads.json"
-    reads.write_text(json.dumps({"sheet_05.png": {"weight_kg": 85.5}}), encoding="utf-8")
+    reads.write_text(json.dumps({"sheet_05.png": {"weight_kg": 78.4}}), encoding="utf-8")
 
     engine = replay_engine(reads)
 
-    assert engine(Path("a/sheet_05.png")).weight_kg == 85.5
+    assert engine(Path("a/sheet_05.png")).weight_kg == 78.4
     with pytest.raises(KeyError, match="sheet_99.png"):
         engine(Path("sheet_99.png"))
 
 
 def test_the_real_holdout_scores_limbs_by_the_relative_bound_too():
-    # sheet_06's printed left arm is 3.59 kg and donut-both-v3 read 3.5: 0.09 kg
-    # out, inside the absolute tolerance, 2.5% out. The dropped second decimal
-    # on an arm is what clears exercise_filter's 5% asymmetry trigger, so the
-    # real hold-out has to see it as a miss, exactly as the synthetic set does.
+    # A printed left arm of 3.04 kg read as 3.0, the dropped second decimal of
+    # #59: 0.04 kg out, inside the absolute tolerance, 1.3% out. The real
+    # hold-out has to see that as a miss, exactly as the synthetic set does.
     dropped_decimal = _LABEL.model_copy(deep=True)
-    dropped_decimal.segmental_lean.left_arm_kg = 3.5
+    dropped_decimal.segmental_lean.left_arm_kg = 3.0
     label = _LABEL.model_copy(deep=True)
-    label.segmental_lean.left_arm_kg = 3.59
+    label.segmental_lean.left_arm_kg = 3.04
 
     report = score(_reading(dropped_decimal), [(_IMAGE, label)])
 
@@ -225,7 +225,7 @@ def test_the_critical_field_cut_is_lbm_plus_the_limbs():
     # on: lean_body_mass_kg and the segmental lean values. On this hold-out that
     # is the number that matters, because LBM is the weakest field.
     wrong_lbm = _LABEL.model_copy(deep=True)
-    wrong_lbm.lean_body_mass_kg = 30.0  # the observed donut-both-v3 misread
+    wrong_lbm.lean_body_mass_kg = 24.0  # far below the label, like donut-both-v3's real misreads
 
     report = score(_reading(wrong_lbm), [(_IMAGE, _LABEL)])
 

@@ -36,7 +36,7 @@ ignored:
 
     {
       "_note": "hand-read off the printouts, 2026-09-09",
-      "sheet_05": {"weight_kg": 85.5, "segmental_lean": {"right_arm_kg": 3.68}},
+      "sheet_05": {"weight_kg": 78.4, "segmental_lean": {"right_arm_kg": 3.31}},
       "_unlabelled": ["sheet_01"]
     }
 """
