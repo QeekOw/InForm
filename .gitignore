@@ -19,6 +19,9 @@ env/
 .ruff_cache/
 .mypy_cache/
 
+# Local dev server logs (frontend/backend)
+*.log
+
 # Environment / secrets
 .env
 .env.*
@@ -35,9 +38,8 @@ graphify-out/
 # Trained model checkpoints (809 MB Donut weights) — loaded by local path, never committed (ADR-0010)
 models/
 
-# Real InBody sheets and anything derived from them (hand-written labels
-# included). These are one consenting subject's health data and carry a member
-# ID and a gym name; ADR-0011 keeps health data out of the repo. The eval doc
-# already describes data/real_holdout/ as uncommitted -- this is what makes
-# that true.
-data/
+# Everything under data/ stays out of git except data/samples/ (ADR-0011). The
+# real hold-out sheets and anything derived from them (labels, model reads,
+# crops) are one consenting subject's health data; generated datasets are large.
+data/*
+!data/samples/

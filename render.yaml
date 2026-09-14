@@ -1,0 +1,16 @@
+# Render Blueprint for the InForm API. Only used by a service created with
+# New -> Blueprint. The live service (inform-7x9o.onrender.com) was set up in
+# the dashboard and is configured there; see backend/README.md.
+services:
+  - type: web
+    name: inform-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8000
