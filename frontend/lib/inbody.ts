@@ -87,22 +87,22 @@ export function blankRequiredFields(draft: InBodyDraft): string[] {
   return [...scalars, ...segments].map((field) => field.label);
 }
 
-// Seed values for an uploaded sheet until Module 1 (OCR) is wired: the
-// numbers from the Figma "Preview" mock, on the InBody 270 layout.
+// Seed values for an uploaded sheet until Module 1 (OCR) is wired. The numbers
+// are invented, shaped like an InBody 270 sheet. Never put a real reading here.
 export const DEFAULT_READING: InBodyPayload = {
-  weight_kg: 82,
-  lean_body_mass_kg: 63.2,
-  percent_body_fat: 22.9,
-  skeletal_muscle_mass_kg: 36.3,
-  visceral_fat_level: 7,
-  basal_metabolic_rate_kcal: 1735,
+  weight_kg: 68.4,
+  lean_body_mass_kg: 52.9,
+  percent_body_fat: 22.6,
+  skeletal_muscle_mass_kg: 29.3,
+  visceral_fat_level: 6,
+  basal_metabolic_rate_kcal: 1513,
   source_device: "inbody_270",
   segmental_lean: {
-    left_arm_kg: 3.76,
-    right_arm_kg: 3.7,
-    left_leg_kg: 9.4,
-    right_leg_kg: 9.44,
-    trunk_kg: 28.6,
+    left_arm_kg: 2.87,
+    right_arm_kg: 2.93,
+    left_leg_kg: 8.46,
+    right_leg_kg: 8.52,
+    trunk_kg: 23.8,
   },
 };
 
