@@ -4,21 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { saveJSON } from "@/lib/session";
-import {
-  isCleanRead,
-  SESSION_KEYS,
-  type SampleExtraction,
-  type SampleSheetMeta,
-} from "@/lib/inbody";
-import { fileToDataUrl } from "@/lib/photo";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { API_URL } from "@/lib/config";
+import { isCleanRead, type SampleExtraction, type SampleSheetMeta } from "@/lib/inbody";
+import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
+import { removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgCamera = "/upload/camera-icon.svg";
 const imgUpload = "/upload/upload-icon.svg";
 const imgInBody270 = "/upload/inbody-270.png";
-const imgInBody570 = "/upload/inbody-570.png";
 
 export default function Upload() {
   const router = useRouter();
@@ -82,19 +75,30 @@ export default function Upload() {
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // No real upload yet (Module 1 OCR isn't wired) — picking a file just
-    // advances the flow the same way the camera capture does. When it's an
-    // image, it's still kept (client-side only) so Preview/Result can show
-    // what was actually picked instead of a placeholder.
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // An uploaded sheet replaces any earlier attempt: drop the previous photo
+    // and any picked Sample sheet so neither shows up next to this upload.
+    for (const key of [
+      SESSION_KEYS.photo,
+      SESSION_KEYS.sampleId,
+      SESSION_KEYS.extraction,
+      SESSION_KEYS.reading,
+    ]) {
+      removeSessionItem(key);
+    }
+
     if (file.type.startsWith("image/")) {
       try {
         saveJSON(SESSION_KEYS.photo, await fileToDataUrl(file));
       } catch {
-        // Non-fatal — the flow still proceeds without a preview image.
+        // Non-fatal: the flow continues without a photo to show.
       }
+    } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      saveJSON(SESSION_KEYS.photo, createPdfDataUrl(file.name));
     }
+
     router.push("/upload/analyzing");
   };
 
@@ -103,7 +107,7 @@ export default function Upload() {
       <div className="max-h-screen overflow-y-auto px-[24px] pt-[50px] pb-[80px]">
         {/* Title */}
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Select an InBody sheet</h1>
-        
+
         {/* Short line explaining what an InBody sheet is (Acceptance Criteria #5) */}
         <div className="mt-3 rounded-xl border border-emerald-500/30 bg-[#117d69]/15 p-3 text-[12px] leading-relaxed text-[#fcfcfc]">
           <span className="font-bold text-[#2dd4bf]">What is an InBody sheet?</span> An InBody
@@ -129,7 +133,8 @@ export default function Upload() {
             <div className="mt-3 flex flex-col gap-3">
               {samples.map((sample) => {
                 const isSelected = selectedId === sample.id;
-                const fallbackThumb = sample.source_device === "inbody_570" ? imgInBody570 : imgInBody270;
+                // Only the 270 has a bundled fallback thumbnail; others hide on error.
+                const fallbackThumb = sample.source_device === "inbody_270" ? imgInBody270 : null;
                 const imgSource = `${API_URL}${sample.image_url}`;
 
                 return (
@@ -152,7 +157,12 @@ export default function Upload() {
                         className="size-full object-cover"
                         src={imgSource}
                         onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = fallbackThumb;
+                          const img = e.currentTarget as HTMLImageElement;
+                          if (fallbackThumb && !img.src.endsWith(fallbackThumb)) {
+                            img.src = fallbackThumb;
+                          } else {
+                            img.style.display = "none";
+                          }
                         }}
                       />
                       {isSelected && (

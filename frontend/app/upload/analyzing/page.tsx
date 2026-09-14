@@ -11,8 +11,8 @@ export default function Analyzing() {
   const router = useRouter();
 
   useEffect(() => {
-    // Stand-in for the real read: Module 1 (Donut) takes ~45s on CPU per the
-    // README; this walking-skeleton UI just simulates the wait and moves on.
+    // Stand-in for model execution: simulates the OCR processing delay
+    // before advancing to the preview review screen.
     const timer = setTimeout(() => router.push("/preview"), 3000);
     return () => clearTimeout(timer);
   }, [router]);

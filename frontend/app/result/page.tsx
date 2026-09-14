@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON } from "@/lib/session";
+import { API_URL } from "@/lib/config";
+import { type ExercisePlan, type MovementType } from "@/lib/exercise";
 import {
+  DEFAULT_READING,
   isCleanRead,
   READING_ROWS,
-  SESSION_KEYS,
-  type InBodyReading,
+  type InBodyPayload,
   type SampleExtraction,
-  type UserProfile,
 } from "@/lib/inbody";
+import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { ACTIVITY_LABELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
 const imgBack = "/icons/result/back-arrow.svg";
 const imgPerson = "/icons/result/person.svg";
@@ -20,23 +23,7 @@ const imgGenderMale = "/icons/result/gender-male.svg";
 const imgTarget = "/icons/result/target.svg";
 const imgDumbbell = "/icons/result/dumbbell.svg";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-const ACTIVITY_LABELS: Record<number, string> = {
-  1.2: "Sedentary",
-  1.375: "Lightly active",
-  1.55: "Moderately active",
-  1.725: "Very active",
-  1.9: "Extremely active",
-};
-
-type Exercise = {
-  name: string;
-  target: string;
-  movement_type: "corrective_unilateral" | "bilateral_compound" | "cardio_hiit";
-};
-
-const MOVEMENT_TYPES: Record<Exercise["movement_type"], { label: string; className: string }> = {
+const MOVEMENT_TYPES: Record<MovementType, { label: string; className: string }> = {
   corrective_unilateral: { label: "Corrective", className: "bg-amber-100 text-amber-900" },
   bilateral_compound: { label: "Compound", className: "bg-[#117d6926] text-[#117d69]" },
   cardio_hiit: { label: "Cardio", className: "bg-sky-100 text-sky-900" },
@@ -54,7 +41,7 @@ type NutritionTargets = {
 
 type PlanResponse = {
   nutrition: NutritionTargets;
-  exercises: { exercises: Exercise[]; detected_imbalances: string[] };
+  exercises: ExercisePlan;
   narrative_text: string;
   narrative_source: "generated" | "fallback";
 };
@@ -70,11 +57,29 @@ const NARRATIVE_SOURCES: Record<PlanResponse["narrative_source"], { label: strin
   },
 };
 
+type ApiErrorKind = "network" | "validation";
+
 type State =
-  | { status: "missing" }
   | { status: "loading" }
-  | { status: "error"; message: string; kind: "network" | "validation" }
+  | { status: "error"; message: string; kind: ApiErrorKind }
   | { status: "ready"; plan: PlanResponse };
+
+/** FastAPI's `detail` is a string, a validation list, or {message, unread, flagged}. */
+function describeApiError(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map(
+        (d: { loc?: (string | number)[]; msg?: string }) =>
+          `${d.loc?.[d.loc.length - 1] ?? "value"}: ${d.msg ?? "invalid"}`,
+      )
+      .join("\n");
+  }
+  if (detail && typeof detail === "object" && "message" in detail) {
+    return String((detail as { message: unknown }).message);
+  }
+  return `API returned ${status}`;
+}
 
 // The narrative may carry light markdown (the fallback plan always does);
 // show it as plain lines rather than raw asterisks and hashes.
@@ -98,16 +103,28 @@ function NarrativeText({ text }: { text: string }) {
 }
 
 export default function Result() {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [reading, setReading] = useState<InBodyReading | null>(null);
+  const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [fromSample, setFromSample] = useState(true);
-  const [name, setName] = useState("John Doe");
+  const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
+    // Never plan on invented numbers: without a reading there is nothing to compute.
+    const loadedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading);
+    if (!loadedReading) {
+      router.replace("/upload");
+      return;
+    }
     const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile);
-    const loadedReading = loadJSON<InBodyReading>(SESSION_KEYS.reading);
+    if (!loadedProfile) {
+      // A guest picked or confirmed a sheet without a Profile: collect it, then come back.
+      saveJSON(SESSION_KEYS.nextAfterProfile, "/result");
+      router.replace("/profile");
+      return;
+    }
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -115,14 +132,7 @@ export default function Result() {
     setProfile(loadedProfile);
     setReading(loadedReading);
     setSampleId(loadedSampleId);
-    setName(loadJSON<string>(SESSION_KEYS.name) ?? "John Doe");
-
-    // Never plan on invented numbers: without a Profile and a reading there
-    // is nothing honest to compute.
-    if (!loadedProfile || !loadedReading) {
-      setState({ status: "missing" });
-      return;
-    }
+    setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
 
     // A clean stored read is planned server-side from the Sample sheet
     // itself; a reading someone edited is sent as they typed it.
@@ -147,24 +157,23 @@ export default function Result() {
           // A 4xx here means the request itself was rejected (e.g. a typed
           // value out of range) — a different problem from not reaching the
           // API at all, and worth telling apart in the UI.
-          // FastAPI's `detail` is a string, a validation list, or {message, unread, flagged}.
           const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
-          const detail = body?.detail as string | { message?: string } | undefined;
-          const message =
-            typeof detail === "string" ? detail : (detail?.message ?? JSON.stringify(detail ?? ""));
-          const error = new Error(message || `API returned ${res.status}`) as Error & {
-            kind: "network" | "validation";
-          };
-          error.kind = res.status >= 400 && res.status < 500 ? "validation" : "network";
+          const kind: ApiErrorKind =
+            res.status >= 400 && res.status < 500 ? "validation" : "network";
+          const error = new Error(describeApiError(body?.detail, res.status));
+          Object.assign(error, { kind });
           throw error;
         }
         const plan = (await res.json()) as PlanResponse;
         setState({ status: "ready", plan });
       })
-      .catch((err: Error & { kind?: "network" | "validation" }) => {
+      .catch((err: Error & { kind?: ApiErrorKind }) => {
         setState({ status: "error", message: err.message, kind: err.kind ?? "network" });
       });
-  }, []);
+  }, [router]);
+
+  const isDemoReading =
+    !fromSample && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -178,16 +187,6 @@ export default function Result() {
         </Link>
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Result</h1>
       </div>
-
-      {state.status === "missing" && (
-        <div className="mx-[24px] mt-[31px] rounded-[15px] bg-white p-[18px] text-center text-[12px] text-black">
-          <p className="font-bold">Nothing to plan yet</p>
-          <p className="mt-1 opacity-70">Enter your details and pick a sheet to get your results.</p>
-          <Link href="/profile" className="mt-3 inline-block font-bold text-[#117d69]">
-            Start →
-          </Link>
-        </div>
-      )}
 
       {profile && (
         <div className="mx-[24px] mt-[31px] grid grid-cols-2 gap-x-4 gap-y-3 rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
@@ -214,6 +213,12 @@ export default function Result() {
         </div>
       )}
 
+      {isDemoReading && (
+        <p className="mx-[24px] mt-2 text-[10px] text-white/70">
+          Computed from the demo baseline values, not a reading of your sheet.
+        </p>
+      )}
+
       {/* Screen 4: the extracted numbers beside the sheet they came from */}
       {profile && reading && (
         <section className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[14px] text-black">
@@ -237,7 +242,7 @@ export default function Result() {
               </a>
             ) : (
               <div className="h-[210px] overflow-hidden rounded-lg bg-[#1f1f1f]">
-                <ReportPhoto />
+                <ReportPhoto emptyLabel="Photos aren't kept after you confirm" />
               </div>
             )}
             <dl className="text-[10px]">

@@ -5,8 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON, saveJSON } from "@/lib/session";
-import { DEFAULT_READING, SESSION_KEYS, type InBodyReading } from "@/lib/inbody";
+import { confirmReading } from "@/lib/flow";
+import { loadJSON, SESSION_KEYS } from "@/lib/session";
+import {
+  BMR_FIELD,
+  BODY_COMPOSITION_FIELDS,
+  DEFAULT_READING,
+  SEGMENTAL_LEAN_COLUMNS,
+  blankRequiredFields,
+  type InBodyDraft,
+  type InBodyPayload,
+  type ScalarInBodyField,
+  type SegmentalLeanField,
+} from "@/lib/inbody";
 
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
@@ -16,22 +27,40 @@ function NumberField({
   onChange,
   unit,
   integer = false,
+  invalid = false,
 }: {
-  value: number;
-  onChange: (v: number) => void;
+  value: number | null;
+  onChange: (v: number | null) => void;
   unit: string;
   integer?: boolean;
+  invalid?: boolean;
 }) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.trim();
+    if (raw === "") {
+      onChange(null);
+      return;
+    }
+    const num = Number(raw);
+    if (!Number.isNaN(num)) onChange(integer ? Math.round(num) : num);
+  };
+
   return (
-    <span className="flex items-center gap-1 rounded-md border-[1.5px] border-[#d9d9d9] px-2 py-0.5">
+    <span
+      className={`flex items-center gap-1 rounded-md border-[1.5px] px-2 py-0.5 ${
+        invalid ? "border-red-500" : "border-[#d9d9d9]"
+      }`}
+    >
       <input
         type="number"
         step={integer ? "1" : "0.01"}
-        value={value}
-        onChange={(e) => onChange(integer ? Math.round(Number(e.target.value)) : Number(e.target.value))}
+        value={value ?? ""}
+        placeholder="—"
+        aria-invalid={invalid}
+        onChange={handleChange}
         className="w-12 text-right text-[12px] font-bold outline-none"
       />
-      <span className="text-[8px] font-medium">{unit}</span>
+      {unit && <span className="text-[8px] font-medium">{unit}</span>}
     </span>
   );
 }
@@ -42,39 +71,60 @@ function Row({
   unit,
   onChange,
   integer = false,
+  invalid = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   unit: string;
-  onChange: (v: number) => void;
+  onChange: (v: number | null) => void;
   integer?: boolean;
+  invalid?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-1 text-[12px]">
       <span>{label}</span>
-      <NumberField value={value} onChange={onChange} unit={unit} integer={integer} />
+      <NumberField
+        value={value}
+        onChange={onChange}
+        unit={unit}
+        integer={integer}
+        invalid={invalid}
+      />
     </div>
   );
 }
 
 export default function PreviewEdit() {
   const router = useRouter();
-  const [reading, setReading] = useState<InBodyReading>(DEFAULT_READING);
+  const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReading(loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING);
+    setDraft(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
   }, []);
 
-  const set = <K extends keyof InBodyReading>(key: K, value: number) =>
-    setReading((r) => ({ ...r, [key]: value }));
-  const setSeg = (key: keyof InBodyReading["segmental_lean"], value: number) =>
-    setReading((r) => ({ ...r, segmental_lean: { ...r.segmental_lean, [key]: value } }));
+  const setField = (key: ScalarInBodyField, value: number | null) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const setSegment = (key: SegmentalLeanField, value: number | null) => {
+    setDraft((prev) => ({
+      ...prev,
+      segmental_lean: { ...prev.segmental_lean, [key]: value },
+    }));
+  };
+
+  const blank = showErrors ? blankRequiredFields(draft) : [];
 
   const handleConfirm = () => {
-    saveJSON(SESSION_KEYS.reading, reading);
-    router.push("/result");
+    if (blankRequiredFields(draft).length > 0) {
+      setShowErrors(true);
+      return;
+    }
+    // Every required field is filled, so the draft is a complete payload.
+    router.push(confirmReading(draft as InBodyPayload));
   };
 
   return (
@@ -106,87 +156,54 @@ export default function PreviewEdit() {
       <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black">
         <h2 className="text-[14px] font-bold">Body Composition</h2>
         <div className="mt-3">
-          <Row
-            label="Weight"
-            value={reading.weight_kg}
-            unit="kg"
-            onChange={(v) => set("weight_kg", v)}
-          />
-          <Row
-            label="Lean Body Mass"
-            value={reading.lean_body_mass_kg}
-            unit="kg"
-            onChange={(v) => set("lean_body_mass_kg", v)}
-          />
-          <Row
-            label="Percent Body Fat"
-            value={reading.percent_body_fat}
-            unit="%"
-            onChange={(v) => set("percent_body_fat", v)}
-          />
-          <Row
-            label="Skeletal Muscle Mass"
-            value={reading.skeletal_muscle_mass_kg}
-            unit="kg"
-            onChange={(v) => set("skeletal_muscle_mass_kg", v)}
-          />
-          <Row
-            label="Visceral Fat Level"
-            value={reading.visceral_fat_level}
-            unit=""
-            integer
-            onChange={(v) => set("visceral_fat_level", v)}
-          />
+          {BODY_COMPOSITION_FIELDS.map((field) => (
+            <Row
+              key={field.key}
+              label={field.label}
+              value={draft[field.key]}
+              unit={field.unit}
+              integer={field.integer}
+              invalid={blank.includes(field.label)}
+              onChange={(value) => setField(field.key, value)}
+            />
+          ))}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
 
         <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
         <div className="mt-3 grid grid-cols-2 gap-x-4">
-          <div>
-            <Row
-              label="Left Arm"
-              value={reading.segmental_lean.left_arm_kg}
-              unit="kg"
-              onChange={(v) => setSeg("left_arm_kg", v)}
-            />
-            <Row
-              label="Right Arm"
-              value={reading.segmental_lean.right_arm_kg}
-              unit="kg"
-              onChange={(v) => setSeg("right_arm_kg", v)}
-            />
-            <Row
-              label="Trunk"
-              value={reading.segmental_lean.trunk_kg}
-              unit="kg"
-              onChange={(v) => setSeg("trunk_kg", v)}
-            />
-          </div>
-          <div>
-            <Row
-              label="Left Leg"
-              value={reading.segmental_lean.left_leg_kg}
-              unit="kg"
-              onChange={(v) => setSeg("left_leg_kg", v)}
-            />
-            <Row
-              label="Right Leg"
-              value={reading.segmental_lean.right_leg_kg}
-              unit="kg"
-              onChange={(v) => setSeg("right_leg_kg", v)}
-            />
-          </div>
+          {SEGMENTAL_LEAN_COLUMNS.map((column) => (
+            <div key={column[0].key}>
+              {column.map((field) => (
+                <Row
+                  key={field.key}
+                  label={field.label}
+                  value={draft.segmental_lean[field.key]}
+                  unit={field.unit}
+                  invalid={blank.includes(field.label)}
+                  onChange={(value) => setSegment(field.key, value)}
+                />
+              ))}
+            </div>
+          ))}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
 
         <Row
-          label="Basal Metabolic Rate"
-          value={reading.basal_metabolic_rate_kcal}
-          unit="kcal"
-          onChange={(v) => set("basal_metabolic_rate_kcal", v)}
+          label={BMR_FIELD.label}
+          value={draft[BMR_FIELD.key]}
+          unit={BMR_FIELD.unit}
+          invalid={blank.includes(BMR_FIELD.label)}
+          onChange={(value) => setField(BMR_FIELD.key, value)}
         />
+
+        {blank.length > 0 && (
+          <p role="alert" className="mt-4 text-[11px] text-red-600">
+            Fill in {blank.join(", ")} before confirming.
+          </p>
+        )}
 
         <button
           type="button"

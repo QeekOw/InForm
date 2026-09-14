@@ -10,7 +10,8 @@ any of that logic, it imports it directly.
 
 Three endpoints:
 
-- `GET /` and `GET /health` — liveness checks, return `{"status": "ok", ...}`.
+- `GET /` — service metadata (status, docs URL, health endpoint).
+- `GET /health` — liveness check, returns `{"status": "ok", "service": "inform-api"}`.
 - `POST /plan` — the real thing. Takes a `UserProfile` and a complete
   `InBodyPayload` (exact shape of `inform.user.UserProfile` /
   `inform.inbody.InBodyPayload` — FastAPI validates against those pydantic
@@ -46,32 +47,31 @@ real prose, just not LLM-written, until an API key is wired up.
 
 ## Deploying (Render)
 
-The `sys.path` trick above needs both `backend/` *and* the sibling `src/`
+The `sys.path` setup needs both `backend/` *and* the root `src/`
 present in the deployed container, so there's a `Dockerfile` at the **repo
 root** that makes this unambiguous: it `COPY`s exactly `backend/` and `src/`
 into the image and starts uvicorn from `backend/`, reading `$PORT` the way
-Render (and most PaaS hosts) inject it. Verified by reproducing that exact
-layout in an isolated directory (only those two folders present, nothing else
-from the repo) and confirming both `/health` and a real `/plan` call work
-from it.
+Render (and most PaaS hosts) inject it.
 
-In Render's dashboard: **New → Web Service → connect this repo**, set
-**Environment: Docker**, leave the root directory as the repo root (default)
-so `Dockerfile Path` resolves to `./Dockerfile` and the build context includes
-both `backend/` and `src/`, and pick the **Free** instance type. No Build/Start
-command overrides needed — the Dockerfile is self-contained.
+The live service (`https://inform-7x9o.onrender.com`) was created in Render's
+dashboard: **New → Web Service → connect this repo**, **Environment: Docker**, root
+directory left as the repo root, **Free** instance. Its branch and auto-deploy settings
+live in that dashboard (**Settings → Build & Deploy**), not in this repo.
 
-(Originally targeted Railway — moved to Render because Railway's free tier
-now requires a paid plan. The Dockerfile itself is host-agnostic; the same
-one would also work on Fly.io, Cloud Run, or a Hugging Face Space with the
-Docker SDK, with only the dashboard-side steps changing.)
+`render.yaml` describes the same service as a Render Blueprint that tracks `main`. It
+only applies to a service created with **New → Blueprint**. It does not change the
+existing dashboard service, and deploying it would create a second service with its
+own URL.
 
-## Known gaps
+## Privacy & Known gaps
 
+- **Privacy boundary (ADR-0005)**: Per ADR-0005, external LLM calls via
+  `OPENAI_API_KEY` are strictly scoped for development/POC testing with
+  synthetic or consented data. Real patient health data must never be
+  transmitted to external cloud APIs. Without `OPENAI_API_KEY`, the service
+  relies on the deterministic template synthesizer completely locally.
 - **CORS is wide open** (`allow_origins=["*"]`) — fine for an initial deploy,
   worth scoping down to the Vercel origin once that URL is known.
-- **No real LLM narrative** — needs `OPENAI_API_KEY` in the environment; falls
-  back safely without it, per above.
 - **No auth, no persistence** — every `/plan` call is stateless; nothing is
   saved.
 
