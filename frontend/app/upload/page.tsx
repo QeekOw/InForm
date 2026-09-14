@@ -4,15 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { removeSessionItem, saveJSON } from "@/lib/session";
-import { SESSION_KEYS, type SheetType } from "@/lib/inbody";
+import { type SheetType } from "@/lib/inbody";
 import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
+import { removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgInBody270 = "/upload/inbody-270.png";
-const imgInBody570 = "/upload/inbody-570.png";
 const imgCamera = "/upload/camera-icon.svg";
 const imgUpload = "/upload/upload-icon.svg";
 
+// InBody 270 is the only template offered for now.
 const SHEETS: { value: SheetType; label: string; caption: string; thumb: string }[] = [
   {
     value: "inbody_270",
@@ -20,17 +20,11 @@ const SHEETS: { value: SheetType; label: string; caption: string; thumb: string 
     caption: "Standard body composition analysis",
     thumb: imgInBody270,
   },
-  {
-    value: "inbody_570",
-    label: "InBody 570",
-    caption: "Detailed body composition analysis",
-    thumb: imgInBody570,
-  },
 ];
 
 export default function Upload() {
   const router = useRouter();
-  const [sheetType, setSheetType] = useState<SheetType>("inbody_570");
+  const [sheetType, setSheetType] = useState<SheetType>(SHEETS[0].value);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,15 +35,14 @@ export default function Upload() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Clear any previous photo attempt immediately to prevent stale images
+    // Drop the previous attempt's photo so a failed read can't show it again.
     removeSessionItem(SESSION_KEYS.photo);
 
     if (file.type.startsWith("image/")) {
       try {
-        const dataUrl = await fileToDataUrl(file);
-        saveJSON(SESSION_KEYS.photo, dataUrl);
+        saveJSON(SESSION_KEYS.photo, await fileToDataUrl(file));
       } catch {
-        removeSessionItem(SESSION_KEYS.photo);
+        // Non-fatal: the flow continues without a photo to show.
       }
     } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
       saveJSON(SESSION_KEYS.photo, createPdfDataUrl(file.name));
@@ -63,8 +56,8 @@ export default function Upload() {
       <div className="px-[30px] pt-[80px]">
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Choose your InBody report</h1>
         <p className="mt-2 text-[12px] tracking-[0.02em] text-[#fcfcfc]">
-          Select the type of InBody sheet you have. Make sure you choose the correct type
-          before uploading your report.
+          InBody 270 is the sheet type we support right now. Make sure your report matches
+          before uploading it.
         </p>
 
         <div className="mt-[15px] flex gap-[9px]">
@@ -73,7 +66,7 @@ export default function Upload() {
               key={sheet.value}
               type="button"
               onClick={() => setSheetType(sheet.value)}
-              className={`flex-1 overflow-hidden rounded-[15px] bg-white text-left ${
+              className={`w-1/2 overflow-hidden rounded-[15px] bg-white text-left ${
                 sheetType === sheet.value ? "border-[5px] border-[#117d69]" : ""
               }`}
             >

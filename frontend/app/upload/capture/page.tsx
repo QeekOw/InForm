@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { saveJSON } from "@/lib/session";
-import { SESSION_KEYS } from "@/lib/inbody";
+import { saveJSON, SESSION_KEYS } from "@/lib/session";
 import { captureFromVideo } from "@/lib/photo";
 
 const imgShutterOuter = "/icons/camera/shutter-outer.svg";

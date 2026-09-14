@@ -53,18 +53,15 @@ root** that makes this unambiguous: it `COPY`s exactly `backend/` and `src/`
 into the image and starts uvicorn from `backend/`, reading `$PORT` the way
 Render (and most PaaS hosts) inject it.
 
-The deployment configuration is codified via `render.yaml` at the repo root:
-- **Service Name**: `inform-api`
-- **Environment**: Docker (`./Dockerfile` with repo root context)
-- **Branch**: `main`
-- **Auto-Deploy**: Enabled on push to `main`
-- **Health Check Path**: `/health`
+The live service (`https://inform-7x9o.onrender.com`) was created in Render's
+dashboard: **New → Web Service → connect this repo**, **Environment: Docker**, root
+directory left as the repo root, **Free** instance. Its branch and auto-deploy settings
+live in that dashboard (**Settings → Build & Deploy**), not in this repo.
 
-In Render's dashboard:
-1. **New → Blueprint** (or **New → Web Service → connect this repo**).
-2. Set branch to `main` with **Environment: Docker**.
-3. Select the **Free** instance type.
-4. Auto-deploy will trigger on every push merged to `origin/main`.
+`render.yaml` describes the same service as a Render Blueprint that tracks `main`. It
+only applies to a service created with **New → Blueprint**. It does not change the
+existing dashboard service, and deploying it would create a second service with its
+own URL.
 
 ## Privacy & Known gaps
 

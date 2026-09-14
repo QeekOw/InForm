@@ -5,15 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON, removeSessionItem, saveJSON } from "@/lib/session";
+import { confirmReading } from "@/lib/flow";
+import { loadJSON, SESSION_KEYS } from "@/lib/session";
 import {
+  BMR_FIELD,
   BODY_COMPOSITION_FIELDS,
   DEFAULT_READING,
-  SEGMENTAL_LEAN_LEFT_FIELDS,
-  SEGMENTAL_LEAN_RIGHT_FIELDS,
-  SESSION_KEYS,
+  SEGMENTAL_LEAN_COLUMNS,
+  blankRequiredFields,
+  type InBodyDraft,
   type InBodyPayload,
   type ScalarInBodyField,
+  type SegmentalLeanField,
 } from "@/lib/inbody";
 
 const imgBack = "/icons/preview/back-arrow.svg";
@@ -24,11 +27,13 @@ function NumberField({
   onChange,
   unit,
   integer = false,
+  invalid = false,
 }: {
   value: number | null;
   onChange: (v: number | null) => void;
   unit: string;
   integer?: boolean;
+  invalid?: boolean;
 }) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.trim();
@@ -37,21 +42,25 @@ function NumberField({
       return;
     }
     const num = Number(raw);
-    if (Number.isNaN(num)) return;
-    onChange(integer ? Math.round(num) : num);
+    if (!Number.isNaN(num)) onChange(integer ? Math.round(num) : num);
   };
 
   return (
-    <span className="flex items-center gap-1 rounded-md border-[1.5px] border-[#d9d9d9] px-2 py-0.5">
+    <span
+      className={`flex items-center gap-1 rounded-md border-[1.5px] px-2 py-0.5 ${
+        invalid ? "border-red-500" : "border-[#d9d9d9]"
+      }`}
+    >
       <input
         type="number"
         step={integer ? "1" : "0.01"}
         value={value ?? ""}
-        placeholder={value == null ? "None" : undefined}
+        placeholder="—"
+        aria-invalid={invalid}
         onChange={handleChange}
         className="w-12 text-right text-[12px] font-bold outline-none"
       />
-      {unit ? <span className="text-[8px] font-medium">{unit}</span> : null}
+      {unit && <span className="text-[8px] font-medium">{unit}</span>}
     </span>
   );
 }
@@ -62,53 +71,60 @@ function Row({
   unit,
   onChange,
   integer = false,
+  invalid = false,
 }: {
   label: string;
   value: number | null;
   unit: string;
   onChange: (v: number | null) => void;
   integer?: boolean;
+  invalid?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-1 text-[12px]">
       <span>{label}</span>
-      <NumberField value={value} onChange={onChange} unit={unit} integer={integer} />
+      <NumberField
+        value={value}
+        onChange={onChange}
+        unit={unit}
+        integer={integer}
+        invalid={invalid}
+      />
     </div>
   );
 }
 
 export default function PreviewEdit() {
   const router = useRouter();
-  const [reading, setReading] = useState<InBodyPayload>(DEFAULT_READING);
+  const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
+  const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReading(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
+    setDraft(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
   }, []);
 
-  const updateField = (key: ScalarInBodyField, value: number | null) => {
-    setReading((prev) => ({ ...prev, [key]: value }));
+  const setField = (key: ScalarInBodyField, value: number | null) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
-  const updateSegmentalLean = (
-    key: keyof InBodyPayload["segmental_lean"],
-    value: number | null,
-  ) => {
-    setReading((prev) => ({
+  const setSegment = (key: SegmentalLeanField, value: number | null) => {
+    setDraft((prev) => ({
       ...prev,
-      segmental_lean: {
-        ...prev.segmental_lean,
-        [key]: value ?? 0,
-      },
+      segmental_lean: { ...prev.segmental_lean, [key]: value },
     }));
   };
 
+  const blank = showErrors ? blankRequiredFields(draft) : [];
+
   const handleConfirm = () => {
-    saveJSON(SESSION_KEYS.reading, reading);
-    // ADR-0011 §3: Zero Image Persistence for User Uploads - clear on confirm
-    removeSessionItem(SESSION_KEYS.photo);
-    router.push("/result");
+    if (blankRequiredFields(draft).length > 0) {
+      setShowErrors(true);
+      return;
+    }
+    // Every required field is filled, so the draft is a complete payload.
+    router.push(confirmReading(draft as InBodyPayload));
   };
 
   return (
@@ -144,10 +160,11 @@ export default function PreviewEdit() {
             <Row
               key={field.key}
               label={field.label}
-              value={reading[field.key]}
+              value={draft[field.key]}
               unit={field.unit}
               integer={field.integer}
-              onChange={(val) => updateField(field.key, val)}
+              invalid={blank.includes(field.label)}
+              onChange={(value) => setField(field.key, value)}
             />
           ))}
         </div>
@@ -156,38 +173,37 @@ export default function PreviewEdit() {
 
         <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
         <div className="mt-3 grid grid-cols-2 gap-x-4">
-          <div>
-            {SEGMENTAL_LEAN_LEFT_FIELDS.map((field) => (
-              <Row
-                key={field.key}
-                label={field.label}
-                value={reading.segmental_lean[field.key]}
-                unit={field.unit}
-                onChange={(val) => updateSegmentalLean(field.key, val)}
-              />
-            ))}
-          </div>
-          <div>
-            {SEGMENTAL_LEAN_RIGHT_FIELDS.map((field) => (
-              <Row
-                key={field.key}
-                label={field.label}
-                value={reading.segmental_lean[field.key]}
-                unit={field.unit}
-                onChange={(val) => updateSegmentalLean(field.key, val)}
-              />
-            ))}
-          </div>
+          {SEGMENTAL_LEAN_COLUMNS.map((column) => (
+            <div key={column[0].key}>
+              {column.map((field) => (
+                <Row
+                  key={field.key}
+                  label={field.label}
+                  value={draft.segmental_lean[field.key]}
+                  unit={field.unit}
+                  invalid={blank.includes(field.label)}
+                  onChange={(value) => setSegment(field.key, value)}
+                />
+              ))}
+            </div>
+          ))}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
 
         <Row
-          label="Basal Metabolic Rate"
-          value={reading.basal_metabolic_rate_kcal}
-          unit="kcal"
-          onChange={(val) => updateField("basal_metabolic_rate_kcal", val)}
+          label={BMR_FIELD.label}
+          value={draft[BMR_FIELD.key]}
+          unit={BMR_FIELD.unit}
+          invalid={blank.includes(BMR_FIELD.label)}
+          onChange={(value) => setField(BMR_FIELD.key, value)}
         />
+
+        {blank.length > 0 && (
+          <p role="alert" className="mt-4 text-[11px] text-red-600">
+            Fill in {blank.join(", ")} before confirming.
+          </p>
+        )}
 
         <button
           type="button"

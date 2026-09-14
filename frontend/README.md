@@ -1,74 +1,80 @@
 # InForm — frontend
 
 The mobile-shaped web app for InForm, built from the Figma design (`InForm` file,
-"Hero page" and onward). This is the Track B walking skeleton — see
+"Hero page" and onward). This is the Track B walking skeleton; see
 [issue #31](https://github.com/QeekOw/InForm/issues/31) and
 [issue #29](https://github.com/QeekOw/InForm/issues/29) for the full spec.
 
-Next.js 16 (App Router, Turbopack), TypeScript, Tailwind v4. No component library,
-no external state management library — plain React state plus ephemeral `sessionStorage`
-(see `lib/`) is used during the client-side intake and review session.
+Next.js 16 (App Router, Turbopack), TypeScript, Tailwind v4. No component library and
+no state management library: plain React state plus `sessionStorage` (see `lib/`)
+carries the flow between screens.
 
-## What actually works right now
+## The flow
 
-The **Profile → real computed targets** path is fully wired end to end
-([issue #34](https://github.com/QeekOw/InForm/issues/34)):
+1. `/` → `/sign-in`. Sign-in isn't built yet (accounts are Phase 2,
+   [issue #41](https://github.com/QeekOw/InForm/issues/41)). Log In shows an error for an
+   empty email or password, and email, Google, Apple and Facebook sign-in all say they
+   aren't available yet instead of doing nothing.
+2. **Continue as a Guest** goes straight to `/upload`. **Sign Up** goes to `/profile`
+   first.
+3. `/upload` → `/upload/capture` → `/upload/analyzing`. InBody 270 is the only sheet
+   template offered. No model reads the upload yet: Analyzing waits three seconds over
+   the photo and moves on. PDFs show a placeholder instead of a photo.
+4. `/preview` and `/preview/edit` show `DEFAULT_READING` from `lib/inbody.ts`, labelled as
+   demo values. Edit won't confirm while a required field is blank; Visceral Fat Level is
+   the only optional field (ADR-0004).
+5. Confirm drops the photo from `sessionStorage` (ADR-0011 §3). A guest without a Profile
+   fills in `/profile` next.
+6. `/result` POSTs the Profile and the confirmed reading to the backend's `POST /plan`,
+   which runs `inform.nutrition_engine.compute_targets` and
+   `inform.exercise_filter.recommend_exercises`. The screen says when the numbers came
+   from the demo reading.
 
-1. `/profile` — a real form (name, date of birth, biological sex, activity level,
-   goal). Date of birth is validated (13–100 years old) before you can continue —
-   nothing gets sent anywhere on an implausible age.
-2. `/upload` → `/upload/capture` → `/upload/analyzing` — the InBody-sheet flow.
-   Module 1's Donut model is deployed to Hugging Face Hub & Space ([issue #33](https://github.com/QeekOw/InForm/issues/33) / PR #51),
-   with live browser pipeline integration in PR #57. Currently, these screens handle
-   sheet type selection, camera capture, file upload (including PDF documents),
-   and an analyzing state transition.
-3. `/preview` and `/preview/edit` — show baseline InBody reading values
-   (`lib/inbody.ts`'s `DEFAULT_READING`) clearly marked as demo defaults, which
-   you can review or hand-edit field by field (including optional `visceral_fat_level`).
-   Upon confirming, the temporary uploaded photo is cleared per ADR-0011 §3.
-4. `/result` — POSTs your Profile and the confirmed reading to the backend's
-   `POST /plan`, which calls `inform.nutrition_engine.compute_targets`
-   and `inform.exercise_filter.recommend_exercises` — real Katch-McArdle BMR, real
-   TDEE, real macro split, and real bilateral-asymmetry detection choosing corrective
-   exercises. The numbers on this screen are genuinely computed by the deterministic
-   pipeline.
+`/profile` validates the date of birth (13–100 years old,
+[issue #34](https://github.com/QeekOw/InForm/issues/34)) and offers the five activity
+levels with how often each one trains.
 
-`/sign-in` renders the login screen with guest continuation; accounts persistence lands
-in issues #41–44.
+## Deployment
 
-## Deployment & State
+- **Frontend:** Vercel project `in-form`, root directory `frontend`. Production deploys
+  from `feat/web-walking-skeleton`, which is kept level with `main`; switching it to
+  `main` is a dashboard setting (Settings → Environments → Production). `NEXT_PUBLIC_API_URL`
+  must point at the backend; `next.config.ts` fails any Vercel build that doesn't set it.
+- **Backend:** Render; see `../backend/README.md`.
 
-- **Deployment**: Deployed on Vercel from the repository's `main` branch, connecting to
-  the Render backend API via `NEXT_PUBLIC_API_URL`.
-- **Session state & Privacy**: Client session state is carried transiently via `sessionStorage`.
-  Per **ADR-0011 §3 (Zero Image Persistence for User Uploads)**, uploaded sheet photos
-  are kept only in browser memory during review and are permanently removed from session
-  storage when the user confirms their scan on the preview screen.
+## Known gaps
+
+- No OCR on uploads: every reading starts from the demo values.
+- No accounts, sign-in or saved history ([issues #41–44](https://github.com/QeekOw/InForm/issues/41)).
+- "Forgot Password?" is design copy only.
 
 ## Project layout
 
 ```
 app/
   page.tsx                 Hero / landing
-  sign-in/                 Login screen (UI and guest entry)
+  sign-in/                 Login screen (validation, guest entry; sign-in not built)
   profile/                 Intake form -> real UserProfile
-  upload/                  Choose sheet type + upload (image / PDF)
+  upload/                  InBody 270 template + upload (image / PDF)
   upload/capture/          Camera viewfinder
-  upload/analyzing/        Simulated OCR wait, auto-advances
-  preview/                 Review the InBody reading
-  preview/edit/            Hand-edit every field (supports optional visceral fat)
-  result/                  Calls POST /plan, renders the real computed plan
+  upload/analyzing/        Simulated wait over the uploaded photo
+  preview/                 Review the reading
+  preview/edit/            Hand-edit every field
+  result/                  Calls POST /plan, renders the computed plan
 components/
   PhoneFrame.tsx           Shared phone-width column every screen sits in
-  ApiStatus.tsx            "Backend: online/unreachable" live status indicator
-  ReportPhoto.tsx          Ephemeral sheet review photo / ADR-0011 privacy badge
+  ApiStatus.tsx            "Backend: online/unreachable" live status pill
+  ReportPhoto.tsx          The uploaded photo, or a placeholder when there isn't one
 lib/
-  config.ts                Centralized runtime config (API_URL)
-  exercise.ts              Exercise, ExercisePlan, and MovementType models
-  inbody.ts                InBodyPayload schema, field metadata, and defaults
-  photo.ts                 Downscaling, camera capture, and PDF preview helpers
-  session.ts               sessionStorage read/write and removal helpers
-  user.ts                  UserProfile schema and activity multiplier mappings
+  config.ts                API_URL
+  exercise.ts              Exercise / ExercisePlan types
+  flow.ts                  Where Confirm and Profile go next (guest flow)
+  inbody.ts                InBodyPayload types, field metadata, demo reading
+  photo.ts                 Downscaling, camera capture, PDF placeholder
+  session.ts               sessionStorage keys and helpers
+  user.ts                  UserProfile types and activity levels
+public/brand/
+  inform-logo-on-dark.png  Logo for dark backgrounds (source: docs/assets/InForm.png)
 ```
 
 ## Running locally
@@ -80,11 +86,12 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). The backend (see
-`../backend/README.md`) needs to be running for `/result` to return real
-numbers — without it, `/result` displays a clear "couldn't reach the API" state
-rather than fabricating anything.
+`../backend/README.md`) needs to be running for `/result` to return real numbers.
+Without it, `/result` shows a clear "couldn't reach the API" state rather than
+fabricating anything.
 
-Run tests and verification:
+Before pushing:
+
 ```bash
 npm run lint
 npm run build

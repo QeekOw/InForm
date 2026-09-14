@@ -1,10 +1,9 @@
 // Client-only helpers for turning a live camera frame or a picked file into a
 // small data URL. Downscaled deliberately — sessionStorage has a ~5-10MB
 // per-origin quota, and a raw phone photo can blow past that on its own.
-// The photo never leaves the browser: Donut is deployed to Hugging Face Hub and
-// Space (issue #33), with full browser integration tracked in PR #57.
-// Per ADR-0011 §3 (Zero Image Persistence for User Uploads), the image exists
-// transiently during the review session only and is cleared upon confirmation.
+// The photo never leaves the browser and no model reads it yet: this app does
+// not call Module 1. It is kept in sessionStorage only so Analyzing and Preview
+// can show it, and dropped when the reading is confirmed (ADR-0011 §3).
 
 const MAX_DIMENSION = 1000;
 const JPEG_QUALITY = 0.8;

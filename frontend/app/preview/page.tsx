@@ -5,13 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON, removeSessionItem, saveJSON } from "@/lib/session";
+import { confirmReading } from "@/lib/flow";
+import { loadJSON, SESSION_KEYS } from "@/lib/session";
 import {
+  BMR_FIELD,
   BODY_COMPOSITION_FIELDS,
   DEFAULT_READING,
-  SEGMENTAL_LEAN_LEFT_FIELDS,
-  SEGMENTAL_LEAN_RIGHT_FIELDS,
-  SESSION_KEYS,
+  SEGMENTAL_LEAN_COLUMNS,
   type InBodyPayload,
 } from "@/lib/inbody";
 
@@ -28,12 +28,12 @@ function Row({
   value: string | number | null;
   unit: string;
 }) {
-  const displayValue = value == null ? "—" : value;
   return (
     <div className="flex items-baseline justify-between py-1 text-[12px]">
       <span>{label}</span>
       <span className="font-bold">
-        {displayValue} {value != null && <span className="text-[8px] font-medium">{unit}</span>}
+        {value ?? "—"}{" "}
+        {value != null && unit && <span className="text-[8px] font-medium">{unit}</span>}
       </span>
     </div>
   );
@@ -50,15 +50,6 @@ export default function Preview() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReading(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
   }, []);
-
-  const handleConfirm = () => {
-    saveJSON(SESSION_KEYS.reading, reading);
-    // ADR-0011 §3: uploaded user photo is transient; clear once confirmed
-    removeSessionItem(SESSION_KEYS.photo);
-    router.push("/result");
-  };
-
-  const { segmental_lean } = reading;
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -94,15 +85,12 @@ export default function Preview() {
         <h2 className="text-[14px] font-bold">Body Composition</h2>
         <div className="mt-3">
           {BODY_COMPOSITION_FIELDS.map((field) => {
-            const rawVal = reading[field.key];
-            const formatted = field.formatValue
-              ? field.formatValue(rawVal)
-              : rawVal;
+            const value = reading[field.key];
             return (
               <Row
                 key={field.key}
                 label={field.label}
-                value={formatted}
+                value={value != null && field.formatValue ? field.formatValue(value) : value}
                 unit={field.unit}
               />
             );
@@ -113,34 +101,26 @@ export default function Preview() {
 
         <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
         <div className="mt-3 grid grid-cols-2 gap-x-6">
-          <div>
-            {SEGMENTAL_LEAN_LEFT_FIELDS.map((field) => (
-              <Row
-                key={field.key}
-                label={field.label}
-                value={segmental_lean[field.key]}
-                unit={field.unit}
-              />
-            ))}
-          </div>
-          <div>
-            {SEGMENTAL_LEAN_RIGHT_FIELDS.map((field) => (
-              <Row
-                key={field.key}
-                label={field.label}
-                value={segmental_lean[field.key]}
-                unit={field.unit}
-              />
-            ))}
-          </div>
+          {SEGMENTAL_LEAN_COLUMNS.map((column) => (
+            <div key={column[0].key}>
+              {column.map((field) => (
+                <Row
+                  key={field.key}
+                  label={field.label}
+                  value={reading.segmental_lean[field.key]}
+                  unit={field.unit}
+                />
+              ))}
+            </div>
+          ))}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
 
         <Row
-          label="Basal Metabolic Rate"
-          value={reading.basal_metabolic_rate_kcal}
-          unit="kcal"
+          label={BMR_FIELD.label}
+          value={reading[BMR_FIELD.key]}
+          unit={BMR_FIELD.unit}
         />
 
         <Link
@@ -153,7 +133,7 @@ export default function Preview() {
         </Link>
         <button
           type="button"
-          onClick={handleConfirm}
+          onClick={() => router.push(confirmReading(reading))}
           className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white"
         >
           Confirm

@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { loadJSON } from "@/lib/session";
-import { SESSION_KEYS } from "@/lib/inbody";
+import { loadJSON, SESSION_KEYS } from "@/lib/session";
 
-/** Shows the photo captured/uploaded in the Upload flow during review.
- * Per ADR-0011 §3, when the user confirms their scan, the photo is cleared
- * from session storage, and this component renders a privacy badge confirming
- * Zero Image Persistence. */
-export default function ReportPhoto({ className = "" }: { className?: string }) {
+/** Shows the photo from the Upload flow. Confirming the reading drops the
+ * photo from session storage (ADR-0011 §3), so screens after Confirm pass an
+ * `emptyLabel` that says so. */
+export default function ReportPhoto({
+  className = "",
+  emptyLabel = "No photo uploaded",
+}: {
+  className?: string;
+  emptyLabel?: string;
+}) {
   const [photo, setPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,12 +34,10 @@ export default function ReportPhoto({ className = "" }: { className?: string }) 
 
   return (
     <div
-      className={`flex size-full flex-col items-center justify-center p-4 text-center text-white/50 ${className}`}
+      className={`flex size-full flex-col items-center justify-center p-4 text-center ${className}`}
     >
       <span className="text-[12px] font-semibold text-white/80">InBody Scan</span>
-      <span className="mt-1 text-[9px] text-white/40">
-        Photo cleared per ADR-0011 (Zero Image Persistence)
-      </span>
+      <span className="mt-1 text-[9px] text-white/50">{emptyLabel}</span>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// Mirrors inform.exercise.Exercise / ExercisePlan (src/inform/exercise.py) verbatim.
+// Mirrors inform.exercise.Exercise / ExercisePlan (src/inform/exercise.py).
 
 export type MovementType =
   | "corrective_unilateral"
@@ -8,9 +8,9 @@ export type MovementType =
 export type Exercise = {
   name: string;
   target: string;
-  body_part?: string;
-  equipment?: string;
-  secondary_muscles?: string[];
+  body_part: string;
+  equipment: string;
+  secondary_muscles: string[];
   movement_type: MovementType;
 };
 

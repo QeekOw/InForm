@@ -2,22 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON } from "@/lib/session";
 import { API_URL } from "@/lib/config";
-import {
-  ACTIVITY_LABELS,
-  DEFAULT_PROFILE,
-  DEFAULT_USER_NAME,
-  type UserProfile,
-} from "@/lib/user";
-import {
-  DEFAULT_READING,
-  SESSION_KEYS,
-  type InBodyPayload,
-} from "@/lib/inbody";
 import { type ExercisePlan } from "@/lib/exercise";
+import { DEFAULT_READING, type InBodyPayload } from "@/lib/inbody";
+import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { ACTIVITY_LABELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
 const imgBack = "/icons/result/back-arrow.svg";
 const imgPerson = "/icons/result/person.svg";
@@ -48,19 +40,48 @@ type State =
   | { status: "error"; message: string; kind: ApiErrorKind }
   | { status: "ready"; plan: PlanResponse };
 
+/** Turns FastAPI's 422 body into one "field: problem" line per error. */
+function describeValidationError(body: string): string {
+  try {
+    const { detail } = JSON.parse(body) as {
+      detail?: { loc?: (string | number)[]; msg?: string }[];
+    };
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d) => `${d.loc?.[d.loc.length - 1] ?? "value"}: ${d.msg ?? "invalid"}`)
+        .join("\n");
+    }
+  } catch {
+    // Not JSON: show the body as it came.
+  }
+  return body;
+}
+
 export default function Result() {
-  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const router = useRouter();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState(DEFAULT_USER_NAME);
+  const [isDemoReading, setIsDemoReading] = useState(false);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
-    const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile) ?? DEFAULT_PROFILE;
-    const loadedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING;
-    const loadedName = loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME;
+    const loadedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading);
+    if (!loadedReading) {
+      router.replace("/upload");
+      return;
+    }
+    const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile);
+    if (!loadedProfile) {
+      // A guest confirmed a reading without a Profile: collect it, then come back.
+      saveJSON(SESSION_KEYS.nextAfterProfile, "/result");
+      router.replace("/profile");
+      return;
+    }
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
-    setName(loadedName);
+    setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
+    setIsDemoReading(JSON.stringify(loadedReading) === JSON.stringify(DEFAULT_READING));
 
     fetch(`${API_URL}/plan`, {
       method: "POST",
@@ -75,7 +96,9 @@ export default function Result() {
           const detail = await res.text().catch(() => "");
           const kind: ApiErrorKind =
             res.status >= 400 && res.status < 500 ? "validation" : "network";
-          const error = new Error(detail || `API returned ${res.status}`);
+          const message =
+            kind === "validation" ? describeValidationError(detail) : detail;
+          const error = new Error(message || `API returned ${res.status}`);
           Object.assign(error, { kind });
           throw error;
         }
@@ -89,7 +112,7 @@ export default function Result() {
           kind: err.kind ?? "network",
         });
       });
-  }, []);
+  }, [router]);
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -104,28 +127,36 @@ export default function Result() {
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Result</h1>
       </div>
 
-      <div className="mx-[24px] mt-[31px] grid grid-cols-2 gap-x-4 gap-y-3 rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-        <div className="flex items-center gap-2 text-[13px] font-bold">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-4" src={imgPerson} />
-          {name}
+      {profile && (
+        <div className="mx-[24px] mt-[31px] grid grid-cols-2 gap-x-4 gap-y-3 rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
+          <div className="flex items-center gap-2 text-[13px] font-bold">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="size-4" src={imgPerson} />
+            {name}
+          </div>
+          <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="size-4" src={imgTarget} />
+            {profile.fitness_goal.replace("_", " ")}
+          </div>
+          <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="size-4" src={imgGenderMale} />
+            {profile.biological_sex}
+          </div>
+          <div className="flex items-center gap-2 text-[13px] font-bold">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="size-4" src={imgDumbbell} />
+            {ACTIVITY_LABELS[profile.activity_multiplier] ?? `${profile.activity_multiplier}x`}
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-4" src={imgTarget} />
-          {profile.fitness_goal.replace("_", " ")}
-        </div>
-        <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-4" src={imgGenderMale} />
-          {profile.biological_sex}
-        </div>
-        <div className="flex items-center gap-2 text-[13px] font-bold">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-4" src={imgDumbbell} />
-          {ACTIVITY_LABELS[profile.activity_multiplier] ?? `${profile.activity_multiplier}x`}
-        </div>
-      </div>
+      )}
+
+      {isDemoReading && (
+        <p className="mx-[24px] mt-2 text-[10px] text-white/70">
+          Computed from the demo baseline values, not a reading of your sheet.
+        </p>
+      )}
 
       {state.status === "loading" && (
         <div className="mx-[24px] mt-[15px] flex h-[217px] items-center justify-center rounded-[15px] border-[3px] border-[#f5f5f5] bg-white">
@@ -155,7 +186,7 @@ export default function Result() {
         <>
           <div className="mx-[24px] mt-[15px] grid grid-cols-[157px_1fr] gap-[8px]">
             <div className="h-[217px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
-              <ReportPhoto />
+              <ReportPhoto emptyLabel="Photos aren't kept after you confirm" />
             </div>
             <div className="flex h-[217px] flex-col items-center justify-center rounded-[15px] border-[3px] border-[#f5f5f5] bg-white text-black">
               <p className="text-[11px] opacity-60">Daily Energy Target</p>

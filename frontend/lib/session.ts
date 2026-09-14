@@ -10,6 +10,9 @@ export const SESSION_KEYS = {
   sheetType: "inform:sheetType",
   name: "inform:name",
   photo: "inform:photo",
+  // Set when a guest confirms a reading before filling in a Profile, so
+  // Profile continues to the plan instead of back to upload.
+  nextAfterProfile: "inform:nextAfterProfile",
 } as const;
 
 export function saveJSON(key: string, value: unknown): void {
@@ -34,6 +37,6 @@ export function removeSessionItem(key: string): void {
   try {
     sessionStorage.removeItem(key);
   } catch {
-    // Non-fatal if storage unavailable
+    // sessionStorage unavailable — nothing was stored to remove.
   }
 }
