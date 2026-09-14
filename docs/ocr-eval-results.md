@@ -88,7 +88,7 @@ A single real **InBody 270** phone photo was hand-labeled and run through Donut
 | Donut (1-epoch) | **0% — complete failure, but a safe fail-closed refusal** |
 
 The raw generation was malformed pseudo-JSON. The model attended to *some* real
-content (it emitted the height `172cm` and the InBody score `80/100`) but could
+content (it emitted the printed height and InBody score) but could
 not produce valid structured output — the real sheet's layout is far
 out-of-distribution from the clean synthetic sheets. The parser rejected the
 output → `MissingRequiredFieldsError` (ADR-0008). **Crucially, Donut did not
@@ -128,10 +128,10 @@ new-look sheets) on Kaggle. `InBodyPayload` contract unchanged.
 | Failure mode | safe fail-closed | safe fail-closed (per-field > whole-sheet) |
 
 **The real-photo result is the headline: 0% → 100%.** The retrained model
-extracted all twelve fields of the hand-labeled real 270 correctly (weight 82.0,
-FFM 63.2, PBF 22.9, SMM 36.3, BMR 1735, visceral fat 7, all five segmental
-leans). This confirms the issue-#13 hypothesis: the synthetic→real gap was
-*visual/distributional*, not model capacity — cloning the real layout plus
+extracted all twelve fields of the hand-labeled real 270 correctly (weight, FFM,
+PBF, SMM, BMR, visceral fat and all five segmental leans). This confirms the
+issue-#13 hypothesis: the synthetic→real gap was *visual/distributional*, not
+model capacity — cloning the real layout plus
 stronger augmentation closed it. **n=1 remains anecdotal** (only one real sheet
 exists), so this is a decisive existence-proof of transfer, not a measured
 accuracy.
@@ -180,7 +180,7 @@ device right (per-device health-only == full whole-sheet).
 
 | Field group | Result |
 | --- | --- |
-| All 11 health fields (weight 82.0, LBM 63.2, PBF 22.9, SMM, BMR, visceral, 5× segmental) | **100% — every value exact** |
+| All 11 health fields (weight, LBM, PBF, SMM, BMR, visceral, 5× segmental) | **100% — every value exact** |
 | `source_device` | ✗ predicted `inbody_570` (truth `inbody_270`) |
 | Whole-sheet (metric counts `source_device`) | **0%** |
 
