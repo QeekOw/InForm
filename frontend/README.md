@@ -17,16 +17,22 @@ carries the flow between screens.
    aren't available yet instead of doing nothing.
 2. **Continue as a Guest** goes straight to `/upload`. **Sign Up** goes to `/profile`
    first.
-3. `/upload` → `/upload/capture` → `/upload/analyzing`. InBody 270 is the only sheet
-   template offered. No model reads the upload yet: Analyzing waits three seconds over
-   the photo and moves on. PDFs show a placeholder instead of a photo.
-4. `/preview` and `/preview/edit` show `DEFAULT_READING` from `lib/inbody.ts`, labelled as
-   demo values. Edit won't confirm while a required field is blank; Visceral Fat Level is
-   the only optional field (ADR-0004).
+3. `/upload` shows the Sample Gallery ([issue #35](https://github.com/QeekOw/InForm/issues/35)):
+   picking a sheet loads its pre-computed read from the backend's `/samples` endpoints. A
+   clean read goes straight to `/result`; anything unread, flagged or refused stops at
+   `/preview`. Uploading your own photo or PDF goes through `/upload/capture` or
+   `/upload/analyzing` instead. No model reads it yet: Analyzing waits three seconds over
+   the photo and moves on, and PDFs show a placeholder instead of a photo.
+4. `/preview` shows the picked sheet's read with flagged fields marked, or, for an upload,
+   `DEFAULT_READING` from `lib/inbody.ts` labelled as demo values. `/preview/edit` won't
+   confirm while a required field is blank; Visceral Fat Level is the only optional field
+   (ADR-0004).
 5. Confirm drops the photo from `sessionStorage` (ADR-0011 §3). A guest without a Profile
    fills in `/profile` next.
-6. `/result` POSTs the Profile and the confirmed reading to the backend's `POST /plan`,
-   which runs `inform.nutrition_engine.compute_targets` and
+6. `/result` POSTs the Profile to the backend's `POST /plan` with either the `sample_id`
+   of a clean, unedited Sample sheet (the backend plans from its stored read and refuses
+   an unread, flagged or refused one) or the confirmed reading. The backend runs
+   `inform.nutrition_engine.compute_targets` and
    `inform.exercise_filter.recommend_exercises`. The screen says when the numbers came
    from the demo reading.
 
@@ -55,7 +61,7 @@ app/
   page.tsx                 Hero / landing
   sign-in/                 Login screen (validation, guest entry; sign-in not built)
   profile/                 Intake form -> real UserProfile
-  upload/                  InBody 270 template + upload (image / PDF)
+  upload/                  Sample Gallery + upload (image / PDF)
   upload/capture/          Camera viewfinder
   upload/analyzing/        Simulated wait over the uploaded photo
   preview/                 Review the reading
