@@ -1,21 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { saveJSON } from "@/lib/session";
-import { SESSION_KEYS, type UserProfile } from "@/lib/inbody";
+import { isFinishingGuestPlan, nextAfterProfile } from "@/lib/flow";
+import { saveJSON, SESSION_KEYS } from "@/lib/session";
+import { ACTIVITY_LEVELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
 const imgRadioSelected = "/icons/form/radio-selected.svg";
 const imgRadioUnselected = "/icons/form/radio-unselected.svg";
-
-const ACTIVITY_LEVELS = [
-  { label: "Sedentary", multiplier: 1.2 },
-  { label: "Lightly active", multiplier: 1.375 },
-  { label: "Moderately active", multiplier: 1.55 },
-  { label: "Very active", multiplier: 1.725 },
-  { label: "Extremely active", multiplier: 1.9 },
-];
 
 // Issue #34 AC: "an implausible age is rejected before a plan is computed."
 const MIN_AGE = 13;
@@ -37,12 +30,21 @@ function ageFromDob(dob: string): number | null {
 
 export default function Profile() {
   const router = useRouter();
+  const [finishingGuestPlan, setFinishingGuestPlan] = useState(false);
   const [name, setName] = useState("");
   const [dob, setDob] = useState("");
   const [ageError, setAgeError] = useState<string | null>(null);
   const [sex, setSex] = useState<UserProfile["biological_sex"]>("male");
-  const [activityMultiplier, setActivityMultiplier] = useState(ACTIVITY_LEVELS[2].multiplier);
+  const [activityMultiplier, setActivityMultiplier] = useState<number>(
+    ACTIVITY_LEVELS[2].multiplier,
+  );
   const [goal, setGoal] = useState<UserProfile["fitness_goal"]>("fat_loss");
+
+  useEffect(() => {
+    // sessionStorage is a browser-only external store, unreadable during SSR.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFinishingGuestPlan(isFinishingGuestPlan());
+  }, []);
 
   const handleContinue = () => {
     const age = ageFromDob(dob);
@@ -62,15 +64,20 @@ export default function Profile() {
       fitness_goal: goal,
     };
     saveJSON(SESSION_KEYS.profile, profile);
-    saveJSON(SESSION_KEYS.name, name || "John Doe");
-    router.push("/upload");
+    saveJSON(SESSION_KEYS.name, name || DEFAULT_USER_NAME);
+    router.push(nextAfterProfile());
   };
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
       <h1 className="mt-[57px] text-center text-[32px] font-bold tracking-[0.02em] text-[#fcfcfc]">
-        Sign Up
+        {finishingGuestPlan ? "Your Profile" : "Sign Up"}
       </h1>
+      {finishingGuestPlan && (
+        <p className="mt-2 px-[30px] text-center text-[12px] text-[#fcfcfc]">
+          Your plan needs these details. Fill them in to see it.
+        </p>
+      )}
 
       <div className="mx-auto mt-8 w-[342px] rounded-[15px] bg-[#fcfcfc] p-[30px]">
         <label className="block text-[12px] text-black" htmlFor="name">
@@ -81,7 +88,7 @@ export default function Profile() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
+          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px] text-black"
         />
 
         <label className="mt-6 block text-[12px] text-black" htmlFor="dob">
@@ -97,7 +104,7 @@ export default function Profile() {
             setAgeError(null);
           }}
           aria-invalid={ageError !== null}
-          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] ${
+          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] text-black ${
             ageError ? "border-red-500" : "border-[#d9d9d9]"
           }`}
         />
@@ -126,18 +133,32 @@ export default function Profile() {
         <label className="mt-6 block text-[12px] text-black" htmlFor="activity">
           Activity Level
         </label>
-        <select
-          id="activity"
-          value={activityMultiplier}
-          onChange={(e) => setActivityMultiplier(Number(e.target.value))}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
-        >
-          {ACTIVITY_LEVELS.map((level) => (
-            <option key={level.multiplier} value={level.multiplier}>
-              {level.label}
-            </option>
-          ))}
-        </select>
+        <div className="relative mt-[9px]">
+          <select
+            id="activity"
+            value={activityMultiplier}
+            onChange={(e) => setActivityMultiplier(Number(e.target.value))}
+            className="h-[35px] w-full cursor-pointer appearance-none rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] pl-3 pr-10 text-[13px] text-black"
+          >
+            {ACTIVITY_LEVELS.map((level) => (
+              <option key={level.multiplier} value={level.multiplier}>
+                {level.label} ({level.hint})
+              </option>
+            ))}
+          </select>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-[#117d69] text-white"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="size-4">
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+        </div>
 
         <p className="mt-6 text-[12px] text-black">Goals</p>
         <div className="mt-[9px] flex flex-col gap-[8px]">

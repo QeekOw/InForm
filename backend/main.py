@@ -1,10 +1,10 @@
 import sys
 from pathlib import Path
 
-# The inform package lives in the sibling Track A repo layout (src/inform),
-# not installed into this service's environment — Modules 2 & 3 are pure
-# pydantic with no heavy deps (see CLAUDE.md agent-handoff notes), so this
-# sys.path addition is enough rather than packaging/installing inform here.
+# The inform package lives in the repository root (src/inform).
+# Modules 2 & 3 are pure Pydantic models and deterministic calculations
+# with lightweight dependencies, so adding the root src directory to sys.path
+# allows direct importing without requiring a full editable package installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from fastapi import FastAPI
@@ -33,7 +33,12 @@ app.add_middleware(
 
 @app.get("/")
 def root() -> dict[str, str]:
-    return {"service": "inform-api", "status": "ok"}
+    return {
+        "service": "inform-api",
+        "status": "ok",
+        "docs_url": "/docs",
+        "health_url": "/health",
+    }
 
 
 @app.get("/health")
@@ -61,8 +66,13 @@ def plan(request: PlanRequest) -> PlanResponse:
     """Modules 2 -> 3 -> 4, given an already-complete InBody reading.
 
     No OCR (Module 1) here — the caller supplies the reading values directly,
-    same shape a completed correction flow would produce. Module 4 falls back
-    to a deterministic plan automatically when no OPENAI_API_KEY is set.
+    same shape a completed correction flow would produce.
+
+    Privacy & ADR-0005: When OPENAI_API_KEY is unset, Module 4 automatically
+    falls back to a deterministic, local template-based plan narrative so no
+    data leaves the host environment. If OPENAI_API_KEY is configured, cloud
+    synthesis is used for POC / development testing with consented or synthetic
+    data only. Real patient health data must never be sent to external cloud APIs.
     """
     nutrition = compute_targets(request.user, request.inbody)
     exercises = recommend_exercises(request.user, request.inbody, DEFAULT_EXERCISE_POOL)

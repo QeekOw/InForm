@@ -2,6 +2,7 @@ import Link from "next/link";
 import PhoneFrame from "@/components/PhoneFrame";
 import ApiStatus from "@/components/ApiStatus";
 
+const imgLogo = "/brand/inform-logo-on-dark.png";
 const imgArrow = "/hero/vector-arrow.svg";
 const imgBlob = "/hero/vector-blob.svg";
 
@@ -48,12 +49,10 @@ export default function Home() {
         <ApiStatus />
       </div>
 
-      {/* Logo */}
+      {/* Logo: docs/assets/InForm.png with the black "In" recoloured for this dark background */}
       <div className="mt-8 flex justify-center">
-        <p className="text-[35px] font-bold tracking-wide whitespace-nowrap">
-          <span className="text-[#fcfcfc]">In</span>
-          <span className="text-[#117d69]">Form</span>
-        </p>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt="InForm" className="h-[29px] w-auto" src={imgLogo} width={174} height={29} />
       </div>
 
       {/* Headline + subtext */}
