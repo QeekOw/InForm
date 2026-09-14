@@ -107,7 +107,7 @@ def get_sample_image(sample_id: str):
         img_path = repo_root / img_path
 
     if not img_path.exists():
-        raise HTTPException(status_code=404, detail=f"Sample image not found on disk")
+        raise HTTPException(status_code=404, detail="Sample image not found on disk")
 
     return FileResponse(img_path, media_type="image/png")
 

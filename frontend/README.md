@@ -29,8 +29,10 @@ carries the flow between screens.
    (ADR-0004).
 5. Confirm drops the photo from `sessionStorage` (ADR-0011 §3). A guest without a Profile
    fills in `/profile` next.
-6. `/result` POSTs the Profile and the confirmed reading to the backend's `POST /plan`,
-   which runs `inform.nutrition_engine.compute_targets` and
+6. `/result` POSTs the Profile to the backend's `POST /plan` with either the `sample_id`
+   of a clean, unedited Sample sheet (the backend plans from its stored read and refuses
+   an unread, flagged or refused one) or the confirmed reading. The backend runs
+   `inform.nutrition_engine.compute_targets` and
    `inform.exercise_filter.recommend_exercises`. The screen says when the numbers came
    from the demo reading.
 

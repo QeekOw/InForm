@@ -7,7 +7,6 @@
 export const SESSION_KEYS = {
   profile: "inform:profile",
   reading: "inform:reading",
-  sheetType: "inform:sheetType",
   name: "inform:name",
   photo: "inform:photo",
   // The picked Sample sheet and its stored read (issue #35).
@@ -41,5 +40,18 @@ export function removeSessionItem(key: string): void {
     sessionStorage.removeItem(key);
   } catch {
     // sessionStorage unavailable — nothing was stored to remove.
+  }
+}
+
+// A new photo or Sample sheet pick replaces the previous attempt, so an
+// earlier sheet's image, read or flags never show up next to the new one.
+export function clearSheet(): void {
+  for (const key of [
+    SESSION_KEYS.photo,
+    SESSION_KEYS.sampleId,
+    SESSION_KEYS.extraction,
+    SESSION_KEYS.reading,
+  ]) {
+    removeSessionItem(key);
   }
 }

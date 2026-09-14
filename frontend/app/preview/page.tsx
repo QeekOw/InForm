@@ -116,13 +116,14 @@ export default function Preview() {
             <ReportPhoto />
           )}
 
+          {/* A picked Sample sheet is swapped from the gallery; your own photo is retaken. */}
           <Link
-            href="/upload"
+            href={sampleId ? "/upload" : "/upload/capture"}
             className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white shadow"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="size-[14px]" src={imgCamera} />
-            Change Sheet
+            {sampleId ? "Change Sheet" : "Retake"}
           </Link>
         </div>
 

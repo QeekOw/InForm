@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { saveJSON, SESSION_KEYS } from "@/lib/session";
+import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
 import { captureFromVideo } from "@/lib/photo";
 
 const imgShutterOuter = "/icons/camera/shutter-outer.svg";
@@ -53,6 +53,7 @@ export default function Capture() {
   const handleCapture = () => {
     if (state !== "ready" || !videoRef.current) return;
     const dataUrl = captureFromVideo(videoRef.current);
+    clearSheet();
     saveJSON(SESSION_KEYS.photo, dataUrl);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     router.push("/upload/analyzing");

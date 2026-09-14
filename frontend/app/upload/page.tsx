@@ -7,7 +7,7 @@ import PhoneFrame from "@/components/PhoneFrame";
 import { API_URL } from "@/lib/config";
 import { isCleanRead, type SampleExtraction, type SampleSheetMeta } from "@/lib/inbody";
 import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
-import { removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgCamera = "/upload/camera-icon.svg";
 const imgUpload = "/upload/upload-icon.svg";
@@ -19,14 +19,19 @@ export default function Upload() {
 
   const [samples, setSamples] = useState<SampleSheetMeta[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSample, setLoadingSample] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   // Fetch live manifest from backend on mount
   useEffect(() => {
     let cancelled = false;
     fetch(`${API_URL}/samples`)
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load sample manifest: ${res.statusText}`);
+        return res.json();
+      })
       .then((data: SampleSheetMeta[]) => {
         if (!cancelled && Array.isArray(data)) {
           setSamples(data);
@@ -34,6 +39,7 @@ export default function Upload() {
       })
       .catch((err) => {
         console.error("Failed to load sample manifest:", err);
+        if (!cancelled) setListError(true);
       })
       .finally(() => {
         if (!cancelled) setLoadingList(false);
@@ -46,6 +52,7 @@ export default function Upload() {
   const handlePickSample = async (sample: SampleSheetMeta) => {
     setSelectedId(sample.id);
     setLoadingSample(true);
+    setPickError(null);
 
     try {
       const res = await fetch(`${API_URL}/samples/${sample.id}`);
@@ -54,6 +61,7 @@ export default function Upload() {
       }
       const extraction: SampleExtraction = await res.json();
 
+      clearSheet();
       saveJSON(SESSION_KEYS.sampleId, sample.id);
       saveJSON(SESSION_KEYS.extraction, extraction);
 
@@ -69,6 +77,7 @@ export default function Upload() {
       router.push(isCleanRead(extraction) ? "/result" : "/preview");
     } catch (err) {
       console.error("Error loading sample:", err);
+      setPickError("Couldn't load that sheet. Check your connection and tap it again.");
     } finally {
       setLoadingSample(false);
     }
@@ -78,16 +87,7 @@ export default function Upload() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // An uploaded sheet replaces any earlier attempt: drop the previous photo
-    // and any picked Sample sheet so neither shows up next to this upload.
-    for (const key of [
-      SESSION_KEYS.photo,
-      SESSION_KEYS.sampleId,
-      SESSION_KEYS.extraction,
-      SESSION_KEYS.reading,
-    ]) {
-      removeSessionItem(key);
-    }
+    clearSheet();
 
     if (file.type.startsWith("image/")) {
       try {
@@ -127,6 +127,11 @@ export default function Upload() {
 
           {loadingList ? (
             <p className="mt-4 text-[12px] text-white/60">Loading sample sheets…</p>
+          ) : listError ? (
+            <p role="alert" className="mt-4 text-[12px] text-rose-300">
+              Couldn&apos;t load the sample sheets. The server may be starting up; reload the page
+              in a moment.
+            </p>
           ) : samples.length === 0 ? (
             <p className="mt-4 text-[12px] text-white/60">No sample sheets available.</p>
           ) : (
@@ -206,6 +211,11 @@ export default function Upload() {
                 );
               })}
             </div>
+          )}
+          {pickError && (
+            <p role="alert" className="mt-3 text-[12px] text-rose-300">
+              {pickError}
+            </p>
           )}
         </div>
 
