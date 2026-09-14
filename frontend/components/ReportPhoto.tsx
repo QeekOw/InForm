@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import { loadJSON } from "@/lib/session";
 import { SESSION_KEYS } from "@/lib/inbody";
 
-/** Shows the photo captured/uploaded in the Upload flow, or a placeholder if
- * none was saved this session (e.g. landed on this screen directly). */
+/** Shows the photo captured/uploaded in the Upload flow during review.
+ * Per ADR-0011 §3, when the user confirms their scan, the photo is cleared
+ * from session storage, and this component renders a privacy badge confirming
+ * Zero Image Persistence. */
 export default function ReportPhoto({ className = "" }: { className?: string }) {
   const [photo, setPhoto] = useState<string | null>(null);
 
@@ -18,13 +20,22 @@ export default function ReportPhoto({ className = "" }: { className?: string }) 
   if (photo) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img alt="Your uploaded report" className={`size-full object-cover ${className}`} src={photo} />
+      <img
+        alt="Your uploaded report"
+        className={`size-full object-cover ${className}`}
+        src={photo}
+      />
     );
   }
 
   return (
-    <p className={`flex size-full items-center justify-center px-3 text-center text-[12px] text-white/40 ${className}`}>
-      Your report photo
-    </p>
+    <div
+      className={`flex size-full flex-col items-center justify-center p-4 text-center text-white/50 ${className}`}
+    >
+      <span className="text-[12px] font-semibold text-white/80">InBody Scan</span>
+      <span className="mt-1 text-[9px] text-white/40">
+        Photo cleared per ADR-0011 (Zero Image Persistence)
+      </span>
+    </div>
   );
 }

@@ -5,29 +5,25 @@ import Link from "next/link";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import { loadJSON } from "@/lib/session";
-import { DEFAULT_PROFILE, DEFAULT_READING, SESSION_KEYS, type InBodyReading, type UserProfile } from "@/lib/inbody";
+import { API_URL } from "@/lib/config";
+import {
+  ACTIVITY_LABELS,
+  DEFAULT_PROFILE,
+  DEFAULT_USER_NAME,
+  type UserProfile,
+} from "@/lib/user";
+import {
+  DEFAULT_READING,
+  SESSION_KEYS,
+  type InBodyPayload,
+} from "@/lib/inbody";
+import { type ExercisePlan } from "@/lib/exercise";
 
 const imgBack = "/icons/result/back-arrow.svg";
 const imgPerson = "/icons/result/person.svg";
 const imgGenderMale = "/icons/result/gender-male.svg";
 const imgTarget = "/icons/result/target.svg";
 const imgDumbbell = "/icons/result/dumbbell.svg";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-const ACTIVITY_LABELS: Record<number, string> = {
-  1.2: "Sedentary",
-  1.375: "Lightly active",
-  1.55: "Moderately active",
-  1.725: "Very active",
-  1.9: "Extremely active",
-};
-
-type Exercise = {
-  name: string;
-  target: string;
-  movement_type: string;
-};
 
 type NutritionTargets = {
   bmr_kcal: number;
@@ -41,24 +37,26 @@ type NutritionTargets = {
 
 type PlanResponse = {
   nutrition: NutritionTargets;
-  exercises: { exercises: Exercise[]; detected_imbalances: string[] };
+  exercises: ExercisePlan;
   narrative_text: string;
 };
 
+type ApiErrorKind = "network" | "validation";
+
 type State =
   | { status: "loading" }
-  | { status: "error"; message: string; kind: "network" | "validation" }
+  | { status: "error"; message: string; kind: ApiErrorKind }
   | { status: "ready"; plan: PlanResponse };
 
 export default function Result() {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  const [name, setName] = useState("John Doe");
+  const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
     const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile) ?? DEFAULT_PROFILE;
-    const loadedReading = loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING;
-    const loadedName = loadJSON<string>(SESSION_KEYS.name) ?? "John Doe";
+    const loadedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING;
+    const loadedName = loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME;
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
@@ -75,17 +73,21 @@ export default function Result() {
           // value out of range) — a different problem from not reaching the
           // API at all, and worth telling apart in the UI.
           const detail = await res.text().catch(() => "");
-          const error = new Error(detail || `API returned ${res.status}`) as Error & {
-            kind: "network" | "validation";
-          };
-          error.kind = res.status >= 400 && res.status < 500 ? "validation" : "network";
+          const kind: ApiErrorKind =
+            res.status >= 400 && res.status < 500 ? "validation" : "network";
+          const error = new Error(detail || `API returned ${res.status}`);
+          Object.assign(error, { kind });
           throw error;
         }
         const plan = (await res.json()) as PlanResponse;
         setState({ status: "ready", plan });
       })
-      .catch((err: Error & { kind?: "network" | "validation" }) => {
-        setState({ status: "error", message: err.message, kind: err.kind ?? "network" });
+      .catch((err: Error & { kind?: ApiErrorKind }) => {
+        setState({
+          status: "error",
+          message: err.message,
+          kind: err.kind ?? "network",
+        });
       });
   }, []);
 

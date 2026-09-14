@@ -13,14 +13,16 @@ const googleParts = [
   "/icons/auth/google-4.svg",
 ];
 const imgFacebook = "/icons/auth/facebook.svg";
-const imgAppleGroup = "/icons/auth/apple-group.svg";
-const imgAppleGroup1 = "/icons/auth/apple-group1.svg";
-const imgAppleVector = "/icons/auth/apple-vector.svg";
-const imgAppleGroup2 = "/icons/auth/apple-group2.svg";
-const imgAppleGroup3 = "/icons/auth/apple-group3.svg";
-const imgAppleVector1 = "/icons/auth/apple-vector1.svg";
-const imgAppleVector3 = "/icons/auth/apple-vector3.svg";
-const imgAppleVector4 = "/icons/auth/apple-vector4.svg";
+
+// Apple logo SVG path layers with semantic identifiers
+const imgAppleMaskBody = "/icons/auth/apple-group.svg";
+const imgAppleFillBody = "/icons/auth/apple-group1.svg";
+const imgAppleStem = "/icons/auth/apple-vector.svg";
+const imgAppleMaskBite = "/icons/auth/apple-group2.svg";
+const imgAppleFillBite = "/icons/auth/apple-group3.svg";
+const imgAppleLeaf1 = "/icons/auth/apple-vector1.svg";
+const imgAppleLeaf2 = "/icons/auth/apple-vector3.svg";
+const imgAppleLeaf3 = "/icons/auth/apple-vector4.svg";
 
 function GoogleLogo() {
   return (
@@ -38,33 +40,39 @@ function AppleLogo() {
     <div className="relative size-5 overflow-hidden">
       <div
         className="absolute inset-[24.11%_9.2%_0_9.38%]"
-        style={{ maskImage: `url("${imgAppleGroup}")`, WebkitMaskImage: `url("${imgAppleGroup}")` }}
+        style={{
+          maskImage: `url("${imgAppleMaskBody}")`,
+          WebkitMaskImage: `url("${imgAppleMaskBody}")`,
+        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleGroup1} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleFillBody} />
       </div>
       <div className="absolute inset-[0_29.89%_76.91%_49.85%]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleVector} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleStem} />
       </div>
       <div
         className="absolute inset-[5.94%_-398.11%_-109.28%_279.94%]"
-        style={{ maskImage: `url("${imgAppleGroup2}")`, WebkitMaskImage: `url("${imgAppleGroup2}")` }}
+        style={{
+          maskImage: `url("${imgAppleMaskBite}")`,
+          WebkitMaskImage: `url("${imgAppleMaskBite}")`,
+        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleGroup3} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleFillBite} />
       </div>
       <div className="absolute inset-[-58.66%_-342.66%_96.8%_388.37%]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleVector1} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleLeaf1} />
       </div>
       <div className="absolute inset-[14.62%_-569.88%_-64.07%_544.84%]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleVector3} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleLeaf2} />
       </div>
       <div className="absolute inset-[6.64%_-963.21%_-107.94%_684.13%]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="" className="absolute inset-0 block size-full" src={imgAppleVector4} />
+        <img alt="" className="absolute inset-0 block size-full" src={imgAppleLeaf3} />
       </div>
     </div>
   );
@@ -86,7 +94,7 @@ export default function SignIn() {
         <input
           id="email"
           type="email"
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
+          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px] text-gray-900 placeholder:text-gray-400"
         />
 
         <label className="mt-6 block text-[12px] text-black" htmlFor="password">
@@ -96,7 +104,7 @@ export default function SignIn() {
           <input
             id="password"
             type={showPassword ? "text" : "password"}
-            className="h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 pr-9 text-[13px]"
+            className="h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 pr-9 text-[13px] text-gray-900 placeholder:text-gray-400"
           />
           <button
             type="button"

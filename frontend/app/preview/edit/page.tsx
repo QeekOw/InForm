@@ -5,8 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON, saveJSON } from "@/lib/session";
-import { DEFAULT_READING, SESSION_KEYS, type InBodyReading } from "@/lib/inbody";
+import { loadJSON, removeSessionItem, saveJSON } from "@/lib/session";
+import {
+  BODY_COMPOSITION_FIELDS,
+  DEFAULT_READING,
+  SEGMENTAL_LEAN_LEFT_FIELDS,
+  SEGMENTAL_LEAN_RIGHT_FIELDS,
+  SESSION_KEYS,
+  type InBodyPayload,
+  type ScalarInBodyField,
+} from "@/lib/inbody";
 
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
@@ -17,21 +25,33 @@ function NumberField({
   unit,
   integer = false,
 }: {
-  value: number;
-  onChange: (v: number) => void;
+  value: number | null;
+  onChange: (v: number | null) => void;
   unit: string;
   integer?: boolean;
 }) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.trim();
+    if (raw === "") {
+      onChange(null);
+      return;
+    }
+    const num = Number(raw);
+    if (Number.isNaN(num)) return;
+    onChange(integer ? Math.round(num) : num);
+  };
+
   return (
     <span className="flex items-center gap-1 rounded-md border-[1.5px] border-[#d9d9d9] px-2 py-0.5">
       <input
         type="number"
         step={integer ? "1" : "0.01"}
-        value={value}
-        onChange={(e) => onChange(integer ? Math.round(Number(e.target.value)) : Number(e.target.value))}
+        value={value ?? ""}
+        placeholder={value == null ? "None" : undefined}
+        onChange={handleChange}
         className="w-12 text-right text-[12px] font-bold outline-none"
       />
-      <span className="text-[8px] font-medium">{unit}</span>
+      {unit ? <span className="text-[8px] font-medium">{unit}</span> : null}
     </span>
   );
 }
@@ -44,9 +64,9 @@ function Row({
   integer = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   unit: string;
-  onChange: (v: number) => void;
+  onChange: (v: number | null) => void;
   integer?: boolean;
 }) {
   return (
@@ -59,21 +79,35 @@ function Row({
 
 export default function PreviewEdit() {
   const router = useRouter();
-  const [reading, setReading] = useState<InBodyReading>(DEFAULT_READING);
+  const [reading, setReading] = useState<InBodyPayload>(DEFAULT_READING);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReading(loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING);
+    setReading(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
   }, []);
 
-  const set = <K extends keyof InBodyReading>(key: K, value: number) =>
-    setReading((r) => ({ ...r, [key]: value }));
-  const setSeg = (key: keyof InBodyReading["segmental_lean"], value: number) =>
-    setReading((r) => ({ ...r, segmental_lean: { ...r.segmental_lean, [key]: value } }));
+  const updateField = (key: ScalarInBodyField, value: number | null) => {
+    setReading((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateSegmentalLean = (
+    key: keyof InBodyPayload["segmental_lean"],
+    value: number | null,
+  ) => {
+    setReading((prev) => ({
+      ...prev,
+      segmental_lean: {
+        ...prev.segmental_lean,
+        [key]: value ?? 0,
+      },
+    }));
+  };
 
   const handleConfirm = () => {
     saveJSON(SESSION_KEYS.reading, reading);
+    // ADR-0011 §3: Zero Image Persistence for User Uploads - clear on confirm
+    removeSessionItem(SESSION_KEYS.photo);
     router.push("/result");
   };
 
@@ -106,37 +140,16 @@ export default function PreviewEdit() {
       <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black">
         <h2 className="text-[14px] font-bold">Body Composition</h2>
         <div className="mt-3">
-          <Row
-            label="Weight"
-            value={reading.weight_kg}
-            unit="kg"
-            onChange={(v) => set("weight_kg", v)}
-          />
-          <Row
-            label="Lean Body Mass"
-            value={reading.lean_body_mass_kg}
-            unit="kg"
-            onChange={(v) => set("lean_body_mass_kg", v)}
-          />
-          <Row
-            label="Percent Body Fat"
-            value={reading.percent_body_fat}
-            unit="%"
-            onChange={(v) => set("percent_body_fat", v)}
-          />
-          <Row
-            label="Skeletal Muscle Mass"
-            value={reading.skeletal_muscle_mass_kg}
-            unit="kg"
-            onChange={(v) => set("skeletal_muscle_mass_kg", v)}
-          />
-          <Row
-            label="Visceral Fat Level"
-            value={reading.visceral_fat_level}
-            unit=""
-            integer
-            onChange={(v) => set("visceral_fat_level", v)}
-          />
+          {BODY_COMPOSITION_FIELDS.map((field) => (
+            <Row
+              key={field.key}
+              label={field.label}
+              value={reading[field.key]}
+              unit={field.unit}
+              integer={field.integer}
+              onChange={(val) => updateField(field.key, val)}
+            />
+          ))}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
@@ -144,38 +157,26 @@ export default function PreviewEdit() {
         <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
         <div className="mt-3 grid grid-cols-2 gap-x-4">
           <div>
-            <Row
-              label="Left Arm"
-              value={reading.segmental_lean.left_arm_kg}
-              unit="kg"
-              onChange={(v) => setSeg("left_arm_kg", v)}
-            />
-            <Row
-              label="Right Arm"
-              value={reading.segmental_lean.right_arm_kg}
-              unit="kg"
-              onChange={(v) => setSeg("right_arm_kg", v)}
-            />
-            <Row
-              label="Trunk"
-              value={reading.segmental_lean.trunk_kg}
-              unit="kg"
-              onChange={(v) => setSeg("trunk_kg", v)}
-            />
+            {SEGMENTAL_LEAN_LEFT_FIELDS.map((field) => (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={reading.segmental_lean[field.key]}
+                unit={field.unit}
+                onChange={(val) => updateSegmentalLean(field.key, val)}
+              />
+            ))}
           </div>
           <div>
-            <Row
-              label="Left Leg"
-              value={reading.segmental_lean.left_leg_kg}
-              unit="kg"
-              onChange={(v) => setSeg("left_leg_kg", v)}
-            />
-            <Row
-              label="Right Leg"
-              value={reading.segmental_lean.right_leg_kg}
-              unit="kg"
-              onChange={(v) => setSeg("right_leg_kg", v)}
-            />
+            {SEGMENTAL_LEAN_RIGHT_FIELDS.map((field) => (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={reading.segmental_lean[field.key]}
+                unit={field.unit}
+                onChange={(val) => updateSegmentalLean(field.key, val)}
+              />
+            ))}
           </div>
         </div>
 
@@ -185,7 +186,7 @@ export default function PreviewEdit() {
           label="Basal Metabolic Rate"
           value={reading.basal_metabolic_rate_kcal}
           unit="kcal"
-          onChange={(v) => set("basal_metabolic_rate_kcal", v)}
+          onChange={(val) => updateField("basal_metabolic_rate_kcal", val)}
         />
 
         <button

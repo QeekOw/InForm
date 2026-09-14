@@ -5,19 +5,35 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
-import { loadJSON, saveJSON } from "@/lib/session";
-import { DEFAULT_READING, SESSION_KEYS, type InBodyReading } from "@/lib/inbody";
+import { loadJSON, removeSessionItem, saveJSON } from "@/lib/session";
+import {
+  BODY_COMPOSITION_FIELDS,
+  DEFAULT_READING,
+  SEGMENTAL_LEAN_LEFT_FIELDS,
+  SEGMENTAL_LEAN_RIGHT_FIELDS,
+  SESSION_KEYS,
+  type InBodyPayload,
+} from "@/lib/inbody";
 
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
 const imgEdit = "/icons/preview/edit-icon.svg";
 
-function Row({ label, value, unit }: { label: string; value: string | number; unit: string }) {
+function Row({
+  label,
+  value,
+  unit,
+}: {
+  label: string;
+  value: string | number | null;
+  unit: string;
+}) {
+  const displayValue = value == null ? "—" : value;
   return (
     <div className="flex items-baseline justify-between py-1 text-[12px]">
       <span>{label}</span>
       <span className="font-bold">
-        {value} <span className="text-[8px] font-medium">{unit}</span>
+        {displayValue} {value != null && <span className="text-[8px] font-medium">{unit}</span>}
       </span>
     </div>
   );
@@ -25,22 +41,24 @@ function Row({ label, value, unit }: { label: string; value: string | number; un
 
 export default function Preview() {
   const router = useRouter();
-  const [reading, setReading] = useState<InBodyReading>(DEFAULT_READING);
+  const [reading, setReading] = useState<InBodyPayload>(DEFAULT_READING);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR —
     // this is exactly the "synchronize with an external system" case, not
     // state derived from props/state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReading(loadJSON<InBodyReading>(SESSION_KEYS.reading) ?? DEFAULT_READING);
+    setReading(loadJSON<InBodyPayload>(SESSION_KEYS.reading) ?? DEFAULT_READING);
   }, []);
 
   const handleConfirm = () => {
     saveJSON(SESSION_KEYS.reading, reading);
+    // ADR-0011 §3: uploaded user photo is transient; clear once confirmed
+    removeSessionItem(SESSION_KEYS.photo);
     router.push("/result");
   };
 
-  const { segmental_lean: seg } = reading;
+  const { segmental_lean } = reading;
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -55,7 +73,7 @@ export default function Preview() {
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Preview</h1>
       </div>
 
-      <div className="relative mx-[30px] mt-[31px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
+      <div className="relative mx-[30px] mt-[24px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
         <ReportPhoto />
         <Link
           href="/upload/capture"
@@ -67,14 +85,28 @@ export default function Preview() {
         </Link>
       </div>
 
-      <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black">
+      <div className="mx-[30px] mt-3 flex items-center justify-between rounded-lg bg-white/10 px-3 py-1.5 text-[11px] text-white/90">
+        <span className="font-medium">Demo baseline values</span>
+        <span className="text-[10px] text-white/60">Pending OCR extraction · edit below</span>
+      </div>
+
+      <div className="mx-[30px] mt-[14px] rounded-[15px] bg-white p-[25px] text-black">
         <h2 className="text-[14px] font-bold">Body Composition</h2>
         <div className="mt-3">
-          <Row label="Weight" value={reading.weight_kg} unit="kg" />
-          <Row label="Lean Body Mass" value={reading.lean_body_mass_kg} unit="kg" />
-          <Row label="Percent Body Fat" value={reading.percent_body_fat} unit="%" />
-          <Row label="Skeletal Muscle Mass" value={reading.skeletal_muscle_mass_kg} unit="kg" />
-          <Row label="Visceral Fat Level" value={`Level ${reading.visceral_fat_level}`} unit="" />
+          {BODY_COMPOSITION_FIELDS.map((field) => {
+            const rawVal = reading[field.key];
+            const formatted = field.formatValue
+              ? field.formatValue(rawVal)
+              : rawVal;
+            return (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={formatted}
+                unit={field.unit}
+              />
+            );
+          })}
         </div>
 
         <div className="my-4 h-px bg-black/10" />
@@ -82,19 +114,34 @@ export default function Preview() {
         <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
         <div className="mt-3 grid grid-cols-2 gap-x-6">
           <div>
-            <Row label="Left Arm" value={seg.left_arm_kg} unit="kg" />
-            <Row label="Right Arm" value={seg.right_arm_kg} unit="kg" />
-            <Row label="Trunk" value={seg.trunk_kg} unit="kg" />
+            {SEGMENTAL_LEAN_LEFT_FIELDS.map((field) => (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={segmental_lean[field.key]}
+                unit={field.unit}
+              />
+            ))}
           </div>
           <div>
-            <Row label="Left Leg" value={seg.left_leg_kg} unit="kg" />
-            <Row label="Right Leg" value={seg.right_leg_kg} unit="kg" />
+            {SEGMENTAL_LEAN_RIGHT_FIELDS.map((field) => (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={segmental_lean[field.key]}
+                unit={field.unit}
+              />
+            ))}
           </div>
         </div>
 
         <div className="my-4 h-px bg-black/10" />
 
-        <Row label="Basal Metabolic Rate" value={reading.basal_metabolic_rate_kcal} unit="kcal" />
+        <Row
+          label="Basal Metabolic Rate"
+          value={reading.basal_metabolic_rate_kcal}
+          unit="kcal"
+        />
 
         <Link
           href="/preview/edit"

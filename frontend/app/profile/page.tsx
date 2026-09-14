@@ -4,18 +4,15 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import { saveJSON } from "@/lib/session";
-import { SESSION_KEYS, type UserProfile } from "@/lib/inbody";
+import { SESSION_KEYS } from "@/lib/session";
+import {
+  ACTIVITY_LEVELS,
+  DEFAULT_USER_NAME,
+  type UserProfile,
+} from "@/lib/user";
 
 const imgRadioSelected = "/icons/form/radio-selected.svg";
 const imgRadioUnselected = "/icons/form/radio-unselected.svg";
-
-const ACTIVITY_LEVELS = [
-  { label: "Sedentary", multiplier: 1.2 },
-  { label: "Lightly active", multiplier: 1.375 },
-  { label: "Moderately active", multiplier: 1.55 },
-  { label: "Very active", multiplier: 1.725 },
-  { label: "Extremely active", multiplier: 1.9 },
-];
 
 // Issue #34 AC: "an implausible age is rejected before a plan is computed."
 const MIN_AGE = 13;
@@ -41,7 +38,9 @@ export default function Profile() {
   const [dob, setDob] = useState("");
   const [ageError, setAgeError] = useState<string | null>(null);
   const [sex, setSex] = useState<UserProfile["biological_sex"]>("male");
-  const [activityMultiplier, setActivityMultiplier] = useState(ACTIVITY_LEVELS[2].multiplier);
+  const [activityMultiplier, setActivityMultiplier] = useState<number>(
+    ACTIVITY_LEVELS[2].multiplier,
+  );
   const [goal, setGoal] = useState<UserProfile["fitness_goal"]>("fat_loss");
 
   const handleContinue = () => {
@@ -62,7 +61,7 @@ export default function Profile() {
       fitness_goal: goal,
     };
     saveJSON(SESSION_KEYS.profile, profile);
-    saveJSON(SESSION_KEYS.name, name || "John Doe");
+    saveJSON(SESSION_KEYS.name, name || DEFAULT_USER_NAME);
     router.push("/upload");
   };
 
@@ -81,7 +80,7 @@ export default function Profile() {
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
+          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px] text-black"
         />
 
         <label className="mt-6 block text-[12px] text-black" htmlFor="dob">
@@ -97,7 +96,7 @@ export default function Profile() {
             setAgeError(null);
           }}
           aria-invalid={ageError !== null}
-          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] ${
+          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] text-black ${
             ageError ? "border-red-500" : "border-[#d9d9d9]"
           }`}
         />
@@ -130,7 +129,7 @@ export default function Profile() {
           id="activity"
           value={activityMultiplier}
           onChange={(e) => setActivityMultiplier(Number(e.target.value))}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px]"
+          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px] text-black"
         >
           {ACTIVITY_LEVELS.map((level) => (
             <option key={level.multiplier} value={level.multiplier}>
