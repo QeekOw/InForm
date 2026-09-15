@@ -46,6 +46,7 @@ type PlanResponse = {
   narrative_text: string;
   narrative_source: "generated" | "fallback";
   corrected_fields?: string[];
+  confirmed_fields?: string[];
   measured?: PartialInBody | null;
 };
 
@@ -111,6 +112,7 @@ export default function Result() {
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<Record<string, unknown>>({});
+  const [confirmations, setConfirmations] = useState<string[]>([]);
   const [fromSample, setFromSample] = useState(true);
   const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
@@ -132,6 +134,7 @@ export default function Result() {
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const loadedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
     const loadedMeasured =
       loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -140,17 +143,20 @@ export default function Result() {
     setReading(loadedReading);
     setSampleId(loadedSampleId);
     setCorrections(loadedCorrections);
+    setConfirmations(loadedConfirmations);
     setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
 
     const hasCorrections = Object.keys(loadedCorrections).length > 0;
+    const hasConfirmations = loadedConfirmations.length > 0;
 
     // A clean stored read is planned server-side from the Sample sheet
-    // itself; a reading someone edited is sent as they typed it.
+    // itself; a reading someone edited or confirmed is sent as they verified/typed it.
     const plannedFromSample =
       loadedSampleId !== null &&
       loadedExtraction !== null &&
       isCleanRead(loadedExtraction) &&
       !hasCorrections &&
+      !hasConfirmations &&
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
 
@@ -161,17 +167,20 @@ export default function Result() {
             user: loadedProfile,
             measured: loadedMeasured,
             ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
           }
         : loadedSampleId
           ? {
               user: loadedProfile,
               sample_id: loadedSampleId,
               ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+              ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
             }
           : {
               user: loadedProfile,
               inbody: loadedReading,
               ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+              ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
             };
 
     fetch(`${API_URL}/plan`, {
@@ -280,10 +289,20 @@ export default function Result() {
                     : []),
                   ...Object.keys(corrections),
                 ]);
+                const confirmedSet = new Set<string>([
+                  ...(state.status === "ready" && state.plan.confirmed_fields
+                    ? state.plan.confirmed_fields
+                    : []),
+                  ...confirmations,
+                ]);
                 return READING_ROWS.map((row) => {
                   const isHumanSupplied =
                     correctedSet.has(row.key) ||
                     correctedSet.has(row.key.replace("segmental_lean.", ""));
+                  const isConfirmed =
+                    !isHumanSupplied &&
+                    (confirmedSet.has(row.key) ||
+                      confirmedSet.has(row.key.replace("segmental_lean.", "")));
                   return (
                     <div
                       key={row.label}
@@ -294,6 +313,11 @@ export default function Result() {
                         {isHumanSupplied && (
                           <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
                             Human-supplied
+                          </span>
+                        )}
+                        {isConfirmed && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-bold text-emerald-800">
+                            Verified
                           </span>
                         )}
                       </dt>

@@ -105,7 +105,7 @@ def load_extractions(path: Path | str | None = None) -> SampleExtractionsArtifac
 
 
 def extract_sheet_for_sample(
-    image_path: Path, engine: Engine | None = None
+    image_path: Path, engine: Engine | None = None, *, is_non_sheet: bool = False
 ) -> ExtractionItem:
     """Run extraction over a single sheet, capturing data, unread, flagged, or refusal."""
     try:
@@ -117,6 +117,13 @@ def extract_sheet_for_sample(
             flagged=extraction.flagged,
         )
     except MissingRequiredFieldsError as exc:
+        if is_non_sheet:
+            non_sheet_err = NotAnInBodySheetError()
+            return ExtractionItem(
+                status="refused",
+                error="not_an_inbody_sheet",
+                message=str(non_sheet_err),
+            )
         return ExtractionItem(
             status="refused",
             error="missing_required_fields",
@@ -157,7 +164,10 @@ def generate_extractions(
         if not img_path.exists():
             raise FileNotFoundError(f"Sample image not found: {img_path}")
 
-        extractions[sample.id] = extract_sheet_for_sample(img_path, engine=engine)
+        is_non = sample.source_device is None or "non_sheet" in sample.id
+        extractions[sample.id] = extract_sheet_for_sample(
+            img_path, engine=engine, is_non_sheet=is_non
+        )
 
     return SampleExtractionsArtifact(
         checkpoint=ckpt,

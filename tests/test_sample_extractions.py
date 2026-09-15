@@ -134,6 +134,14 @@ def test_stub_extraction_records_refusals_and_flags():
     assert item_non.status == "refused"
     assert item_non.error == "not_an_inbody_sheet"
 
+    # Test non-sheet flag turning floor refusal into not_an_inbody_sheet
+    item_non_sheet_flag = extract_sheet_for_sample(
+        Path("dummy.png"), engine=stub_floor, is_non_sheet=True
+    )
+    assert item_non_sheet_flag.status == "refused"
+    assert item_non_sheet_flag.error == "not_an_inbody_sheet"
+    assert "not appear to be an inbody" in item_non_sheet_flag.message.lower()
+
     # Test generic extraction error refusal
     def stub_error(path):
         raise InBodyExtractionError("Corrupted payload")

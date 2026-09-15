@@ -7,6 +7,7 @@ import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import {
   FIELD_CONSTRAINTS,
+  getFieldLabel,
   normalizeFieldKey,
   parseAndValidateFieldInput,
   validateFieldValue,
@@ -24,7 +25,7 @@ import {
   type ScalarInBodyField,
   type SegmentalLeanField,
 } from "@/lib/inbody";
-import { loadJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
@@ -100,6 +101,9 @@ function Row({
   onChange,
   invalid = false,
   isUnread = false,
+  isFlagged = false,
+  isConfirmed = false,
+  onConfirm,
   error = null,
 }: {
   label: string;
@@ -109,6 +113,9 @@ function Row({
   onChange: (v: number | null, unit?: string, error?: string | null) => void;
   invalid?: boolean;
   isUnread?: boolean;
+  isFlagged?: boolean;
+  isConfirmed?: boolean;
+  onConfirm?: () => void;
   error?: string | null;
 }) {
   return (
@@ -119,6 +126,39 @@ function Row({
           {isUnread && (
             <span className="rounded bg-rose-200 px-1 py-0.5 text-[8px] font-bold text-rose-800">
               Unread
+            </span>
+          )}
+          {isFlagged && !isConfirmed && (
+            <span className="inline-flex items-center gap-1">
+              <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
+                Flagged Check
+              </span>
+              {onConfirm && (
+                <button
+                  type="button"
+                  onClick={onConfirm}
+                  className="rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
+                >
+                  Confirm
+                </button>
+              )}
+            </span>
+          )}
+          {isConfirmed && (
+            <span className="inline-flex items-center gap-1">
+              <span className="rounded bg-emerald-200 px-1 py-0.5 text-[8px] font-bold text-emerald-800">
+                ✓ Confirmed
+              </span>
+              {onConfirm && (
+                <button
+                  type="button"
+                  onClick={onConfirm}
+                  className="text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
+                  title="Undo confirmation"
+                >
+                  Undo
+                </button>
+              )}
             </span>
           )}
         </span>
@@ -139,8 +179,10 @@ export default function PreviewEdit() {
   const router = useRouter();
   const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
   const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>({});
+  const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [unreadKeys, setUnreadKeys] = useState<Set<string>>(new Set());
+  const [flaggedKeys, setFlaggedKeys] = useState<Set<string>>(new Set());
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -154,6 +196,12 @@ export default function PreviewEdit() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExtraction(loadedExtraction);
     setCorrections(storedCorrections);
+
+    const storedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
+    setConfirmedKeys(new Set(storedConfirmations.map(normalizeFieldKey)));
+    if (loadedExtraction?.flagged) {
+      setFlaggedKeys(new Set(loadedExtraction.flagged.map(normalizeFieldKey)));
+    }
 
     const base: InBodyDraft = storedReading
       ? {
@@ -260,6 +308,15 @@ export default function PreviewEdit() {
         ...prev,
         [normKey]: { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) },
       }));
+      // AC: Correcting a flagged value records a corrected field, not confirmed.
+      setConfirmedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(normKey)) {
+          next.delete(normKey);
+          saveJSON(SESSION_KEYS.confirmations, Array.from(next));
+        }
+        return next;
+      });
     } else {
       setCorrections((prev) => {
         const next = { ...prev };
@@ -268,6 +325,27 @@ export default function PreviewEdit() {
         return next;
       });
     }
+  };
+
+  const handleToggleConfirm = (fieldKey: string) => {
+    const norm = normalizeFieldKey(fieldKey);
+    setConfirmedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(norm)) {
+        next.delete(norm);
+      } else {
+        next.add(norm);
+        // If confirmed, remove from corrections so it stays a measured field!
+        setCorrections((c) => {
+          const nextC = { ...c };
+          delete nextC[norm];
+          delete nextC[fieldKey];
+          return nextC;
+        });
+      }
+      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
+      return next;
+    });
   };
 
   const getFieldError = (normKey: string, value: number | null): string | null => {
@@ -320,15 +398,26 @@ export default function PreviewEdit() {
     Object.values(errors).some(Boolean) || crossFieldError,
   );
 
+  const unresolvedFlagged = Array.from(flaggedKeys).filter(
+    (f) => !(f in corrections) && !confirmedKeys.has(f),
+  );
+
   const handleConfirm = () => {
-    if (blank.length > 0 || hasRangeErrors) {
+    if (blank.length > 0 || hasRangeErrors || unresolvedFlagged.length > 0) {
       setShowErrors(true);
       return;
     }
 
     // Every required field is filled and valid.
     // Store corrections alongside measured fields (never merged into them)
-    router.push(confirmReading(draft as InBodyPayload, corrections, extraction?.data));
+    router.push(
+      confirmReading(
+        draft as InBodyPayload,
+        corrections,
+        extraction?.data,
+        Array.from(confirmedKeys),
+      ),
+    );
   };
 
   return (
@@ -364,12 +453,23 @@ export default function PreviewEdit() {
               <span className="font-bold">Enter unread values:</span> Type the missing values off your sheet. They are recorded as your corrections.
             </div>
           )}
+          {unresolvedFlagged.length > 0 && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+              <span className="font-bold">Verify flagged values:</span>{" "}
+              <span className="font-semibold">
+                {unresolvedFlagged.map(getFieldLabel).join(", ")}
+              </span>{" "}
+              triggered physiological cross-checks. Confirm unchanged values or edit them.
+            </div>
+          )}
 
           <h2 className="text-[14px] font-bold">Body Composition</h2>
           <div className="mt-3">
             {BODY_COMPOSITION_FIELDS.map((field) => {
               const normKey = normalizeFieldKey(field.key);
               const error = errors[normKey];
+              const isFlagged = flaggedKeys.has(normKey) && !(normKey in corrections);
+              const isConfirmed = confirmedKeys.has(normKey) && !(normKey in corrections);
 
               return (
                 <Row
@@ -380,6 +480,9 @@ export default function PreviewEdit() {
                   unit={field.key === "visceral_fat_level" ? "level" : field.unit}
                   invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
                   isUnread={unreadKeys.has(normKey) && draft[field.key] === null}
+                  isFlagged={isFlagged}
+                  isConfirmed={isConfirmed}
+                  onConfirm={() => handleToggleConfirm(field.key)}
                   error={error}
                   onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
                 />
@@ -395,7 +498,16 @@ export default function PreviewEdit() {
               <div key={column[0].key}>
                 {column.map((field) => {
                   const normKey = normalizeFieldKey(field.key);
+                  const dottedKey = `segmental_lean.${field.key}`;
                   const error = errors[normKey];
+                  const isFlagged =
+                    (flaggedKeys.has(dottedKey) || flaggedKeys.has(normKey)) &&
+                    !(normKey in corrections) &&
+                    !(dottedKey in corrections);
+                  const isConfirmed =
+                    (confirmedKeys.has(dottedKey) || confirmedKeys.has(normKey)) &&
+                    !(normKey in corrections) &&
+                    !(dottedKey in corrections);
 
                   return (
                     <Row
@@ -406,6 +518,9 @@ export default function PreviewEdit() {
                       unit={field.unit}
                       invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
                       isUnread={unreadKeys.has(normKey) && draft.segmental_lean[field.key] === null}
+                      isFlagged={isFlagged}
+                      isConfirmed={isConfirmed}
+                      onConfirm={() => handleToggleConfirm(dottedKey)}
                       error={error}
                       onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
                     />
@@ -420,6 +535,8 @@ export default function PreviewEdit() {
           {(() => {
             const normBmrKey = normalizeFieldKey(BMR_FIELD.key);
             const bmrError = errors[normBmrKey];
+            const isFlagged = flaggedKeys.has(normBmrKey) && !(normBmrKey in corrections);
+            const isConfirmed = confirmedKeys.has(normBmrKey) && !(normBmrKey in corrections);
             return (
               <Row
                 label={BMR_FIELD.label}
@@ -428,6 +545,9 @@ export default function PreviewEdit() {
                 unit={BMR_FIELD.unit}
                 invalid={(showErrors && blank.includes(BMR_FIELD.label)) || Boolean(bmrError)}
                 isUnread={unreadKeys.has(normBmrKey) && draft[BMR_FIELD.key] === null}
+                isFlagged={isFlagged}
+                isConfirmed={isConfirmed}
+                onConfirm={() => handleToggleConfirm(BMR_FIELD.key)}
                 error={bmrError}
                 onChange={(value, unit, err) => updateField(BMR_FIELD.key, value, unit, err)}
               />
@@ -443,6 +563,12 @@ export default function PreviewEdit() {
           {showErrors && crossFieldError && (
             <p role="alert" className="mt-2 text-[11px] text-red-600 font-medium">
               {crossFieldError}
+            </p>
+          )}
+
+          {showErrors && unresolvedFlagged.length > 0 && (
+            <p role="alert" className="mt-2 text-[11px] text-amber-700 font-medium">
+              Building a plan is impossible while a flagged field is unresolved. Please confirm or correct: {unresolvedFlagged.map(getFieldLabel).join(", ")}.
             </p>
           )}
 

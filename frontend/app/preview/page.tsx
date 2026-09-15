@@ -16,7 +16,7 @@ import {
   type InBodyPayload,
   type SampleExtraction,
 } from "@/lib/inbody";
-import { loadJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
@@ -29,6 +29,8 @@ function Row({
   isFlagged = false,
   isUnread = false,
   isCorrected = false,
+  isConfirmed = false,
+  onConfirm,
 }: {
   label: string;
   value: string | number | null;
@@ -36,10 +38,13 @@ function Row({
   isFlagged?: boolean;
   isUnread?: boolean;
   isCorrected?: boolean;
+  isConfirmed?: boolean;
+  onConfirm?: () => void;
 }) {
   let containerBg = "";
   if (isUnread) containerBg = "bg-rose-50 -mx-2 px-2 rounded border border-rose-200";
-  else if (isFlagged && !isCorrected) containerBg = "bg-amber-50 -mx-2 px-2 rounded border border-amber-200";
+  else if (isFlagged && !isCorrected && !isConfirmed) containerBg = "bg-amber-50 -mx-2 px-2 rounded border border-amber-200";
+  else if (isConfirmed && !isCorrected) containerBg = "bg-emerald-50 -mx-2 px-2 rounded border border-emerald-200";
   else if (isCorrected) containerBg = "bg-sky-50 -mx-2 px-2 rounded border border-sky-200";
 
   return (
@@ -51,9 +56,37 @@ function Row({
             Unread
           </span>
         )}
-        {isFlagged && !isCorrected && (
-          <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
-            Flagged Check
+        {isFlagged && !isCorrected && !isConfirmed && (
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
+              Flagged Check
+            </span>
+            {onConfirm && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
+              >
+                Confirm
+              </button>
+            )}
+          </span>
+        )}
+        {isConfirmed && !isCorrected && (
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-emerald-200 px-1 py-0.5 text-[8px] font-bold text-emerald-800">
+              ✓ Confirmed
+            </span>
+            {onConfirm && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
+                title="Undo confirmation"
+              >
+                Undo
+              </button>
+            )}
           </span>
         )}
         {isCorrected && (
@@ -76,6 +109,7 @@ export default function Preview() {
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<Record<string, unknown>>({});
+  const [confirmedFields, setConfirmedFields] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -83,11 +117,13 @@ export default function Preview() {
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const storedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading);
     const storedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const storedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExtraction(loadedExtraction);
     setSampleId(loadedSampleId);
     setCorrections(storedCorrections);
+    setConfirmedFields(new Set(storedConfirmations.map(normalizeFieldKey)));
 
     // Hard refuse on non-InBody documents or zero-read floor cases (ADR-0008 Amendment §3)
     const isHardRefusalCase =
@@ -105,18 +141,66 @@ export default function Preview() {
     }
   }, []);
 
-  const handleConfirm = () => {
-    if (reading && remainingUnread.length === 0) {
-      router.push(confirmReading(reading, corrections as Record<string, number>, extraction?.data));
-    }
-  };
-
-  const isHardRefused =
+  const isNotAnInBodySheet =
     extraction?.error === "not_an_inbody_sheet" ||
-    (extraction?.status === "refused" && extraction?.data == null);
+    (extraction?.message?.toLowerCase().includes("not appear to be an inbody") ?? false);
+
+  const isRefusedSheet =
+    !isNotAnInBodySheet &&
+    (extraction?.status === "refused" ||
+      (reading === null && extraction !== null && extraction?.data == null));
+
+  const nonSheetMessage =
+    extraction?.message ??
+    "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet.";
   const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
   const unreadFromExtraction = new Set((extraction?.unread ?? []).map(normalizeFieldKey));
   const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
+
+  // Determine which flagged fields remain unconfirmed and uncorrected
+  const unresolvedFlagged = Array.from(flaggedFields).filter(
+    (f) => !correctedFields.has(f) && !confirmedFields.has(f),
+  );
+
+  const handleToggleConfirm = (fieldKey: string) => {
+    const norm = normalizeFieldKey(fieldKey);
+    setConfirmedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(norm)) {
+        next.delete(norm);
+      } else {
+        next.add(norm);
+      }
+      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
+      return next;
+    });
+  };
+
+  const handleConfirmAllFlagged = () => {
+    setConfirmedFields((prev) => {
+      const next = new Set(prev);
+      for (const f of flaggedFields) {
+        if (!correctedFields.has(f)) {
+          next.add(f);
+        }
+      }
+      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
+      return next;
+    });
+  };
+
+  const handleConfirm = () => {
+    if (reading && remainingUnread.length === 0 && unresolvedFlagged.length === 0) {
+      router.push(
+        confirmReading(
+          reading,
+          corrections as Record<string, number>,
+          extraction?.data,
+          Array.from(confirmedFields),
+        ),
+      );
+    }
+  };
 
   // Determine which required fields are still missing / unread
   const remainingUnread: string[] = [];
@@ -179,30 +263,66 @@ export default function Preview() {
           </Link>
         </div>
 
-        {/* Hard Refusal State View (non-InBody document only) */}
-        {isHardRefused ? (
-          <div className="mx-[30px] mt-[18px] rounded-[15px] border-2 border-rose-500/50 bg-white p-[25px] text-black">
+        {/* State 1: Not an InBody Sheet State */}
+        {isNotAnInBodySheet ? (
+          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
             <div className="flex items-center gap-2">
-              <span className="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
-                Model Refusal
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
+                Unrecognized document
               </span>
-              <h2 className="text-[14px] font-bold text-rose-900">Sheet Declined (Fail-Closed)</h2>
             </div>
-            <p className="mt-3 text-[12px] leading-relaxed text-zinc-700">
-              {extraction?.message ??
-                "This document was rejected because it is not an InBody sheet."}
+            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">Not an InBody sheet</h2>
+            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
+              {nonSheetMessage}
             </p>
-            <div className="mt-4 rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
-              <p className="font-bold text-zinc-800">Why did this happen?</p>
+            <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
+              <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
               <p className="mt-1">
-                InForm strictly fails closed on non-InBody documents to prevent fabricating clinical metrics (ADR-0008).
+                InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 or 570 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
               </p>
             </div>
             <Link
               href="/upload"
-              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white"
+              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
             >
               ← Choose another sample sheet
+            </Link>
+            <Link
+              href="/upload/capture"
+              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              Take or upload another photo
+            </Link>
+          </div>
+        ) : isRefusedSheet ? (
+          /* State 2: Whole-sheet refusal / engine refuses entirely */
+          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
+                Careful verification
+              </span>
+            </div>
+            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">Unable to read this sheet</h2>
+            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
+              We couldn&apos;t read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence.
+            </p>
+            <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
+              <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
+              <p className="mt-1">
+                Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan.
+              </p>
+            </div>
+            <Link
+              href="/upload"
+              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+            >
+              ← Choose another sample sheet
+            </Link>
+            <Link
+              href="/upload/capture"
+              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              Retake with clearer lighting
             </Link>
           </div>
         ) : reading && reading.segmental_lean ? (
@@ -232,11 +352,28 @@ export default function Preview() {
               )}
 
               {/* Flagged Fields Notice */}
-              {flaggedFields.size > 0 && (
+              {unresolvedFlagged.length > 0 ? (
                 <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-                  <span className="font-bold">Notice:</span> One or more values triggered physiological cross-checks. You can review and edit them below before confirming.
+                  <span className="font-bold">Flagged fields:</span> The model read values that triggered physiological cross-checks for{" "}
+                  <span className="font-semibold">
+                    {unresolvedFlagged.map(getFieldLabel).join(", ")}
+                  </span>
+                  . Compare with your sheet and tap <strong>Confirm</strong> if correct, or <strong>Edit</strong> to correct.
+                  {unresolvedFlagged.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleConfirmAllFlagged}
+                      className="mt-2 block rounded bg-amber-700 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-800"
+                    >
+                      Confirm all flagged values ({unresolvedFlagged.length})
+                    </button>
+                  )}
                 </div>
-              )}
+              ) : flaggedFields.size > 0 ? (
+                <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-[11px] text-emerald-900">
+                  <span className="font-bold">All flagged fields verified:</span> You have confirmed or corrected all flagged values.
+                </div>
+              ) : null}
 
               <h2 className="text-[14px] font-bold">Body Composition</h2>
               <div className="mt-3">
@@ -244,6 +381,7 @@ export default function Preview() {
                   const value = reading[field.key];
                   const isUnread = value == null || unreadFromExtraction.has(field.key);
                   const isCorrected = correctedFields.has(field.key);
+                  const isConfirmed = confirmedFields.has(field.key);
                   const unit = field.key === "visceral_fat_level" ? "level" : field.unit;
 
                   return (
@@ -255,6 +393,8 @@ export default function Preview() {
                       isUnread={isUnread && !isCorrected}
                       isFlagged={flaggedFields.has(field.key)}
                       isCorrected={isCorrected}
+                      isConfirmed={isConfirmed}
+                      onConfirm={() => handleToggleConfirm(field.key)}
                     />
                   );
                 })}
@@ -271,6 +411,7 @@ export default function Preview() {
                       const value = reading.segmental_lean[field.key];
                       const isUnread = value == null || unreadFromExtraction.has(dottedKey);
                       const isCorrected = correctedFields.has(dottedKey);
+                      const isConfirmed = confirmedFields.has(dottedKey);
 
                       return (
                         <Row
@@ -281,6 +422,8 @@ export default function Preview() {
                           isUnread={isUnread && !isCorrected}
                           isFlagged={flaggedFields.has(dottedKey)}
                           isCorrected={isCorrected}
+                          isConfirmed={isConfirmed}
+                          onConfirm={() => handleToggleConfirm(dottedKey)}
                         />
                       );
                     })}
@@ -293,6 +436,7 @@ export default function Preview() {
               {(() => {
                 const isUnread = reading[BMR_FIELD.key] == null || unreadFromExtraction.has(BMR_FIELD.key);
                 const isCorrected = correctedFields.has(BMR_FIELD.key);
+                const isConfirmed = confirmedFields.has(BMR_FIELD.key);
                 return (
                   <Row
                     label={BMR_FIELD.label}
@@ -301,6 +445,8 @@ export default function Preview() {
                     isUnread={isUnread && !isCorrected}
                     isFlagged={flaggedFields.has(BMR_FIELD.key)}
                     isCorrected={isCorrected}
+                    isConfirmed={isConfirmed}
+                    onConfirm={() => handleToggleConfirm(BMR_FIELD.key)}
                   />
                 );
               })()}
@@ -324,7 +470,7 @@ export default function Preview() {
                   : "Edit"}
               </Link>
 
-              {/* Building a plan is impossible while a required field remains unread (ADR-0008) */}
+              {/* Building a plan is impossible while a required field remains unread or flagged field is unresolved */}
               {remainingUnread.length > 0 ? (
                 <div className="mt-2">
                   <button
@@ -339,11 +485,25 @@ export default function Preview() {
                     Building a plan is impossible while required fields remain unread.
                   </p>
                 </div>
+              ) : unresolvedFlagged.length > 0 ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="flex h-[40px] w-full items-center justify-center rounded-lg bg-zinc-200 text-[14px] font-bold text-zinc-400 cursor-not-allowed"
+                  >
+                    Confirm ({unresolvedFlagged.length} flagged {unresolvedFlagged.length === 1 ? "field" : "fields"} to verify)
+                  </button>
+                  <p className="mt-1.5 text-center text-[11px] text-amber-700 font-medium">
+                    Building a plan is impossible while a flagged field is unresolved.
+                  </p>
+                </div>
               ) : (
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
+                  className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6353]"
                 >
                   Confirm
                 </button>
@@ -351,13 +511,13 @@ export default function Preview() {
             </div>
           </>
         ) : (
-          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-center text-zinc-600">
+          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-center text-zinc-600 shadow-sm border border-black/5">
             <p className="text-[13px]">No InBody reading data available.</p>
             <Link
               href="/upload"
-              className="mt-3 inline-block text-[12px] font-bold text-[#117d69]"
+              className="mt-4 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
             >
-              ← Return to Upload
+              ← Return to Gallery
             </Link>
           </div>
         )}

@@ -16,6 +16,8 @@ export const SESSION_KEYS = {
   measured: "inform:measured",
   // Human corrections typed off the sheet or edited (recorded alongside measured fields)
   corrections: "inform:corrections",
+  // Confirmations of unchanged flagged fields (issue #39)
+  confirmations: "inform:confirmations",
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
@@ -57,6 +59,7 @@ export function clearSheet(): void {
     SESSION_KEYS.measured,
     SESSION_KEYS.reading,
     SESSION_KEYS.corrections,
+    SESSION_KEYS.confirmations,
   ]) {
     removeSessionItem(key);
   }

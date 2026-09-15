@@ -115,13 +115,14 @@ def test_typed_value_fills_unread_field_and_proceeds():
     measured = _partial_inbody(lean_body_mass_kg=None)
     assert measured.lean_body_mass_kg is None
 
-    payload, corrected = apply_corrections(
+    payload, corrected, confirmed = apply_corrections(
         measured,
         {"lean_body_mass_kg": CorrectionValue(value=39.0, unit="kg")},
     )
 
     assert payload.lean_body_mass_kg == 39.0
     assert corrected == ["lean_body_mass_kg"]
+    assert confirmed == []
     # Measured object was NOT mutated
     assert measured.lean_body_mass_kg is None
 
@@ -129,14 +130,85 @@ def test_typed_value_fills_unread_field_and_proceeds():
 def test_person_corrects_plainly_wrong_field():
     measured = _partial_inbody(lean_body_mass_kg=7.0)  # misread OCR value
 
-    payload, corrected = apply_corrections(
+    payload, corrected, confirmed = apply_corrections(
         measured,
         {"lean_body_mass_kg": 39.0},
     )
 
     assert payload.lean_body_mass_kg == 39.0
     assert corrected == ["lean_body_mass_kg"]
+    assert confirmed == []
     assert measured.lean_body_mass_kg == 7.0
+
+
+# AC: Confirming an unchanged flagged value lets the plan proceed
+# AC: A confirmed value stays a measured field and does not become a corrected field
+
+
+def test_confirming_unchanged_flagged_value_lets_plan_proceed():
+    # real_270_flagged: weight 84.8, pbf 26.3, lbm 76.0, bmr 1721.0
+    measured = _partial_inbody(
+        weight_kg=84.8,
+        percent_body_fat=26.3,
+        lean_body_mass_kg=76.0,
+        basal_metabolic_rate_kcal=1721.0,
+    )
+    flagged = ["weight_kg", "percent_body_fat", "lean_body_mass_kg", "basal_metabolic_rate_kcal"]
+
+    payload, corrected, confirmed = apply_corrections(
+        measured,
+        confirmations=flagged,
+    )
+
+    # Values stay measured
+    assert payload.lean_body_mass_kg == 76.0
+    assert payload.weight_kg == 84.8
+    # Not recorded as corrected fields
+    assert corrected == []
+    # Recorded as confirmed fields
+    assert sorted(confirmed) == sorted(flagged)
+    # Measured object not mutated
+    assert measured.lean_body_mass_kg == 76.0
+
+
+def test_partially_confirmed_flagged_values_raise_error():
+    """AC: Building a plan is impossible while a flagged field is unresolved."""
+    measured = _partial_inbody(
+        weight_kg=84.8,
+        percent_body_fat=26.3,
+        lean_body_mass_kg=76.0,
+        basal_metabolic_rate_kcal=1721.0,
+    )
+
+    # Only confirm weight_kg; lean_body_mass_kg and percent_body_fat remain unresolved
+    with pytest.raises(CrossCheckFlaggedError) as exc_info:
+        apply_corrections(
+            measured,
+            confirmations=["weight_kg"],
+        )
+
+    assert "lean_body_mass_kg" in exc_info.value.flagged_fields
+    assert "weight_kg" not in exc_info.value.flagged_fields
+
+
+def test_corrected_flagged_field_is_corrected_not_confirmed():
+    """AC: Correcting a flagged value records a corrected field, not confirmed."""
+    measured = _partial_inbody(
+        weight_kg=84.8,
+        percent_body_fat=26.3,
+        lean_body_mass_kg=76.0,
+        basal_metabolic_rate_kcal=1721.0,
+    )
+
+    payload, corrected, confirmed = apply_corrections(
+        measured,
+        corrections={"lean_body_mass_kg": 62.5},
+        confirmations=["lean_body_mass_kg", "weight_kg"],
+    )
+
+    assert payload.lean_body_mass_kg == 62.5
+    assert "lean_body_mass_kg" in corrected
+    assert "lean_body_mass_kg" not in confirmed
 
 
 # AC: Building a plan is impossible while a required field remains unread

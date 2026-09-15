@@ -5,12 +5,13 @@ import type { InBodyPayload, PartialInBody } from "./inbody";
 import type { UserProfile } from "./user";
 import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "./session";
 
-/** Saves the confirmed reading, original measured values, and optional corrections, and returns the next route.
+/** Saves the confirmed reading, original measured values, and optional corrections or confirmations, and returns the next route.
  * Corrected fields are stored alongside measured fields, never merged into them. */
 export function confirmReading(
   reading: InBodyPayload,
   corrections?: Record<string, number | { value: number; unit?: string }>,
   measured?: PartialInBody | null,
+  confirmations?: string[],
 ): string {
   saveJSON(SESSION_KEYS.reading, reading);
   if (measured) {
@@ -20,6 +21,11 @@ export function confirmReading(
     saveJSON(SESSION_KEYS.corrections, corrections);
   } else {
     removeSessionItem(SESSION_KEYS.corrections);
+  }
+  if (confirmations && confirmations.length > 0) {
+    saveJSON(SESSION_KEYS.confirmations, confirmations);
+  } else {
+    removeSessionItem(SESSION_KEYS.confirmations);
   }
   removeSessionItem(SESSION_KEYS.photo);
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";
