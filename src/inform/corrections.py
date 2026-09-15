@@ -9,6 +9,7 @@ units to prevent slipped decimals or wrong units from producing a nonsense plan.
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 
+from inform.extract import _cross_check
 from inform.inbody import (
     REQUIRED_DOTTED_FIELDS,
     InBodyPayload,
@@ -17,48 +18,94 @@ from inform.inbody import (
     SegmentalLean,
 )
 
-# Plausible clinical / physiological ranges for human InBody measurements
+
+class FieldSpec(BaseModel):
+    """Clinical / physiological constraints and metadata for an InBody field."""
+
+    label: str
+    min_value: float
+    max_value: float
+    allowed_units: set[str]
+    is_integer: bool = False
+
+
+# Unified field specifications avoiding data clumps (Refactoring Ch. 3)
+FIELD_SPECS: dict[str, FieldSpec] = {
+    "weight_kg": FieldSpec(
+        label="Weight",
+        min_value=20.0,
+        max_value=300.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "lean_body_mass_kg": FieldSpec(
+        label="Lean Body Mass",
+        min_value=10.0,
+        max_value=250.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "percent_body_fat": FieldSpec(
+        label="Percent Body Fat",
+        min_value=3.0,
+        max_value=75.0,
+        allowed_units={"%", "percent", "pct"},
+    ),
+    "skeletal_muscle_mass_kg": FieldSpec(
+        label="Skeletal Muscle Mass",
+        min_value=5.0,
+        max_value=150.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "basal_metabolic_rate_kcal": FieldSpec(
+        label="Basal Metabolic Rate",
+        min_value=500.0,
+        max_value=5000.0,
+        allowed_units={"kcal", "cal", "calories", "kcal."},
+    ),
+    "visceral_fat_level": FieldSpec(
+        label="Visceral Fat Level",
+        min_value=1.0,
+        max_value=30.0,
+        allowed_units={"level", "lvl", ""},
+        is_integer=True,
+    ),
+    "segmental_lean.left_arm_kg": FieldSpec(
+        label="Left Arm",
+        min_value=0.5,
+        max_value=15.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "segmental_lean.right_arm_kg": FieldSpec(
+        label="Right Arm",
+        min_value=0.5,
+        max_value=15.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "segmental_lean.left_leg_kg": FieldSpec(
+        label="Left Leg",
+        min_value=1.0,
+        max_value=35.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "segmental_lean.right_leg_kg": FieldSpec(
+        label="Right Leg",
+        min_value=1.0,
+        max_value=35.0,
+        allowed_units={"kg", "kg."},
+    ),
+    "segmental_lean.trunk_kg": FieldSpec(
+        label="Trunk",
+        min_value=5.0,
+        max_value=100.0,
+        allowed_units={"kg", "kg."},
+    ),
+}
+
+# Backward-compatibility projections
 FIELD_RANGES: dict[str, tuple[float, float]] = {
-    "weight_kg": (20.0, 300.0),
-    "lean_body_mass_kg": (10.0, 250.0),
-    "percent_body_fat": (3.0, 75.0),
-    "skeletal_muscle_mass_kg": (5.0, 150.0),
-    "basal_metabolic_rate_kcal": (500.0, 5000.0),
-    "visceral_fat_level": (1.0, 30.0),
-    "segmental_lean.left_arm_kg": (0.5, 15.0),
-    "segmental_lean.right_arm_kg": (0.5, 15.0),
-    "segmental_lean.left_leg_kg": (1.0, 35.0),
-    "segmental_lean.right_leg_kg": (1.0, 35.0),
-    "segmental_lean.trunk_kg": (5.0, 100.0),
+    k: (spec.min_value, spec.max_value) for k, spec in FIELD_SPECS.items()
 }
-
-FIELD_UNITS: dict[str, set[str]] = {
-    "weight_kg": {"kg", "kg."},
-    "lean_body_mass_kg": {"kg", "kg."},
-    "percent_body_fat": {"%", "percent", "pct"},
-    "skeletal_muscle_mass_kg": {"kg", "kg."},
-    "basal_metabolic_rate_kcal": {"kcal", "cal", "calories", "kcal."},
-    "visceral_fat_level": {"level", "lvl", ""},
-    "segmental_lean.left_arm_kg": {"kg", "kg."},
-    "segmental_lean.right_arm_kg": {"kg", "kg."},
-    "segmental_lean.left_leg_kg": {"kg", "kg."},
-    "segmental_lean.right_leg_kg": {"kg", "kg."},
-    "segmental_lean.trunk_kg": {"kg", "kg."},
-}
-
-FIELD_LABELS: dict[str, str] = {
-    "weight_kg": "Weight",
-    "lean_body_mass_kg": "Lean Body Mass",
-    "percent_body_fat": "Percent Body Fat",
-    "skeletal_muscle_mass_kg": "Skeletal Muscle Mass",
-    "basal_metabolic_rate_kcal": "Basal Metabolic Rate",
-    "visceral_fat_level": "Visceral Fat Level",
-    "segmental_lean.left_arm_kg": "Left Arm",
-    "segmental_lean.right_arm_kg": "Right Arm",
-    "segmental_lean.left_leg_kg": "Left Leg",
-    "segmental_lean.right_leg_kg": "Right Leg",
-    "segmental_lean.trunk_kg": "Trunk",
-}
+FIELD_UNITS: dict[str, set[str]] = {k: spec.allowed_units for k, spec in FIELD_SPECS.items()}
+FIELD_LABELS: dict[str, str] = {k: spec.label for k, spec in FIELD_SPECS.items()}
 
 
 class CorrectionValue(BaseModel):
@@ -78,6 +125,16 @@ class UnreadFieldsError(ValueError):
         )
 
 
+class CrossCheckFlaggedError(ValueError):
+    """Raised when ADR-0008 §2 cross-check gate fails on the effective reading."""
+
+    def __init__(self, flagged_fields: list[str]):
+        self.flagged_fields = flagged_fields
+        super().__init__(
+            f"Cross-check failed for fields: {', '.join(flagged_fields)}. Please verify or correct these values."
+        )
+
+
 def coerce_correction(val: float | int | CorrectionValue | dict[str, Any]) -> CorrectionValue:
     """Coerce various input shapes to a CorrectionValue."""
     if isinstance(val, CorrectionValue):
@@ -91,32 +148,29 @@ def coerce_correction(val: float | int | CorrectionValue | dict[str, Any]) -> Co
 
 def validate_correction(field: str, correction: CorrectionValue) -> None:
     """Validate a single field's value for plausible range and unit."""
-    label = FIELD_LABELS.get(field, field)
-    if field not in FIELD_RANGES:
+    spec = FIELD_SPECS.get(field)
+    if not spec:
         raise ValueError(f"Unknown field '{field}'")
 
     # Unit validation
     if correction.unit is not None:
         unit_str = correction.unit.strip().lower()
-        allowed_units = FIELD_UNITS[field]
-        if unit_str not in allowed_units:
-            expected = next(iter(allowed_units)) or "none"
+        if unit_str not in spec.allowed_units:
+            expected = next(iter(spec.allowed_units)) or "none"
             raise ValueError(
-                f"Invalid unit '{correction.unit}' for {label} (expected '{expected}')"
+                f"Invalid unit '{correction.unit}' for {spec.label} (expected '{expected}')"
             )
 
     # Range validation
-    min_val, max_val = FIELD_RANGES[field]
-    if not (min_val <= correction.value <= max_val):
-        unit_suffix = f" {next(iter(FIELD_UNITS[field]))}" if next(iter(FIELD_UNITS[field])) else ""
+    if not (spec.min_value <= correction.value <= spec.max_value):
+        unit_suffix = f" {next(iter(spec.allowed_units))}" if next(iter(spec.allowed_units)) else ""
         raise ValueError(
-            f"{label} value {correction.value} is out of plausible range ({min_val} - {max_val}{unit_suffix})"
+            f"{spec.label} value {correction.value} is out of plausible range ({spec.min_value} - {spec.max_value}{unit_suffix})"
         )
 
-    # Integer requirement for visceral fat
-    if field == "visceral_fat_level":
-        if not correction.value.is_integer():
-            raise ValueError("Visceral Fat Level must be an integer")
+    # Integer requirement
+    if spec.is_integer and not correction.value.is_integer():
+        raise ValueError(f"{spec.label} must be an integer")
 
 
 def flatten_corrections(
@@ -137,14 +191,14 @@ def flatten_corrections(
 def apply_corrections(
     measured: PartialInBody,
     corrections: dict[str, float | int | CorrectionValue | dict[str, Any]],
-    source_device: Literal["inbody_270", "inbody_570"] = "inbody_270",
+    source_device: Literal["inbody_270", "inbody_570"] | None = None,
 ) -> tuple[InBodyPayload, list[str]]:
     """Validate and apply human corrections over a measured PartialInBody.
 
     Returns (InBodyPayload, corrected_field_names).
     Does NOT mutate the original measured object.
-    Raises ValueError if any correction is out-of-range or wrong-unit,
-    or if cross-field physiological plausibility fails.
+    Raises ValueError if any correction is out-of-range or wrong-unit.
+    Raises CrossCheckFlaggedError if ADR-0008 §2 cross-check gate fails.
     Raises UnreadFieldsError if any required field is still unread (None).
     """
     flat = flatten_corrections(corrections)
@@ -169,18 +223,16 @@ def apply_corrections(
         else:
             data[field] = val
 
-    if data.get("source_device") is None:
-        data["source_device"] = source_device
+    # Resolve source device: never guess or fabricate (ADR-0008 §1)
+    effective_device = data.get("source_device") or source_device
+    if effective_device is not None:
+        data["source_device"] = effective_device
 
-    # Cross-check physiological plausibility
+    # Physiological boundary check
     weight = data.get("weight_kg")
     lbm = data.get("lean_body_mass_kg")
-    smm = data.get("skeletal_muscle_mass_kg")
-
     if weight is not None and lbm is not None and lbm > weight:
         raise ValueError("Lean Body Mass cannot exceed total Weight")
-    if lbm is not None and smm is not None and smm > lbm:
-        raise ValueError("Skeletal Muscle Mass cannot exceed Lean Body Mass")
 
     # Check for any remaining unread required fields
     remaining_unread: list[str] = []
@@ -194,8 +246,17 @@ def apply_corrections(
             if data.get(dotted) is None:
                 remaining_unread.append(dotted)
 
+    if data.get("source_device") is None:
+        remaining_unread.append("source_device")
+
     if remaining_unread:
-        raise UnreadFieldsError(remaining_unread)
+        raise UnreadFieldsError(sorted(dict.fromkeys(remaining_unread)))
+
+    # ADR-0008 §2: Re-run cross-check gate on the effective reading
+    effective_partial = PartialInBody.model_validate(data)
+    remaining_flags = _cross_check(effective_partial)
+    if remaining_flags:
+        raise CrossCheckFlaggedError(remaining_flags)
 
     # Build validated InBodyPayload
     payload = InBodyPayload.model_validate(data)

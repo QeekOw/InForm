@@ -23,6 +23,10 @@ export type InBodyPayload = {
   visceral_fat_level: number | null;
 };
 
+export type PartialInBody = Partial<Omit<InBodyPayload, "segmental_lean">> & {
+  segmental_lean?: Partial<SegmentalLean> | null;
+};
+
 export type ScalarInBodyField = Exclude<keyof InBodyPayload, "segmental_lean" | "source_device">;
 export type SegmentalLeanField = keyof SegmentalLean;
 

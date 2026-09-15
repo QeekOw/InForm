@@ -8,6 +8,7 @@ import ReportPhoto from "@/components/ReportPhoto";
 import {
   FIELD_CONSTRAINTS,
   normalizeFieldKey,
+  parseAndValidateFieldInput,
   validateFieldValue,
 } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
@@ -28,27 +29,47 @@ import { loadJSON, SESSION_KEYS } from "@/lib/session";
 const imgBack = "/icons/preview/back-arrow.svg";
 const imgCamera = "/icons/preview/camera-icon.svg";
 
-function NumberField({
+function isSegmentField(key: string): key is SegmentalLeanField {
+  return (
+    key === "left_arm_kg" ||
+    key === "right_arm_kg" ||
+    key === "left_leg_kg" ||
+    key === "right_leg_kg" ||
+    key === "trunk_kg"
+  );
+}
+
+function ValueField({
   value,
-  onChange,
+  fieldKey,
   unit,
-  integer = false,
   invalid = false,
+  onFieldChange,
 }: {
   value: number | null;
-  onChange: (v: number | null) => void;
+  fieldKey: string;
   unit: string;
-  integer?: boolean;
   invalid?: boolean;
+  onFieldChange: (val: number | null, unit?: string, error?: string | null) => void;
 }) {
+  const [typedText, setTypedText] = useState<string | null>(null);
+
+  const displayValue = typedText !== null ? typedText : (value != null ? String(value) : "");
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.trim();
-    if (raw === "") {
-      onChange(null);
-      return;
+    const raw = e.target.value;
+    setTypedText(raw);
+    const result = parseAndValidateFieldInput(fieldKey, raw);
+    onFieldChange(result.value, result.unit, result.error);
+  };
+
+  const handleBlur = () => {
+    if (typedText !== null) {
+      const result = parseAndValidateFieldInput(fieldKey, typedText);
+      if (!result.error) {
+        setTypedText(null);
+      }
     }
-    const num = Number(raw);
-    if (!Number.isNaN(num)) onChange(integer ? Math.round(num) : num);
   };
 
   return (
@@ -58,13 +79,13 @@ function NumberField({
       }`}
     >
       <input
-        type="number"
-        step={integer ? "1" : "0.01"}
-        value={value ?? ""}
+        type="text"
+        value={displayValue}
         placeholder="—"
         aria-invalid={invalid}
+        onBlur={handleBlur}
         onChange={handleChange}
-        className="w-16 text-right text-[12px] font-bold outline-none bg-transparent"
+        className="w-20 text-right text-[12px] font-bold outline-none bg-transparent"
       />
       {unit && <span className="text-[8px] font-medium opacity-60">{unit}</span>}
     </span>
@@ -73,19 +94,19 @@ function NumberField({
 
 function Row({
   label,
+  fieldKey,
   value,
   unit,
   onChange,
-  integer = false,
   invalid = false,
   isUnread = false,
   error = null,
 }: {
   label: string;
+  fieldKey: string;
   value: number | null;
   unit: string;
-  onChange: (v: number | null) => void;
-  integer?: boolean;
+  onChange: (v: number | null, unit?: string, error?: string | null) => void;
   invalid?: boolean;
   isUnread?: boolean;
   error?: string | null;
@@ -101,15 +122,15 @@ function Row({
             </span>
           )}
         </span>
-        <NumberField
+        <ValueField
           value={value}
-          onChange={onChange}
+          fieldKey={fieldKey}
           unit={unit}
-          integer={integer}
           invalid={invalid}
+          onFieldChange={onChange}
         />
       </div>
-      {error && <p className="mt-0.5 text-right text-[10px] text-red-600 font-medium">{error}</p>}
+      {error && <p role="alert" className="mt-0.5 text-right text-[10px] font-medium text-red-600">{error}</p>}
     </div>
   );
 }
@@ -118,7 +139,9 @@ export default function PreviewEdit() {
   const router = useRouter();
   const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
   const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [unreadKeys, setUnreadKeys] = useState<Set<string>>(new Set());
+  const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
@@ -126,92 +149,175 @@ export default function PreviewEdit() {
     const storedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading);
     const storedCorrections =
       loadJSON<Record<string, { value: number; unit?: string }>>(SESSION_KEYS.corrections) ?? {};
-    const extraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
+    const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDraft(storedReading ?? DEFAULT_READING);
+    setExtraction(loadedExtraction);
     setCorrections(storedCorrections);
-    if (extraction?.unread) {
-      setUnreadKeys(new Set(extraction.unread.map(normalizeFieldKey)));
+
+    const base: InBodyDraft = storedReading
+      ? {
+          ...storedReading,
+          segmental_lean: { ...storedReading.segmental_lean },
+        }
+      : loadedExtraction?.data
+      ? {
+          ...loadedExtraction.data,
+          segmental_lean: { ...loadedExtraction.data.segmental_lean },
+        }
+      : {
+          ...DEFAULT_READING,
+          segmental_lean: { ...DEFAULT_READING.segmental_lean },
+        };
+
+    // If there are unread fields, ensure they are NOT prefilled with demo/default values
+    // unless a user correction was already stored for that field.
+    if (loadedExtraction?.unread && loadedExtraction.unread.length > 0) {
+      const unreadSet = new Set(loadedExtraction.unread.map(normalizeFieldKey));
+      setUnreadKeys(unreadSet);
+
+      const scalarFields: ScalarInBodyField[] = [
+        "weight_kg",
+        "lean_body_mass_kg",
+        "percent_body_fat",
+        "skeletal_muscle_mass_kg",
+        "visceral_fat_level",
+        "basal_metabolic_rate_kcal",
+      ];
+      for (const field of scalarFields) {
+        if (unreadSet.has(field) && !(field in storedCorrections)) {
+          base[field] = null;
+        }
+      }
+
+      const segmentFields: SegmentalLeanField[] = [
+        "left_arm_kg",
+        "right_arm_kg",
+        "left_leg_kg",
+        "right_leg_kg",
+        "trunk_kg",
+      ];
+      for (const field of segmentFields) {
+        const normKey = normalizeFieldKey(field);
+        if (
+          unreadSet.has(normKey) &&
+          !(normKey in storedCorrections) &&
+          !(field in storedCorrections)
+        ) {
+          if (base.segmental_lean) {
+            base.segmental_lean[field] = null;
+          }
+        }
+      }
     }
+
+    // Apply any previously stored corrections to the base draft
+    for (const [rawKey, corr] of Object.entries(storedCorrections)) {
+      const normKey = normalizeFieldKey(rawKey);
+      const val =
+        typeof corr === "object" && corr !== null && "value" in corr
+          ? corr.value
+          : Number(corr);
+      if (!Number.isNaN(val)) {
+        if (isSegmentField(rawKey)) {
+          if (base.segmental_lean) base.segmental_lean[rawKey] = val;
+        } else if (normKey.startsWith("segmental_lean.")) {
+          const segKey = normKey.replace("segmental_lean.", "") as SegmentalLeanField;
+          if (base.segmental_lean) base.segmental_lean[segKey] = val;
+        } else if (rawKey in base) {
+          (base as Record<string, unknown>)[rawKey] = val;
+        }
+      }
+    }
+
+    setDraft(base);
   }, []);
 
-  const setField = (key: ScalarInBodyField, value: number | null) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  const updateField = (
+    key: string,
+    value: number | null,
+    unit?: string,
+    error?: string | null,
+  ) => {
+    if (isSegmentField(key)) {
+      setDraft((prev) => ({
+        ...prev,
+        segmental_lean: { ...prev.segmental_lean, [key]: value },
+      }));
+    } else {
+      setDraft((prev) => ({ ...prev, [key as ScalarInBodyField]: value }));
+    }
+
     const normKey = normalizeFieldKey(key);
-    const unit = FIELD_CONSTRAINTS[normKey]?.unit;
+    const resolvedUnit = unit ?? FIELD_CONSTRAINTS[normKey]?.unit;
+
+    if (error !== undefined) {
+      setFieldErrors((prev) => ({ ...prev, [normKey]: error }));
+    }
+
     if (value !== null) {
-      setCorrections((prev) => ({ ...prev, [normKey]: { value, unit } }));
+      setCorrections((prev) => ({
+        ...prev,
+        [normKey]: { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) },
+      }));
     } else {
       setCorrections((prev) => {
         const next = { ...prev };
         delete next[normKey];
+        delete next[key];
         return next;
       });
     }
   };
 
-  const setSegment = (key: SegmentalLeanField, value: number | null) => {
-    setDraft((prev) => ({
-      ...prev,
-      segmental_lean: { ...prev.segmental_lean, [key]: value },
-    }));
-    const normKey = normalizeFieldKey(key);
-    const unit = FIELD_CONSTRAINTS[normKey]?.unit;
-    if (value !== null) {
-      setCorrections((prev) => ({ ...prev, [normKey]: { value, unit } }));
-    } else {
-      setCorrections((prev) => {
-        const next = { ...prev };
-        delete next[normKey];
-        return next;
-      });
+  const getFieldError = (normKey: string, value: number | null): string | null => {
+    if (fieldErrors[normKey] !== undefined) {
+      return fieldErrors[normKey];
     }
+    return validateFieldValue(normKey, value);
   };
 
-  // Field validation checks (AC: An out-of-range or wrong-unit value is rejected before the plan is computed)
-  const getFieldError = (key: string, value: number | null): string | null => {
-    if (value === null) return null;
-    return validateFieldValue(key, value);
+  const errors: Record<string, string | null> = {
+    weight_kg: getFieldError("weight_kg", draft.weight_kg),
+    lean_body_mass_kg: getFieldError("lean_body_mass_kg", draft.lean_body_mass_kg),
+    percent_body_fat: getFieldError("percent_body_fat", draft.percent_body_fat),
+    skeletal_muscle_mass_kg: getFieldError("skeletal_muscle_mass_kg", draft.skeletal_muscle_mass_kg),
+    visceral_fat_level: getFieldError("visceral_fat_level", draft.visceral_fat_level),
+    basal_metabolic_rate_kcal: getFieldError("basal_metabolic_rate_kcal", draft.basal_metabolic_rate_kcal),
+    "segmental_lean.left_arm_kg": getFieldError(
+      "segmental_lean.left_arm_kg",
+      draft.segmental_lean?.left_arm_kg ?? null,
+    ),
+    "segmental_lean.right_arm_kg": getFieldError(
+      "segmental_lean.right_arm_kg",
+      draft.segmental_lean?.right_arm_kg ?? null,
+    ),
+    "segmental_lean.left_leg_kg": getFieldError(
+      "segmental_lean.left_leg_kg",
+      draft.segmental_lean?.left_leg_kg ?? null,
+    ),
+    "segmental_lean.right_leg_kg": getFieldError(
+      "segmental_lean.right_leg_kg",
+      draft.segmental_lean?.right_leg_kg ?? null,
+    ),
+    "segmental_lean.trunk_kg": getFieldError(
+      "segmental_lean.trunk_kg",
+      draft.segmental_lean?.trunk_kg ?? null,
+    ),
   };
 
-  const weightError = getFieldError("weight_kg", draft.weight_kg);
-  const lbmError = getFieldError("lean_body_mass_kg", draft.lean_body_mass_kg);
-  const pbfError = getFieldError("percent_body_fat", draft.percent_body_fat);
-  const smmError = getFieldError("skeletal_muscle_mass_kg", draft.skeletal_muscle_mass_kg);
-  const bmrError = getFieldError("basal_metabolic_rate_kcal", draft.basal_metabolic_rate_kcal);
-  const visceralError = getFieldError("visceral_fat_level", draft.visceral_fat_level);
-
-  const segmentErrors: Record<SegmentalLeanField, string | null> = {
-    left_arm_kg: getFieldError("left_arm_kg", draft.segmental_lean.left_arm_kg),
-    right_arm_kg: getFieldError("right_arm_kg", draft.segmental_lean.right_arm_kg),
-    left_leg_kg: getFieldError("left_leg_kg", draft.segmental_lean.left_leg_kg),
-    right_leg_kg: getFieldError("right_leg_kg", draft.segmental_lean.right_leg_kg),
-    trunk_kg: getFieldError("trunk_kg", draft.segmental_lean.trunk_kg),
-  };
-
-  // Cross-field physiological checks
   let crossFieldError: string | null = null;
-  if (draft.weight_kg != null && draft.lean_body_mass_kg != null && draft.lean_body_mass_kg > draft.weight_kg) {
-    crossFieldError = "Lean Body Mass cannot exceed total Weight.";
-  } else if (
+  if (
+    draft.weight_kg != null &&
     draft.lean_body_mass_kg != null &&
-    draft.skeletal_muscle_mass_kg != null &&
-    draft.skeletal_muscle_mass_kg > draft.lean_body_mass_kg
+    draft.lean_body_mass_kg > draft.weight_kg
   ) {
-    crossFieldError = "Skeletal Muscle Mass cannot exceed Lean Body Mass.";
+    crossFieldError = "Lean Body Mass cannot exceed total Weight.";
   }
 
   const blank = blankRequiredFields(draft);
   const hasRangeErrors = Boolean(
-    weightError ||
-      lbmError ||
-      pbfError ||
-      smmError ||
-      bmrError ||
-      visceralError ||
-      Object.values(segmentErrors).some(Boolean) ||
-      crossFieldError,
+    Object.values(errors).some(Boolean) || crossFieldError,
   );
 
   const handleConfirm = () => {
@@ -222,7 +328,7 @@ export default function PreviewEdit() {
 
     // Every required field is filled and valid.
     // Store corrections alongside measured fields (never merged into them)
-    router.push(confirmReading(draft as InBodyPayload, corrections));
+    router.push(confirmReading(draft as InBodyPayload, corrections, extraction?.data));
   };
 
   return (
@@ -263,30 +369,19 @@ export default function PreviewEdit() {
           <div className="mt-3">
             {BODY_COMPOSITION_FIELDS.map((field) => {
               const normKey = normalizeFieldKey(field.key);
-              const error =
-                field.key === "weight_kg"
-                  ? weightError
-                  : field.key === "lean_body_mass_kg"
-                  ? lbmError
-                  : field.key === "percent_body_fat"
-                  ? pbfError
-                  : field.key === "skeletal_muscle_mass_kg"
-                  ? smmError
-                  : field.key === "visceral_fat_level"
-                  ? visceralError
-                  : null;
+              const error = errors[normKey];
 
               return (
                 <Row
                   key={field.key}
                   label={field.label}
+                  fieldKey={field.key}
                   value={draft[field.key]}
                   unit={field.key === "visceral_fat_level" ? "level" : field.unit}
-                  integer={field.integer}
                   invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
                   isUnread={unreadKeys.has(normKey) && draft[field.key] === null}
-                  error={showErrors ? error : null}
-                  onChange={(value) => setField(field.key, value)}
+                  error={error}
+                  onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
                 />
               );
             })}
@@ -300,18 +395,19 @@ export default function PreviewEdit() {
               <div key={column[0].key}>
                 {column.map((field) => {
                   const normKey = normalizeFieldKey(field.key);
-                  const error = segmentErrors[field.key];
+                  const error = errors[normKey];
 
                   return (
                     <Row
                       key={field.key}
                       label={field.label}
+                      fieldKey={field.key}
                       value={draft.segmental_lean[field.key]}
                       unit={field.unit}
                       invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
                       isUnread={unreadKeys.has(normKey) && draft.segmental_lean[field.key] === null}
-                      error={showErrors ? error : null}
-                      onChange={(value) => setSegment(field.key, value)}
+                      error={error}
+                      onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
                     />
                   );
                 })}
@@ -321,15 +417,22 @@ export default function PreviewEdit() {
 
           <div className="my-4 h-px bg-black/10" />
 
-          <Row
-            label={BMR_FIELD.label}
-            value={draft[BMR_FIELD.key]}
-            unit={BMR_FIELD.unit}
-            invalid={(showErrors && blank.includes(BMR_FIELD.label)) || Boolean(bmrError)}
-            isUnread={unreadKeys.has(BMR_FIELD.key) && draft[BMR_FIELD.key] === null}
-            error={showErrors ? bmrError : null}
-            onChange={(value) => setField(BMR_FIELD.key, value)}
-          />
+          {(() => {
+            const normBmrKey = normalizeFieldKey(BMR_FIELD.key);
+            const bmrError = errors[normBmrKey];
+            return (
+              <Row
+                label={BMR_FIELD.label}
+                fieldKey={BMR_FIELD.key}
+                value={draft[BMR_FIELD.key]}
+                unit={BMR_FIELD.unit}
+                invalid={(showErrors && blank.includes(BMR_FIELD.label)) || Boolean(bmrError)}
+                isUnread={unreadKeys.has(normBmrKey) && draft[BMR_FIELD.key] === null}
+                error={bmrError}
+                onChange={(value, unit, err) => updateField(BMR_FIELD.key, value, unit, err)}
+              />
+            );
+          })()}
 
           {showErrors && blank.length > 0 && (
             <p role="alert" className="mt-4 text-[11px] text-red-600 font-medium">

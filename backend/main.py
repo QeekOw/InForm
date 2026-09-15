@@ -14,7 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
-from inform.corrections import UnreadFieldsError, apply_corrections
+from inform.corrections import (
+    CrossCheckFlaggedError,
+    UnreadFieldsError,
+    apply_corrections,
+)
 from inform.exercise import ExercisePlan
 from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
@@ -139,44 +143,72 @@ def get_llm_client() -> OpenAIClientProtocol | None:
     return None
 
 
-def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, list[str]]:
+def _apply_plan_corrections(
+    base: PartialInBody,
+    corrections: dict[str, Any] | None,
+    source_device: Literal["inbody_270", "inbody_570"] | None = None,
+) -> tuple[InBodyPayload, list[str]]:
+    """Deduplicated helper to validate and apply corrections, mapping domain exceptions to HTTP responses."""
+    try:
+        return apply_corrections(
+            base,
+            corrections or {},
+            source_device=source_device,
+        )
+    except UnreadFieldsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Building a plan is impossible while a required field remains unread.",
+                "unread": exc.unread_fields,
+            },
+        )
+    except CrossCheckFlaggedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
+                "unread": [],
+                "flagged": exc.flagged_fields,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody, list[str]]:
+    """Resolve reading source into (effective_payload, base_measured, corrected_field_keys)."""
     if request.sample_id is not None:
         extraction = load_extractions().extractions.get(request.sample_id)
         if extraction is None:
             raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
 
-        if request.corrections:
-            base_data = extraction.data or PartialInBody()
-            source_device = base_data.source_device or "inbody_270"
-            try:
-                payload, corrected = apply_corrections(
-                    base_data,
-                    request.corrections,
-                    source_device=source_device,
-                )
-                return payload, corrected
-            except UnreadFieldsError as exc:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "message": "Building a plan is impossible while a required field remains unread.",
-                        "unread": exc.unread_fields,
-                    },
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc))
+        # ADR-0008 Amendment §3: The zero-read floor case (data is None) or non-sheet is a hard refusal.
+        # Partial extraction only applies once some real data is read.
+        if extraction.data is None or extraction.status == "refused":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
+                    "unread": extraction.unread,
+                    "flagged": extraction.flagged,
+                },
+            )
 
-        # A refused read carries no data; as_payload refuses an unread or flagged one.
+        base_measured = extraction.data
+        if request.corrections:
+            payload, corrected = _apply_plan_corrections(
+                base_measured, request.corrections, source_device=base_measured.source_device
+            )
+            return payload, base_measured, corrected
+
+        # A complete read with no flags
         inbody = (
             InBodyExtraction(
                 data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
             ).as_payload()
-            if extraction.data is not None
-            else None
         )
         if inbody is None:
-            # Fail-closed (ADR-0008): an unread, flagged or refused read never
-            # becomes a plan without a person acting on it.
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -185,40 +217,23 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, list[str]]:
                     "flagged": extraction.flagged,
                 },
             )
-        return inbody, []
+        return inbody, base_measured, []
 
     if request.measured is not None:
-        corrections = request.corrections or {}
-        try:
-            payload, corrected = apply_corrections(
-                request.measured,
-                corrections,
-                source_device=request.measured.source_device or "inbody_270",
-            )
-            return payload, corrected
-        except UnreadFieldsError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "Building a plan is impossible while a required field remains unread.",
-                    "unread": exc.unread_fields,
-                },
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+        base_measured = request.measured
+        payload, corrected = _apply_plan_corrections(
+            base_measured, request.corrections, source_device=base_measured.source_device
+        )
+        return payload, base_measured, corrected
 
     if request.inbody is not None:
+        base_measured = PartialInBody(**request.inbody.model_dump())
         if request.corrections:
-            try:
-                payload, corrected = apply_corrections(
-                    PartialInBody(**request.inbody.model_dump()),
-                    request.corrections,
-                    source_device=request.inbody.source_device,
-                )
-                return payload, corrected
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc))
-        return request.inbody, []
+            payload, corrected = _apply_plan_corrections(
+                base_measured, request.corrections, source_device=request.inbody.source_device
+            )
+            return payload, base_measured, corrected
+        return request.inbody, base_measured, []
 
     raise HTTPException(status_code=422, detail="No reading source provided")
 
@@ -235,6 +250,7 @@ class PlanResponse(BaseModel):
     # mutated a number) and returned the plain deterministic plan instead.
     narrative_source: Literal["generated", "fallback"]
     # Recorded alongside measured fields, never merged into them
+    measured: PartialInBody | None = None
     corrected_fields: list[str] = Field(default_factory=list)
 
 
@@ -254,7 +270,7 @@ def plan(
     synthesis is used for POC / development testing with consented or synthetic
     data only. Real patient health data must never be sent to external cloud APIs.
     """
-    inbody, corrected_fields = _inbody_for_plan(request)
+    inbody, base_measured, corrected_fields = _inbody_for_plan(request)
     nutrition = compute_targets(request.user, inbody)
     exercises = recommend_exercises(request.user, inbody, DEFAULT_EXERCISE_POOL)
     master = MasterPayload(
@@ -269,5 +285,6 @@ def plan(
         exercises=exercises,
         narrative_text=daily_plan.narrative_text,
         narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
+        measured=base_measured,
         corrected_fields=corrected_fields,
     )

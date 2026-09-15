@@ -1,6 +1,8 @@
 import pytest
 from inform.corrections import (
+    FIELD_SPECS,
     CorrectionValue,
+    CrossCheckFlaggedError,
     UnreadFieldsError,
     apply_corrections,
     validate_correction,
@@ -115,10 +117,10 @@ def test_typed_value_fills_unread_field_and_proceeds():
 
     payload, corrected = apply_corrections(
         measured,
-        {"lean_body_mass_kg": CorrectionValue(value=42.0, unit="kg")},
+        {"lean_body_mass_kg": CorrectionValue(value=39.0, unit="kg")},
     )
 
-    assert payload.lean_body_mass_kg == 42.0
+    assert payload.lean_body_mass_kg == 39.0
     assert corrected == ["lean_body_mass_kg"]
     # Measured object was NOT mutated
     assert measured.lean_body_mass_kg is None
@@ -129,10 +131,10 @@ def test_person_corrects_plainly_wrong_field():
 
     payload, corrected = apply_corrections(
         measured,
-        {"lean_body_mass_kg": 45.0},
+        {"lean_body_mass_kg": 39.0},
     )
 
-    assert payload.lean_body_mass_kg == 45.0
+    assert payload.lean_body_mass_kg == 39.0
     assert corrected == ["lean_body_mass_kg"]
     assert measured.lean_body_mass_kg == 7.0
 
@@ -158,3 +160,36 @@ def test_lbm_exceeding_weight_rejected():
     measured = _partial_inbody(weight_kg=60.0)
     with pytest.raises(ValueError, match="Lean Body Mass cannot exceed total Weight"):
         apply_corrections(measured, {"lean_body_mass_kg": 65.0})
+
+
+def test_missing_source_device_is_unread_not_fabricated():
+    """ADR-0008 §1: Never fabricate a missing device type."""
+    measured = _partial_inbody(source_device=None)
+    with pytest.raises(UnreadFieldsError) as exc_info:
+        apply_corrections(measured, {"lean_body_mass_kg": 39.0})
+    assert "source_device" in exc_info.value.unread_fields
+
+
+def test_unresolved_cross_check_flags_raise_error():
+    """ADR-0008 §2: Flagged reads cannot proceed until cross-check is satisfied."""
+    # real_270_flagged: weight 84.8, pbf 26.3 -> expected LBM ~62.5kg. But LBM was 76.0kg.
+    # Correcting only visceral fat leaves the severe LBM/PBF inconsistency intact.
+    measured = _partial_inbody(
+        weight_kg=84.8,
+        percent_body_fat=26.3,
+        lean_body_mass_kg=76.0,
+        basal_metabolic_rate_kcal=1721.0,
+    )
+    with pytest.raises(CrossCheckFlaggedError) as exc_info:
+        apply_corrections(measured, {"visceral_fat_level": 5})
+    assert "lean_body_mass_kg" in exc_info.value.flagged_fields
+
+
+def test_field_specs_bundle_constraints():
+    """Data Clumps fix: verify FIELD_SPECS bundles label, range, units."""
+    assert "weight_kg" in FIELD_SPECS
+    spec = FIELD_SPECS["weight_kg"]
+    assert spec.label == "Weight"
+    assert spec.min_value == 20.0
+    assert spec.max_value == 300.0
+    assert "kg" in spec.allowed_units

@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import app, get_llm_client
 from inform.master import DailyPlan
+from inform.samples import load_extractions
 
 client = TestClient(app)
 
@@ -210,7 +211,28 @@ def test_wrong_unit_correction_returns_422(use_llm):
 def test_plan_fails_when_required_field_remains_unread(use_llm):
     """AC: Building a plan is impossible while a required field remains unread."""
     use_llm(_llm_raising())
-    # refused_non_sheet has all required fields unread. Correcting only weight leaves the rest unread.
+    partial_measured = {
+        "weight_kg": 70.0,
+        "percent_body_fat": 20.0,
+        "source_device": "inbody_270",
+    }
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "measured": partial_measured,
+            "corrections": {"skeletal_muscle_mass_kg": 30.0},
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "lean_body_mass_kg" in detail["unread"]
+
+
+def test_refused_sample_with_corrections_is_hard_refused(use_llm):
+    """ADR-0008 Amendment §3: Non-InBody refusal sheet cannot be planned around."""
+    use_llm(_llm_raising())
     response = client.post(
         "/plan",
         json={
@@ -219,8 +241,45 @@ def test_plan_fails_when_required_field_remains_unread(use_llm):
             "corrections": {"weight_kg": 70.0},
         },
     )
+    assert response.status_code == 409
+    assert "refused" in response.json()["detail"]["message"].lower()
 
+
+def test_plan_with_measured_and_corrections_proceeds(use_llm):
+    """AC: A typed value lets the plan proceed; measured is returned unmerged alongside corrected_fields."""
+    use_llm(_llm_raising())
+    clean_sample = load_extractions().extractions["synthetic_270_clean"]
+    measured_data = clean_sample.data.model_dump()
+    measured_data["lean_body_mass_kg"] = None  # simulate unread LBM
+
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "measured": measured_data,
+            "corrections": {"lean_body_mass_kg": 39.0},
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["corrected_fields"] == ["lean_body_mass_kg"]
+    assert data["measured"]["weight_kg"] == 56.7
+    assert data["measured"]["lean_body_mass_kg"] is None  # unmerged!
+
+
+def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
+    """ADR-0008 §2: Unresolved cross-check violations are rejected with 409."""
+    use_llm(_llm_raising())
+    # real_270_flagged has mismatched LBM. Correcting only visceral fat leaves it flagged.
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_flagged",
+            "corrections": {"visceral_fat_level": 8},
+        },
+    )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "lean_body_mass_kg" in detail["unread"]
+    assert "lean_body_mass_kg" in detail["flagged"]
 

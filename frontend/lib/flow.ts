@@ -1,19 +1,25 @@
 // Where the intake flow goes next. Guests start at upload without a Profile,
 // so they fill it in after confirming a reading instead of before.
 
-import type { InBodyPayload } from "./inbody";
+import type { InBodyPayload, PartialInBody } from "./inbody";
 import type { UserProfile } from "./user";
 import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "./session";
 
-/** Saves the confirmed reading and optional corrections, and returns the next route. The uploaded photo
- * is dropped here: ADR-0011 §3 keeps it only until the reading is confirmed. */
+/** Saves the confirmed reading, original measured values, and optional corrections, and returns the next route.
+ * Corrected fields are stored alongside measured fields, never merged into them. */
 export function confirmReading(
   reading: InBodyPayload,
   corrections?: Record<string, number | { value: number; unit?: string }>,
+  measured?: PartialInBody | null,
 ): string {
   saveJSON(SESSION_KEYS.reading, reading);
+  if (measured) {
+    saveJSON(SESSION_KEYS.measured, measured);
+  }
   if (corrections && Object.keys(corrections).length > 0) {
     saveJSON(SESSION_KEYS.corrections, corrections);
+  } else {
+    removeSessionItem(SESSION_KEYS.corrections);
   }
   removeSessionItem(SESSION_KEYS.photo);
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";

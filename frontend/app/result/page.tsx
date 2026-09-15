@@ -12,6 +12,7 @@ import {
   isCleanRead,
   READING_ROWS,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
 import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
@@ -45,6 +46,7 @@ type PlanResponse = {
   narrative_text: string;
   narrative_source: "generated" | "fallback";
   corrected_fields?: string[];
+  measured?: PartialInBody | null;
 };
 
 const NARRATIVE_SOURCES: Record<PlanResponse["narrative_source"], { label: string; note: string }> = {
@@ -130,6 +132,8 @@ export default function Result() {
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const loadedMeasured =
+      loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
@@ -152,17 +156,23 @@ export default function Result() {
 
     const requestBody = plannedFromSample
       ? { user: loadedProfile, sample_id: loadedSampleId }
-      : loadedSampleId
+      : loadedMeasured
         ? {
             user: loadedProfile,
-            sample_id: loadedSampleId,
+            measured: loadedMeasured,
             ...(hasCorrections ? { corrections: loadedCorrections } : {}),
           }
-        : {
-            user: loadedProfile,
-            inbody: loadedReading,
-            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-          };
+        : loadedSampleId
+          ? {
+              user: loadedProfile,
+              sample_id: loadedSampleId,
+              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            }
+          : {
+              user: loadedProfile,
+              inbody: loadedReading,
+              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            };
 
     fetch(`${API_URL}/plan`, {
       method: "POST",
@@ -282,7 +292,7 @@ export default function Result() {
                       <dt className="flex items-center gap-1.5">
                         <span className="opacity-70">{row.label}</span>
                         {isHumanSupplied && (
-                          <span className="rounded bg-sky-100 px-1 py-0.5 text-[8px] font-bold text-sky-800">
+                          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
                             Human-supplied
                           </span>
                         )}

@@ -89,31 +89,17 @@ export default function Preview() {
     setSampleId(loadedSampleId);
     setCorrections(storedCorrections);
 
-    // Hard refuse ONLY on non-InBody documents (ADR-0008)
-    if (loadedExtraction?.error === "not_an_inbody_sheet") {
+    // Hard refuse on non-InBody documents or zero-read floor cases (ADR-0008 Amendment §3)
+    const isHardRefusalCase =
+      loadedExtraction?.error === "not_an_inbody_sheet" ||
+      (loadedExtraction?.status === "refused" && loadedExtraction?.data == null);
+
+    if (isHardRefusalCase) {
       setReading(null);
     } else if (storedReading) {
       setReading(storedReading);
     } else if (loadedExtraction?.data) {
       setReading(loadedExtraction.data);
-    } else if (loadedExtraction?.status === "refused") {
-      // Unread fields shouldn't fail the whole read; initialize empty slots for human entry
-      setReading({
-        weight_kg: null as unknown as number,
-        lean_body_mass_kg: null as unknown as number,
-        percent_body_fat: null as unknown as number,
-        skeletal_muscle_mass_kg: null as unknown as number,
-        basal_metabolic_rate_kcal: null as unknown as number,
-        visceral_fat_level: null,
-        source_device: (loadedExtraction.data as unknown as InBodyPayload)?.source_device ?? "inbody_270",
-        segmental_lean: {
-          left_arm_kg: null as unknown as number,
-          right_arm_kg: null as unknown as number,
-          left_leg_kg: null as unknown as number,
-          right_leg_kg: null as unknown as number,
-          trunk_kg: null as unknown as number,
-        },
-      });
     } else {
       setReading(DEFAULT_READING);
     }
@@ -121,11 +107,13 @@ export default function Preview() {
 
   const handleConfirm = () => {
     if (reading && remainingUnread.length === 0) {
-      router.push(confirmReading(reading, corrections as Record<string, number>));
+      router.push(confirmReading(reading, corrections as Record<string, number>, extraction?.data));
     }
   };
 
-  const isHardRefused = extraction?.error === "not_an_inbody_sheet";
+  const isHardRefused =
+    extraction?.error === "not_an_inbody_sheet" ||
+    (extraction?.status === "refused" && extraction?.data == null);
   const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
   const unreadFromExtraction = new Set((extraction?.unread ?? []).map(normalizeFieldKey));
   const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
