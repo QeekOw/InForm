@@ -78,8 +78,8 @@ the sheet contradicts it, and it was the whole of v5's silent error on the real 
 
 **`extract_inbody` now flags an arm read to one decimal when either leg on the same read carries
 two.** The legs are the evidence of how precisely the sheet prints. A sheet that prints every limb
-to one decimal, which today means every synthetic sheet, never trips it, and nothing about the
-device has to be known or guessed. Unlike the LBM and BMR checks, this one can name the suspect
+to one decimal never trips it, and nothing about the device has to be known or guessed. (That was
+every synthetic sheet until ADR-0007's 2026-09-15 amendment gave the 270 two-decimal limbs.) Unlike the LBM and BMR checks, this one can name the suspect
 field, so only that arm is flagged. It changes no value: the arm is a real read a person is asked
 to compare against the sheet.
 

@@ -72,6 +72,42 @@ Ground-truth invariants (LBM = weight·(1−PBF/100), Katch-McArdle BMR, segment
 asymmetry) are unchanged — only the visual surround and the coherent distractors are new. The
 `InBodyPayload` contract is untouched.
 
+## Amendment (2026-09-15): the 270 prints limbs to two decimals
+
+A real 270 prints arm and leg lean mass to two decimals. Every synthetic sheet printed one, and
+every checkpoint trained on them sometimes returns a real arm with its last digit cut off (#59,
+ADR-0008's 2026-09-13 amendment). From this commit the 270 generates, prints and labels its four
+limbs to two decimals. Trunk stays at one, as on a real sheet. The 570 keeps one decimal: the
+hold-out has no real 570, so nothing says what it prints.
+
+**The label spells a limb the way the sheet prints it.** `model_dump_json` writes an arm printed
+`3.40` as `3.4`, and a three-character arm target is the habit being removed. So
+`synthetic.label_json` writes the four limbs to the device's decimals, and `generate_dataset`
+writes that file. JSON parses `3.40` as `3.4`, so the payload, the scorer and everything else that
+reads a label are unchanged. It lives in the generator module so `generator_fingerprint()` covers
+it.
+
+What moved, checked against the previous commit over seeds 0-299:
+
+- **570:** payload, filled template and label identical on 300/300.
+- **270:** every scalar identical on 300/300, and each limb within 0.05 of its old value. Trunk
+  still absorbs the rounding remainder and moved by more than 0.1 on 21/300. At one decimal it
+  cannot take up a two-decimal limb total, so the segments now sum to LBM within 0.05 kg rather
+  than exactly (171/300 are off by a few hundredths). A real 270's segments do not sum to LBM at
+  all, so this loosens a synthetic nicety, not a property of real sheets.
+
+Two things this knowingly leaves open.
+
+**Legs of 10 kg or more.** 141 of 300 generated 270 sheets carry one, printed `##.##`. Every real
+leg in the hold-out is under 10 kg, so whether a real 270 prints `10.46` or `10.5` is unobserved.
+Two decimals throughout is the simpler rule. If a real sheet shows otherwise, `_LIMB_DECIMALS` is
+the line to change.
+
+**ADR-0008's arm check now fires on correct synthetic reads.** An arm ending in zero parses back
+with one decimal, and beside a two-decimal leg the check flags it. Up to 35 of 300 generated 270
+sheets have such an arm. Synthetic 270 whole-sheet accuracy on sets from this commit loses that
+much for a reason unrelated to the model, and is not comparable with earlier sets.
+
 ## Amendment (2026-09-11) — the 270 fat-figure fix also changed the 570
 
 Found while preparing the v5 regeneration, by byte-comparing freshly rendered 570s against
