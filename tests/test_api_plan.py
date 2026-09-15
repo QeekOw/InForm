@@ -154,3 +154,73 @@ def test_unknown_sample_returns_404(use_llm):
     response = client.post("/plan", json={"user": PROFILE, "sample_id": "nonexistent_id"})
 
     assert response.status_code == 404
+
+
+def test_corrections_allow_flagged_or_unread_sample_to_proceed(use_llm):
+    """AC: A typed value lets the plan proceed; corrected fields are recorded alongside measured fields."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_flagged",
+            "corrections": {"lean_body_mass_kg": 62.5},
+        },
+    )
+
+    assert response.status_code == 200
+    plan = response.json()
+    assert plan["corrected_fields"] == ["lean_body_mass_kg"]
+    # BMR recomputed on the corrected LBM: 370 + 21.6 * 62.5 = 1720.0
+    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1720.0)
+
+
+def test_out_of_range_correction_returns_422(use_llm):
+    """AC: An out-of-range value is rejected before the plan is computed."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_flagged",
+            "corrections": {"lean_body_mass_kg": 500.0},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "out of plausible range" in response.text
+
+
+def test_wrong_unit_correction_returns_422(use_llm):
+    """AC: A wrong-unit value is rejected before the plan is computed."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_flagged",
+            "corrections": {"lean_body_mass_kg": {"value": 62.5, "unit": "lbs"}},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Invalid unit 'lbs'" in response.text
+
+
+def test_plan_fails_when_required_field_remains_unread(use_llm):
+    """AC: Building a plan is impossible while a required field remains unread."""
+    use_llm(_llm_raising())
+    # refused_non_sheet has all required fields unread. Correcting only weight leaves the rest unread.
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "refused_non_sheet",
+            "corrections": {"weight_kg": 70.0},
+        },
+    )
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert "lean_body_mass_kg" in detail["unread"]
+

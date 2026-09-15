@@ -7,17 +7,18 @@ from pathlib import Path
 # allows direct importing without requiring a full editable package installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
+from inform.corrections import UnreadFieldsError, apply_corrections
 from inform.exercise import ExercisePlan
 from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
-from inform.inbody import InBodyExtraction, InBodyPayload
+from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
@@ -114,15 +115,20 @@ def get_sample_image(sample_id: str):
 
 class PlanRequest(BaseModel):
     user: UserProfile
-    # Exactly one: a Sample sheet whose stored read the server plans from, or
-    # a reading the caller supplies (the edit screen, until the correction flow).
+    # A Sample sheet whose stored read the server plans from, with optional human corrections
     sample_id: str | None = None
+    # An explicit measured read with optional human corrections
+    measured: PartialInBody | None = None
+    # Corrections typed by a person (recorded alongside measured fields, never merged into them)
+    corrections: dict[str, Any] | None = None
+    # Direct InBody reading (retained for backward compatibility)
     inbody: InBodyPayload | None = None
 
     @model_validator(mode="after")
-    def _one_reading_source(self) -> "PlanRequest":
-        if (self.sample_id is None) == (self.inbody is None):
-            raise ValueError("Provide exactly one of sample_id or inbody")
+    def _validate_source(self) -> "PlanRequest":
+        sources = [s is not None for s in (self.sample_id, self.measured, self.inbody)]
+        if sum(sources) != 1:
+            raise ValueError("Provide exactly one reading source (sample_id, measured, or inbody)")
         return self
 
 
@@ -133,32 +139,88 @@ def get_llm_client() -> OpenAIClientProtocol | None:
     return None
 
 
-def _inbody_for_plan(request: PlanRequest) -> InBodyPayload:
-    if request.inbody is not None:
-        return request.inbody
-    extraction = load_extractions().extractions.get(request.sample_id)
-    if extraction is None:
-        raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
-    # A refused read carries no data; as_payload refuses an unread or flagged one.
-    inbody = (
-        InBodyExtraction(
-            data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
-        ).as_payload()
-        if extraction.data is not None
-        else None
-    )
-    if inbody is None:
-        # Fail-closed (ADR-0008): an unread, flagged or refused read never
-        # becomes a plan without a person acting on it.
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
-                "unread": extraction.unread,
-                "flagged": extraction.flagged,
-            },
+def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, list[str]]:
+    if request.sample_id is not None:
+        extraction = load_extractions().extractions.get(request.sample_id)
+        if extraction is None:
+            raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
+
+        if request.corrections:
+            base_data = extraction.data or PartialInBody()
+            source_device = base_data.source_device or "inbody_270"
+            try:
+                payload, corrected = apply_corrections(
+                    base_data,
+                    request.corrections,
+                    source_device=source_device,
+                )
+                return payload, corrected
+            except UnreadFieldsError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "Building a plan is impossible while a required field remains unread.",
+                        "unread": exc.unread_fields,
+                    },
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+
+        # A refused read carries no data; as_payload refuses an unread or flagged one.
+        inbody = (
+            InBodyExtraction(
+                data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
+            ).as_payload()
+            if extraction.data is not None
+            else None
         )
-    return inbody
+        if inbody is None:
+            # Fail-closed (ADR-0008): an unread, flagged or refused read never
+            # becomes a plan without a person acting on it.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
+                    "unread": extraction.unread,
+                    "flagged": extraction.flagged,
+                },
+            )
+        return inbody, []
+
+    if request.measured is not None:
+        corrections = request.corrections or {}
+        try:
+            payload, corrected = apply_corrections(
+                request.measured,
+                corrections,
+                source_device=request.measured.source_device or "inbody_270",
+            )
+            return payload, corrected
+        except UnreadFieldsError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Building a plan is impossible while a required field remains unread.",
+                    "unread": exc.unread_fields,
+                },
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    if request.inbody is not None:
+        if request.corrections:
+            try:
+                payload, corrected = apply_corrections(
+                    PartialInBody(**request.inbody.model_dump()),
+                    request.corrections,
+                    source_device=request.inbody.source_device,
+                )
+                return payload, corrected
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+        return request.inbody, []
+
+    raise HTTPException(status_code=422, detail="No reading source provided")
 
 
 class PlanResponse(BaseModel):
@@ -172,6 +234,8 @@ class PlanResponse(BaseModel):
     # "fallback" when Module 4 dropped the LLM's text (unavailable, or it
     # mutated a number) and returned the plain deterministic plan instead.
     narrative_source: Literal["generated", "fallback"]
+    # Recorded alongside measured fields, never merged into them
+    corrected_fields: list[str] = Field(default_factory=list)
 
 
 @app.post("/plan")
@@ -190,7 +254,7 @@ def plan(
     synthesis is used for POC / development testing with consented or synthetic
     data only. Real patient health data must never be sent to external cloud APIs.
     """
-    inbody = _inbody_for_plan(request)
+    inbody, corrected_fields = _inbody_for_plan(request)
     nutrition = compute_targets(request.user, inbody)
     exercises = recommend_exercises(request.user, inbody, DEFAULT_EXERCISE_POOL)
     master = MasterPayload(
@@ -205,4 +269,5 @@ def plan(
         exercises=exercises,
         narrative_text=daily_plan.narrative_text,
         narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
+        corrected_fields=corrected_fields,
     )

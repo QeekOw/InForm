@@ -5,10 +5,16 @@ import type { InBodyPayload } from "./inbody";
 import type { UserProfile } from "./user";
 import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "./session";
 
-/** Saves the confirmed reading and returns the next route. The uploaded photo
+/** Saves the confirmed reading and optional corrections, and returns the next route. The uploaded photo
  * is dropped here: ADR-0011 §3 keeps it only until the reading is confirmed. */
-export function confirmReading(reading: InBodyPayload): string {
+export function confirmReading(
+  reading: InBodyPayload,
+  corrections?: Record<string, number | { value: number; unit?: string }>,
+): string {
   saveJSON(SESSION_KEYS.reading, reading);
+  if (corrections && Object.keys(corrections).length > 0) {
+    saveJSON(SESSION_KEYS.corrections, corrections);
+  }
   removeSessionItem(SESSION_KEYS.photo);
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";
   saveJSON(SESSION_KEYS.nextAfterProfile, "/result");

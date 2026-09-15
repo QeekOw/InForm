@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import { API_URL } from "@/lib/config";
+import { getFieldLabel, normalizeFieldKey } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
 import {
   BMR_FIELD,
@@ -26,23 +27,38 @@ function Row({
   value,
   unit,
   isFlagged = false,
+  isUnread = false,
+  isCorrected = false,
 }: {
   label: string;
   value: string | number | null;
   unit: string;
   isFlagged?: boolean;
+  isUnread?: boolean;
+  isCorrected?: boolean;
 }) {
+  let containerBg = "";
+  if (isUnread) containerBg = "bg-rose-50 -mx-2 px-2 rounded border border-rose-200";
+  else if (isFlagged && !isCorrected) containerBg = "bg-amber-50 -mx-2 px-2 rounded border border-amber-200";
+  else if (isCorrected) containerBg = "bg-sky-50 -mx-2 px-2 rounded border border-sky-200";
+
   return (
-    <div
-      className={`flex items-baseline justify-between py-1 text-[12px] ${
-        isFlagged ? "bg-amber-50 -mx-2 px-2 rounded border border-amber-200" : ""
-      }`}
-    >
+    <div className={`flex items-baseline justify-between py-1 text-[12px] ${containerBg}`}>
       <span className="flex items-center gap-1.5">
         <span>{label}</span>
-        {isFlagged && (
-          <span className="rounded bg-amber-200 px-1 py-0.2 text-[8px] font-bold text-amber-800">
+        {isUnread && (
+          <span className="rounded bg-rose-200 px-1 py-0.5 text-[8px] font-bold text-rose-800">
+            Unread
+          </span>
+        )}
+        {isFlagged && !isCorrected && (
+          <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
             Flagged Check
+          </span>
+        )}
+        {isCorrected && (
+          <span className="rounded bg-sky-200 px-1 py-0.5 text-[8px] font-bold text-sky-800">
+            Corrected
           </span>
         )}
       </span>
@@ -59,30 +75,78 @@ export default function Preview() {
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const storedReading = loadJSON<InBodyPayload>(SESSION_KEYS.reading);
+    const storedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExtraction(loadedExtraction);
     setSampleId(loadedSampleId);
+    setCorrections(storedCorrections);
 
-    if (loadedExtraction?.status === "refused") {
+    // Hard refuse ONLY on non-InBody documents (ADR-0008)
+    if (loadedExtraction?.error === "not_an_inbody_sheet") {
       setReading(null);
+    } else if (storedReading) {
+      setReading(storedReading);
+    } else if (loadedExtraction?.data) {
+      setReading(loadedExtraction.data);
+    } else if (loadedExtraction?.status === "refused") {
+      // Unread fields shouldn't fail the whole read; initialize empty slots for human entry
+      setReading({
+        weight_kg: null as unknown as number,
+        lean_body_mass_kg: null as unknown as number,
+        percent_body_fat: null as unknown as number,
+        skeletal_muscle_mass_kg: null as unknown as number,
+        basal_metabolic_rate_kcal: null as unknown as number,
+        visceral_fat_level: null,
+        source_device: (loadedExtraction.data as unknown as InBodyPayload)?.source_device ?? "inbody_270",
+        segmental_lean: {
+          left_arm_kg: null as unknown as number,
+          right_arm_kg: null as unknown as number,
+          left_leg_kg: null as unknown as number,
+          right_leg_kg: null as unknown as number,
+          trunk_kg: null as unknown as number,
+        },
+      });
     } else {
-      setReading(storedReading ?? DEFAULT_READING);
+      setReading(DEFAULT_READING);
     }
   }, []);
 
   const handleConfirm = () => {
-    if (reading) router.push(confirmReading(reading));
+    if (reading && remainingUnread.length === 0) {
+      router.push(confirmReading(reading, corrections as Record<string, number>));
+    }
   };
 
-  const isRefused = extraction?.status === "refused";
-  const flaggedFields = new Set(extraction?.flagged ?? []);
+  const isHardRefused = extraction?.error === "not_an_inbody_sheet";
+  const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
+  const unreadFromExtraction = new Set((extraction?.unread ?? []).map(normalizeFieldKey));
+  const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
+
+  // Determine which required fields are still missing / unread
+  const remainingUnread: string[] = [];
+  if (reading) {
+    if (reading.weight_kg == null) remainingUnread.push("weight_kg");
+    if (reading.lean_body_mass_kg == null) remainingUnread.push("lean_body_mass_kg");
+    if (reading.percent_body_fat == null) remainingUnread.push("percent_body_fat");
+    if (reading.skeletal_muscle_mass_kg == null) remainingUnread.push("skeletal_muscle_mass_kg");
+    if (reading.basal_metabolic_rate_kcal == null) remainingUnread.push("basal_metabolic_rate_kcal");
+    if (reading.segmental_lean) {
+      if (reading.segmental_lean.left_arm_kg == null) remainingUnread.push("segmental_lean.left_arm_kg");
+      if (reading.segmental_lean.right_arm_kg == null) remainingUnread.push("segmental_lean.right_arm_kg");
+      if (reading.segmental_lean.left_leg_kg == null) remainingUnread.push("segmental_lean.left_leg_kg");
+      if (reading.segmental_lean.right_leg_kg == null) remainingUnread.push("segmental_lean.right_leg_kg");
+      if (reading.segmental_lean.trunk_kg == null) remainingUnread.push("segmental_lean.trunk_kg");
+    }
+  }
+
   const isDemoReading =
     !sampleId && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
 
@@ -127,8 +191,8 @@ export default function Preview() {
           </Link>
         </div>
 
-        {/* Refused State View */}
-        {isRefused ? (
+        {/* Hard Refusal State View (non-InBody document only) */}
+        {isHardRefused ? (
           <div className="mx-[30px] mt-[18px] rounded-[15px] border-2 border-rose-500/50 bg-white p-[25px] text-black">
             <div className="flex items-center gap-2">
               <span className="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white uppercase">
@@ -138,12 +202,12 @@ export default function Preview() {
             </div>
             <p className="mt-3 text-[12px] leading-relaxed text-zinc-700">
               {extraction?.message ??
-                "This document was rejected because required fields could not be read with certainty."}
+                "This document was rejected because it is not an InBody sheet."}
             </p>
             <div className="mt-4 rounded-lg bg-zinc-100 p-3 text-[11px] text-zinc-600">
               <p className="font-bold text-zinc-800">Why did this happen?</p>
               <p className="mt-1">
-                InForm strictly fails closed on non-InBody documents and obscured fields to prevent fabricating clinical metrics (ADR-0008).
+                InForm strictly fails closed on non-InBody documents to prevent fabricating clinical metrics (ADR-0008).
               </p>
             </div>
             <Link
@@ -154,7 +218,7 @@ export default function Preview() {
             </Link>
           </div>
         ) : reading && reading.segmental_lean ? (
-          /* Normal / Flagged Extraction View */
+          /* Normal / Partial / Flagged Extraction View */
           <>
             {isDemoReading && (
               <div className="mx-[30px] mt-3 flex items-center justify-between rounded-lg bg-white/10 px-3 py-1.5 text-[11px] text-white/90">
@@ -168,6 +232,18 @@ export default function Preview() {
                 isDemoReading ? "mt-[14px]" : "mt-[18px]"
               }`}
             >
+              {/* Unread Fields Notice (AC: Unread fields are named individually, not reported as a whole-sheet failure) */}
+              {remainingUnread.length > 0 && (
+                <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-[11px] text-rose-900">
+                  <span className="font-bold">Unread fields:</span> The model could not read{" "}
+                  <span className="font-semibold">
+                    {remainingUnread.map(getFieldLabel).join(", ")}
+                  </span>
+                  . Type the values off your sheet below before building your plan.
+                </div>
+              )}
+
+              {/* Flagged Fields Notice */}
               {flaggedFields.size > 0 && (
                 <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
                   <span className="font-bold">Notice:</span> One or more values triggered physiological cross-checks. You can review and edit them below before confirming.
@@ -178,13 +254,19 @@ export default function Preview() {
               <div className="mt-3">
                 {BODY_COMPOSITION_FIELDS.map((field) => {
                   const value = reading[field.key];
+                  const isUnread = value == null || unreadFromExtraction.has(field.key);
+                  const isCorrected = correctedFields.has(field.key);
+                  const unit = field.key === "visceral_fat_level" ? "level" : field.unit;
+
                   return (
                     <Row
                       key={field.key}
                       label={field.label}
                       value={value != null && field.formatValue ? field.formatValue(value) : value}
-                      unit={field.unit}
+                      unit={unit}
+                      isUnread={isUnread && !isCorrected}
                       isFlagged={flaggedFields.has(field.key)}
+                      isCorrected={isCorrected}
                     />
                   );
                 })}
@@ -196,43 +278,88 @@ export default function Preview() {
               <div className="mt-3 grid grid-cols-2 gap-x-6">
                 {SEGMENTAL_LEAN_COLUMNS.map((column) => (
                   <div key={column[0].key}>
-                    {column.map((field) => (
-                      <Row
-                        key={field.key}
-                        label={field.label}
-                        value={reading.segmental_lean[field.key]}
-                        unit={field.unit}
-                        isFlagged={flaggedFields.has(`segmental_lean.${field.key}`)}
-                      />
-                    ))}
+                    {column.map((field) => {
+                      const dottedKey = `segmental_lean.${field.key}`;
+                      const value = reading.segmental_lean[field.key];
+                      const isUnread = value == null || unreadFromExtraction.has(dottedKey);
+                      const isCorrected = correctedFields.has(dottedKey);
+
+                      return (
+                        <Row
+                          key={field.key}
+                          label={field.label}
+                          value={value}
+                          unit={field.unit}
+                          isUnread={isUnread && !isCorrected}
+                          isFlagged={flaggedFields.has(dottedKey)}
+                          isCorrected={isCorrected}
+                        />
+                      );
+                    })}
                   </div>
                 ))}
               </div>
 
               <div className="my-4 h-px bg-black/10" />
 
-              <Row
-                label={BMR_FIELD.label}
-                value={reading[BMR_FIELD.key]}
-                unit={BMR_FIELD.unit}
-                isFlagged={flaggedFields.has(BMR_FIELD.key)}
-              />
+              {(() => {
+                const isUnread = reading[BMR_FIELD.key] == null || unreadFromExtraction.has(BMR_FIELD.key);
+                const isCorrected = correctedFields.has(BMR_FIELD.key);
+                return (
+                  <Row
+                    label={BMR_FIELD.label}
+                    value={reading[BMR_FIELD.key]}
+                    unit={BMR_FIELD.unit}
+                    isUnread={isUnread && !isCorrected}
+                    isFlagged={flaggedFields.has(BMR_FIELD.key)}
+                    isCorrected={isCorrected}
+                  />
+                );
+              })()}
 
               <Link
                 href="/preview/edit"
-                className="mt-6 flex h-[40px] w-full items-center justify-center gap-[10px] rounded-lg border-[1.5px] border-[#117d69] text-[14px] font-bold text-[#117d69]"
+                className={`mt-6 flex h-[40px] w-full items-center justify-center gap-[10px] rounded-lg text-[14px] font-bold ${
+                  remainingUnread.length > 0
+                    ? "bg-[#117d69] text-white shadow-sm"
+                    : "border-[1.5px] border-[#117d69] text-[#117d69]"
+                }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt="" className="size-3" src={imgEdit} />
-                Edit
+                <img
+                  alt=""
+                  className={`size-3 ${remainingUnread.length > 0 ? "invert brightness-0" : ""}`}
+                  src={imgEdit}
+                />
+                {remainingUnread.length > 0
+                  ? `Type unread fields (${remainingUnread.length})`
+                  : "Edit"}
               </Link>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
-              >
-                Confirm
-              </button>
+
+              {/* Building a plan is impossible while a required field remains unread (ADR-0008) */}
+              {remainingUnread.length > 0 ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="flex h-[40px] w-full items-center justify-center rounded-lg bg-zinc-200 text-[14px] font-bold text-zinc-400 cursor-not-allowed"
+                  >
+                    Confirm (fill unread fields first)
+                  </button>
+                  <p className="mt-1.5 text-center text-[11px] text-rose-600 font-medium">
+                    Building a plan is impossible while required fields remain unread.
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
+                >
+                  Confirm
+                </button>
+              )}
             </div>
           </>
         ) : (

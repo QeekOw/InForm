@@ -12,6 +12,8 @@ export const SESSION_KEYS = {
   // The picked Sample sheet and its stored read (issue #35).
   sampleId: "inform:sampleId",
   extraction: "inform:extraction",
+  // Human corrections typed off the sheet or edited (recorded alongside measured fields)
+  corrections: "inform:corrections",
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
@@ -51,6 +53,7 @@ export function clearSheet(): void {
     SESSION_KEYS.sampleId,
     SESSION_KEYS.extraction,
     SESSION_KEYS.reading,
+    SESSION_KEYS.corrections,
   ]) {
     removeSessionItem(key);
   }
