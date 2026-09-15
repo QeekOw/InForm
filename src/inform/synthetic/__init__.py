@@ -1,5 +1,6 @@
 import io
 import random
+import re
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,11 @@ _PBF_RANGE_PCT = (10.0, 35.0)
 _SMM_FRACTION_OF_LBM_RANGE = (0.55, 0.65)
 _VISCERAL_FAT_RANGE = (1, 20)
 _SEGMENT_FRACTIONS_OF_LBM = {"left_arm_kg": 0.08, "right_arm_kg": 0.08, "left_leg_kg": 0.17, "right_leg_kg": 0.17}
+
+# Decimals a device prints limb lean mass to. A real 270 prints two; trained only
+# on one-decimal limbs, the model cut real arms short (#59). No real 570 has been
+# seen, so it keeps the one decimal it always had.
+_LIMB_DECIMALS = {"inbody_270": 2, "inbody_570": 1}
 
 # The fat analogue of the table above: each limb's share of total body fat, and
 # the reference physique its sufficiency is scored against. Segmental fat is
@@ -95,13 +101,13 @@ def _generate_values(device: Literal["inbody_270", "inbody_570"], seed: int) -> 
         percent_body_fat=percent_body_fat,
         skeletal_muscle_mass_kg=skeletal_muscle_mass_kg,
         basal_metabolic_rate_kcal=basal_metabolic_rate_kcal,
-        segmental_lean=_generate_segmental(lean_body_mass_kg, rng),
+        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS[device]),
         visceral_fat_level=visceral_fat_level,
         source_device=device,
     )
 
 
-def _generate_segmental(lean_body_mass_kg: float, rng: random.Random) -> SegmentalLean:
+def _generate_segmental(lean_body_mass_kg: float, rng: random.Random, limb_decimals: int) -> SegmentalLean:
     skewed_pair = rng.choice(["arm", "leg"]) if rng.random() < _ASYMMETRY_PROBABILITY else None
 
     def _pair(name: str, fraction: float) -> tuple[float, float]:
@@ -113,10 +119,13 @@ def _generate_segmental(lean_body_mass_kg: float, rng: random.Random) -> Segment
 
     left_arm, right_arm = _pair("arm", _SEGMENT_FRACTIONS_OF_LBM["left_arm_kg"])
     left_leg, right_leg = _pair("leg", _SEGMENT_FRACTIONS_OF_LBM["left_leg_kg"])
-    left_arm, right_arm, left_leg, right_leg = (round(v, 1) for v in (left_arm, right_arm, left_leg, right_leg))
+    left_arm, right_arm, left_leg, right_leg = (
+        round(v, limb_decimals) for v in (left_arm, right_arm, left_leg, right_leg)
+    )
 
-    # Trunk absorbs the rounding remainder so the five segments always sum
-    # exactly to lean_body_mass_kg — "segments sum coherently" (ADR-0007).
+    # Trunk absorbs the rounding remainder so the five segments sum to
+    # lean_body_mass_kg (ADR-0007): exactly on the 570, within 0.05 kg on the
+    # 270, whose two-decimal limbs a one-decimal trunk cannot fully absorb.
     trunk_kg = round(lean_body_mass_kg - (left_arm + right_arm + left_leg + right_leg), 1)
 
     return SegmentalLean(
@@ -301,13 +310,19 @@ def _derive_render_values(payload: InBodyPayload) -> dict:
     }
 
 
+_LIMB_KEYS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg")
+_LIMB_IN_JSON = re.compile(rf'"({"|".join(_LIMB_KEYS)})":(-?\d+(?:\.\d+)?)')
+
+
 def _graded_fields(payload: InBodyPayload) -> dict:
     """The graded target fields, verbatim off the payload (ADR-0007).
 
     Both device templates render exactly these; the 270 additionally spreads in
     `_derive_render_values`. Kept in one place so a field rename touches one spot.
+    Limbs are printed to the device's decimals, so a 270 arm of 3.4 prints 3.40.
     """
     seg = payload.segmental_lean
+    decimals = _LIMB_DECIMALS[payload.source_device]
     return {
         "weight_kg": payload.weight_kg,
         "lean_body_mass_kg": payload.lean_body_mass_kg,  # 270 renders this as "Fat Free Mass"
@@ -315,12 +330,22 @@ def _graded_fields(payload: InBodyPayload) -> dict:
         "skeletal_muscle_mass_kg": payload.skeletal_muscle_mass_kg,
         "basal_metabolic_rate_kcal": payload.basal_metabolic_rate_kcal,
         "visceral_fat_level": payload.visceral_fat_level,
-        "left_arm_kg": seg.left_arm_kg,
-        "right_arm_kg": seg.right_arm_kg,
-        "left_leg_kg": seg.left_leg_kg,
-        "right_leg_kg": seg.right_leg_kg,
+        **{limb: f"{getattr(seg, limb):.{decimals}f}" for limb in _LIMB_KEYS},
         "trunk_kg": seg.trunk_kg,
     }
+
+
+def label_json(payload: InBodyPayload) -> str:
+    """The ground-truth JSON Donut trains on, limbs spelled as the sheet prints them.
+
+    `model_dump_json` writes a 270 arm printed 3.40 as 3.4, which teaches the
+    model to stop a digit early (#59). JSON still parses 3.40 as 3.4, so this
+    changes the training target and nothing that reads the label back.
+    """
+    decimals = _LIMB_DECIMALS[payload.source_device]
+    return _LIMB_IN_JSON.sub(
+        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{decimals}f}', payload.model_dump_json()
+    )
 
 
 def _fill_template(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> str:

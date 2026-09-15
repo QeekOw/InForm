@@ -3,7 +3,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from inform.synthetic import generate_sheet
+from inform import synthetic
+from inform.synthetic import generate_sheet, label_json
 
 # Generation (generate_dataset / the CLI) is torch-free — it only renders sheets.
 # torch is needed solely by DonutInBodyDataset, so tolerate its absence and let
@@ -42,7 +43,7 @@ def generate_dataset(
             image_bytes, payload = generate_sheet(device, seed)
             stem = f"{device}_{seed:06d}"
             (output_dir / f"{stem}.png").write_bytes(image_bytes)
-            (output_dir / f"{stem}.json").write_text(payload.model_dump_json(), encoding="utf-8")
+            (output_dir / f"{stem}.json").write_text(label_json(payload), encoding="utf-8")
             seed += 1
 
 

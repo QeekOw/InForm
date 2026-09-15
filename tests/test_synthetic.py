@@ -5,7 +5,14 @@ import io
 
 from PIL import Image
 
-from inform.synthetic import _derive_render_values, _fill_template, _generate_values, generate_sheet
+from inform.synthetic import (
+    _derive_render_values,
+    _fill_template,
+    _generate_values,
+    generate_sheet,
+    label_json,
+)
+from inform.training import dataset
 
 _SEEDS = range(30)
 _TOLERANCE = 0.1
@@ -154,6 +161,67 @@ def test_270_ground_truth_matches_rendered_template_values():
     assert str(payload.basal_metabolic_rate_kcal) in html
     assert str(payload.visceral_fat_level) in html
     assert str(payload.segmental_lean.trunk_kg) in html
+
+
+_LIMBS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg")
+
+
+def test_270_limbs_carry_two_decimals_and_570_limbs_one():
+    # A real 270 prints limb lean mass to two decimals (#59). Nothing real
+    # settles the 570's precision, so it keeps one.
+    hundredths = set()
+    for seed in _SEEDS:
+        seg_270 = _generate_values("inbody_270", seed).segmental_lean
+        seg_570 = _generate_values("inbody_570", seed).segmental_lean
+        for limb in _LIMBS:
+            value = getattr(seg_270, limb)
+            assert round(value, 2) == value, (seed, limb, value)
+            hundredths.add(round(value * 100) % 10)
+            assert round(getattr(seg_570, limb), 1) == getattr(seg_570, limb), (seed, limb)
+    assert len(hundredths) > 5, "270 limbs must vary in their second decimal"
+
+
+def test_270_sheet_prints_every_limb_to_two_decimals():
+    # A limb ending in zero is the case str() gets wrong: 3.4 has to print 3.40.
+    payload = _generate_values("inbody_270", seed=3)
+    segmental = payload.segmental_lean.model_copy(update={"left_arm_kg": 3.4, "right_leg_kg": 8.0})
+    html = _fill_template("inbody_270", payload.model_copy(update={"segmental_lean": segmental}))
+    lean_fig, _ = _segmental_figures(html)
+
+    for limb in _LIMBS:
+        assert f"<b>{getattr(segmental, limb):.2f} kg</b>" in lean_fig, limb
+
+
+def test_270_label_spells_limbs_the_way_the_sheet_prints_them():
+    # The label is Donut's training target, so it has to be the characters on
+    # the page. JSON reads 3.40 back as 3.4, so nothing that parses it changes.
+    payload = _generate_values("inbody_270", seed=3)
+    segmental = payload.segmental_lean.model_copy(update={"left_arm_kg": 3.4, "right_leg_kg": 8.0})
+    payload = payload.model_copy(update={"segmental_lean": segmental})
+
+    label = label_json(payload)
+
+    assert '"left_arm_kg":3.40' in label
+    assert '"right_leg_kg":8.00' in label
+    assert f'"trunk_kg":{segmental.trunk_kg}' in label
+    assert type(payload).model_validate_json(label) == payload
+
+
+def test_570_label_is_the_plain_payload_json():
+    payload = _generate_values("inbody_570", seed=3)
+
+    assert label_json(payload) == payload.model_dump_json()
+
+
+def test_generate_dataset_writes_the_label_spelling(tmp_path, monkeypatch):
+    payload = _generate_values("inbody_270", seed=3)
+    segmental = payload.segmental_lean.model_copy(update={"left_arm_kg": 3.4})
+    payload = payload.model_copy(update={"segmental_lean": segmental})
+    monkeypatch.setattr(dataset, "generate_sheet", lambda device, seed: (b"jpeg", payload))
+
+    dataset.generate_dataset(tmp_path, n_per_device=1, devices=("inbody_270",))
+
+    assert (tmp_path / "inbody_270_000000.json").read_text(encoding="utf-8") == label_json(payload)
 
 
 def test_derived_distractors_are_coherent_and_deterministic():
