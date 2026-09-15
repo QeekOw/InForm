@@ -5,7 +5,7 @@ Reads the sheet with the default self-hosted Donut engine (ADR-0010); pass
 `--engine vlm` to use the cloud VLM instead. LLM synthesis always needs
 OPENAI_API_KEY (it falls back to the deterministic plan if the key is missing
 or synthesis fails). Donut needs a checkpoint (INFORM_DONUT_CKPT, default
-models/donut-both-v3) and the training extra.
+models/donut-both-v5) and the training extra.
 
 Usage:
     python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \

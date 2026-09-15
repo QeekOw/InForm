@@ -20,9 +20,8 @@ _LBM_TOLERANCE_KG = 2.0
 _BMR_TOLERANCE_KCAL = 100.0
 
 # Where the default (Donut) engine finds its fine-tuned checkpoint (ADR-0010).
-# A local checkpoint dir, defaulting to the Kaggle output folder name so a local
-# download works without extra config. (Hub-id support is a future option; it
-# needs the loader to stop Path-wrapping, which mangles "org/name" on Windows.)
+# A local checkpoint dir or a Hugging Face Hub id, defaulting to the Kaggle output
+# folder name so a local download works without extra config.
 _DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
 _DEFAULT_DONUT_CKPT = "models/donut-both-v5"
 
