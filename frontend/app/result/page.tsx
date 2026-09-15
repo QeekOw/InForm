@@ -12,6 +12,7 @@ import {
   isCleanRead,
   READING_ROWS,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
 import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
@@ -44,6 +45,8 @@ type PlanResponse = {
   exercises: ExercisePlan;
   narrative_text: string;
   narrative_source: "generated" | "fallback";
+  corrected_fields?: string[];
+  measured?: PartialInBody | null;
 };
 
 const NARRATIVE_SOURCES: Record<PlanResponse["narrative_source"], { label: string; note: string }> = {
@@ -107,6 +110,7 @@ export default function Result() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<Record<string, unknown>>({});
   const [fromSample, setFromSample] = useState(true);
   const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
@@ -127,12 +131,18 @@ export default function Result() {
     }
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
+    const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const loadedMeasured =
+      loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
     setReading(loadedReading);
     setSampleId(loadedSampleId);
+    setCorrections(loadedCorrections);
     setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
+
+    const hasCorrections = Object.keys(loadedCorrections).length > 0;
 
     // A clean stored read is planned server-side from the Sample sheet
     // itself; a reading someone edited is sent as they typed it.
@@ -140,17 +150,34 @@ export default function Result() {
       loadedSampleId !== null &&
       loadedExtraction !== null &&
       isCleanRead(loadedExtraction) &&
+      !hasCorrections &&
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
+
+    const requestBody = plannedFromSample
+      ? { user: loadedProfile, sample_id: loadedSampleId }
+      : loadedMeasured
+        ? {
+            user: loadedProfile,
+            measured: loadedMeasured,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+          }
+        : loadedSampleId
+          ? {
+              user: loadedProfile,
+              sample_id: loadedSampleId,
+              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            }
+          : {
+              user: loadedProfile,
+              inbody: loadedReading,
+              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            };
 
     fetch(`${API_URL}/plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        plannedFromSample
-          ? { user: loadedProfile, sample_id: loadedSampleId }
-          : { user: loadedProfile, inbody: loadedReading },
-      ),
+      body: JSON.stringify(requestBody),
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -246,18 +273,38 @@ export default function Result() {
               </div>
             )}
             <dl className="text-[10px]">
-              {READING_ROWS.map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0"
-                >
-                  <dt className="opacity-70">{row.label}</dt>
-                  <dd className="whitespace-nowrap font-bold">
-                    {row.value(reading) ?? "—"}{" "}
-                    <span className="text-[8px] font-medium opacity-60">{row.unit}</span>
-                  </dd>
-                </div>
-              ))}
+              {(() => {
+                const correctedSet = new Set<string>([
+                  ...(state.status === "ready" && state.plan.corrected_fields
+                    ? state.plan.corrected_fields
+                    : []),
+                  ...Object.keys(corrections),
+                ]);
+                return READING_ROWS.map((row) => {
+                  const isHumanSupplied =
+                    correctedSet.has(row.key) ||
+                    correctedSet.has(row.key.replace("segmental_lean.", ""));
+                  return (
+                    <div
+                      key={row.label}
+                      className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0"
+                    >
+                      <dt className="flex items-center gap-1.5">
+                        <span className="opacity-70">{row.label}</span>
+                        {isHumanSupplied && (
+                          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
+                            Human-supplied
+                          </span>
+                        )}
+                      </dt>
+                      <dd className="whitespace-nowrap font-bold">
+                        {row.value(reading) ?? "—"}{" "}
+                        <span className="text-[8px] font-medium opacity-60">{row.unit}</span>
+                      </dd>
+                    </div>
+                  );
+                });
+              })()}
             </dl>
           </div>
         </section>
