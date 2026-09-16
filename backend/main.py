@@ -251,12 +251,22 @@ def _apply_plan_corrections(
 def _require_usable_extraction(extraction: ExtractionItem | None) -> tuple[PartialInBody, str | None, list[str]]:
     """Validate extraction is not refused and has data, returning (measured, source_device, initial_flagged)."""
     if extraction is None or extraction.data is None or extraction.status == "refused":
+        message = (
+            extraction.message
+            if extraction and extraction.message
+            else (
+                "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet."
+                if extraction and extraction.error == "not_an_inbody_sheet"
+                else "This sheet was refused (not an InBody sheet or nothing readable came back)."
+            )
+        )
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
+                "message": message,
                 "unread": extraction.unread if extraction else [],
                 "flagged": extraction.flagged if extraction else [],
+                "error": extraction.error if extraction else None,
             },
         )
     return extraction.data, extraction.data.source_device, extraction.flagged

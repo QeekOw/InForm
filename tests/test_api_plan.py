@@ -147,7 +147,9 @@ def test_refused_sample_is_not_planned(use_llm):
     response = client.post("/plan", json={"user": PROFILE, "sample_id": "refused_non_sheet"})
 
     assert response.status_code == 409
-    assert "weight_kg" in response.json()["detail"]["unread"]
+    detail = response.json()["detail"]
+    assert detail["error"] == "not_an_inbody_sheet"
+    assert "does not appear to be an inbody" in detail["message"].lower()
 
 
 def test_unknown_sample_returns_404(use_llm):
@@ -244,7 +246,9 @@ def test_refused_sample_with_corrections_is_hard_refused(use_llm):
         },
     )
     assert response.status_code == 409
-    assert "refused" in response.json()["detail"]["message"].lower()
+    detail = response.json()["detail"]
+    assert detail["error"] == "not_an_inbody_sheet"
+    assert "does not appear to be an inbody" in detail["message"].lower()
 
 
 def test_plan_with_measured_and_corrections_proceeds(use_llm):

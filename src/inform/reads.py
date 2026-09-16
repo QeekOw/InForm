@@ -157,7 +157,10 @@ class ReadManager:
 
         def _worker():
             try:
-                extraction = extract_sheet_for_sample(img_path, engine=engine)
+                is_non = sample.source_device is None or "non_sheet" in sample.id
+                extraction = extract_sheet_for_sample(
+                    img_path, engine=engine, is_non_sheet=is_non
+                )
                 job.extraction = extraction
                 job.status = extraction.status
                 job.progress = 1.0

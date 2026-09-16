@@ -107,22 +107,10 @@
     "refused_non_sheet": {
       "status": "refused",
       "data": null,
-      "unread": [
-        "weight_kg",
-        "lean_body_mass_kg",
-        "percent_body_fat",
-        "skeletal_muscle_mass_kg",
-        "basal_metabolic_rate_kcal",
-        "source_device",
-        "segmental_lean.left_arm_kg",
-        "segmental_lean.right_arm_kg",
-        "segmental_lean.left_leg_kg",
-        "segmental_lean.right_leg_kg",
-        "segmental_lean.trunk_kg"
-      ],
+      "unread": [],
       "flagged": [],
-      "error": "missing_required_fields",
-      "message": "Could not confidently read: weight_kg, lean_body_mass_kg, percent_body_fat, skeletal_muscle_mass_kg, basal_metabolic_rate_kcal, source_device, segmental_lean.left_arm_kg, segmental_lean.right_arm_kg, segmental_lean.left_leg_kg, segmental_lean.right_leg_kg, segmental_lean.trunk_kg. Please re-upload a clearer photo."
+      "error": "not_an_inbody_sheet",
+      "message": "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet."
     }
   }
 }
