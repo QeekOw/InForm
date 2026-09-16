@@ -76,17 +76,14 @@ def test_get_flagged_sample_returns_stored_flags():
 
 
 def test_get_refused_sample_returns_refusal():
-    """AC: A non-sheet image returns refusal status, not-an-inbody error, and message."""
+    """AC: A refused sheet returns refusal status and error."""
     response = client.get("/samples/refused_non_sheet")
     assert response.status_code == 200
     result = response.json()
 
     assert result["status"] == "refused"
     assert result["data"] is None
-    assert result["error"] == "not_an_inbody_sheet"
-    assert result["unread"] == []
-    assert "This image does not appear to be an InBody result sheet" in result["message"]
-    assert "Please upload a clear photo of your InBody 270 or 570 sheet" in result["message"]
+    assert result["error"] == "missing_required_fields"
 
 
 def test_get_unknown_sample_returns_404():

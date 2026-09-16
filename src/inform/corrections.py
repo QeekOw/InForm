@@ -262,21 +262,21 @@ def apply_corrections(
 
     # ADR-0008 §2: Re-run cross-check gate on the effective reading
     effective_partial = PartialInBody.model_validate(data)
-    effective_flags = set(_cross_check(effective_partial))
+    all_flags = set(_cross_check(effective_partial))
 
     if initial_flagged:
         for f in initial_flagged:
-            if f not in corrected_keys and effective_flags:
-                effective_flags.add(f)
+            if f not in corrected_keys:
+                all_flags.add(f)
 
     confirmed_set = set(confirmations or [])
 
     # Any flagged field not corrected and not confirmed is unresolved
     unresolved_flags = sorted(
-        f for f in effective_flags if f not in corrected_keys and f not in confirmed_set
+        f for f in all_flags if f not in corrected_keys and f not in confirmed_set
     )
     if unresolved_flags:
-        raise CrossCheckFlaggedError(unresolved_flags)
+        raise UnresolvedFlaggedFieldsError(unresolved_flags)
 
     # Confirmed fields: fields confirmed by the user that are NOT corrected
     # AC: "A confirmed value stays a measured field and does not become a corrected field"

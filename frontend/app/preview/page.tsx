@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import { API_URL } from "@/lib/config";
-import { getFieldLabel, normalizeFieldKey } from "@/lib/corrections";
+import { getFieldLabel, getUnresolvedFlagged, normalizeFieldKey } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
 import {
   BMR_FIELD,
@@ -158,8 +158,10 @@ export default function Preview() {
   const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
 
   // Determine which flagged fields remain unconfirmed and uncorrected
-  const unresolvedFlagged = Array.from(flaggedFields).filter(
-    (f) => !correctedFields.has(f) && !confirmedFields.has(f),
+  const unresolvedFlagged = getUnresolvedFlagged(
+    extraction?.flagged,
+    corrections,
+    confirmedFields,
   );
 
   const handleToggleConfirm = (fieldKey: string) => {
@@ -170,19 +172,6 @@ export default function Preview() {
         next.delete(norm);
       } else {
         next.add(norm);
-      }
-      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
-      return next;
-    });
-  };
-
-  const handleConfirmAllFlagged = () => {
-    setConfirmedFields((prev) => {
-      const next = new Set(prev);
-      for (const f of flaggedFields) {
-        if (!correctedFields.has(f)) {
-          next.add(f);
-        }
       }
       saveJSON(SESSION_KEYS.confirmations, Array.from(next));
       return next;
@@ -359,15 +348,6 @@ export default function Preview() {
                     {unresolvedFlagged.map(getFieldLabel).join(", ")}
                   </span>
                   . Compare with your sheet and tap <strong>Confirm</strong> if correct, or <strong>Edit</strong> to correct.
-                  {unresolvedFlagged.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={handleConfirmAllFlagged}
-                      className="mt-2 block rounded bg-amber-700 px-2 py-1 text-[10px] font-bold text-white shadow-xs hover:bg-amber-800"
-                    >
-                      Confirm all flagged values ({unresolvedFlagged.length})
-                    </button>
-                  )}
                 </div>
               ) : flaggedFields.size > 0 ? (
                 <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-[11px] text-emerald-900">

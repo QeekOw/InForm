@@ -160,28 +160,28 @@ export default function Result() {
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
 
-    const requestBody = plannedFromSample
-      ? { user: loadedProfile, sample_id: loadedSampleId }
+    const requestBody = loadedSampleId
+      ? {
+          user: loadedProfile,
+          sample_id: loadedSampleId,
+          ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+          ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+        }
       : loadedMeasured
         ? {
             user: loadedProfile,
             measured: loadedMeasured,
             ...(hasCorrections ? { corrections: loadedCorrections } : {}),
             ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
           }
-        : loadedSampleId
-          ? {
-              user: loadedProfile,
-              sample_id: loadedSampleId,
-              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-              ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-            }
-          : {
-              user: loadedProfile,
-              inbody: loadedReading,
-              ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-              ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-            };
+        : {
+            user: loadedProfile,
+            inbody: loadedReading,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
+          };
 
     fetch(`${API_URL}/plan`, {
       method: "POST",

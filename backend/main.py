@@ -12,11 +12,12 @@ from typing import Any, Literal
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from inform.corrections import (
     CrossCheckFlaggedError,
     UnreadFieldsError,
+    UnresolvedFlaggedFieldsError,
     apply_corrections,
 )
 from inform.exercise import ExercisePlan
@@ -126,8 +127,12 @@ class PlanRequest(BaseModel):
     # Corrections typed by a person (recorded alongside measured fields, never merged into them)
     corrections: dict[str, Any] | None = None
     # Flagged fields confirmed unchanged by a person
-    confirmations: list[str] | None = None
-    confirmed_fields: list[str] | None = None
+    confirmations: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("confirmations", "confirmed_fields"),
+    )
+    # Stored or extracted flagged fields for measured/inbody reads
+    initial_flagged: list[str] | None = None
     # Direct InBody reading (retained for backward compatibility)
     inbody: InBodyPayload | None = None
 
@@ -185,8 +190,6 @@ def _apply_plan_corrections(
 
 def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody, list[str], list[str]]:
     """Resolve reading source into (effective_payload, base_measured, corrected_field_keys, confirmed_field_keys)."""
-    confirmations = list(dict.fromkeys((request.confirmations or []) + (request.confirmed_fields or [])))
-
     if request.sample_id is not None:
         extraction = load_extractions().extractions.get(request.sample_id)
         if extraction is None:
@@ -195,73 +198,40 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
         # ADR-0008 Amendment §3: The zero-read floor case (data is None) or non-sheet is a hard refusal.
         # Partial extraction only applies once some real data is read.
         if extraction.data is None or extraction.status == "refused":
-            message = (
-                extraction.message
-                or (
-                    "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet."
-                    if extraction.error == "not_an_inbody_sheet"
-                    else "This sheet was refused (not an InBody sheet or nothing readable came back)."
-                )
-            )
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": message,
+                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
                     "unread": extraction.unread,
                     "flagged": extraction.flagged,
-                    "error": extraction.error,
                 },
             )
 
         base_measured = extraction.data
-        if request.corrections or confirmations:
-            payload, corrected, confirmed = _apply_plan_corrections(
-                base_measured,
-                request.corrections,
-                confirmations=confirmations,
-                source_device=base_measured.source_device,
-                initial_flagged=extraction.flagged,
-            )
-            return payload, base_measured, corrected, confirmed
+        source_device = base_measured.source_device
+        initial_flagged = extraction.flagged
 
-        # A complete read with no flags
-        inbody = (
-            InBodyExtraction(
-                data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
-            ).as_payload()
-        )
-        if inbody is None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "Building a plan is impossible while a flagged field is unresolved.",
-                    "unread": extraction.unread,
-                    "flagged": extraction.flagged,
-                },
-            )
-        return inbody, base_measured, [], []
-
-    if request.measured is not None:
+    elif request.measured is not None:
         base_measured = request.measured
-        payload, corrected, confirmed = _apply_plan_corrections(
-            base_measured,
-            request.corrections,
-            confirmations=confirmations,
-            source_device=base_measured.source_device,
-        )
-        return payload, base_measured, corrected, confirmed
+        source_device = base_measured.source_device
+        initial_flagged = request.initial_flagged
 
-    if request.inbody is not None:
+    elif request.inbody is not None:
         base_measured = PartialInBody(**request.inbody.model_dump())
-        payload, corrected, confirmed = _apply_plan_corrections(
-            base_measured,
-            request.corrections,
-            confirmations=confirmations,
-            source_device=request.inbody.source_device,
-        )
-        return payload, base_measured, corrected, confirmed
+        source_device = request.inbody.source_device
+        initial_flagged = request.initial_flagged
 
-    raise HTTPException(status_code=422, detail="No reading source provided")
+    else:
+        raise HTTPException(status_code=422, detail="No reading source provided")
+
+    payload, corrected, confirmed = _apply_plan_corrections(
+        base_measured,
+        request.corrections,
+        confirmations=request.confirmations,
+        source_device=source_device,
+        initial_flagged=initial_flagged,
+    )
+    return payload, base_measured, corrected, confirmed
 
 
 class PlanResponse(BaseModel):

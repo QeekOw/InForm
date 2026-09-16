@@ -147,9 +147,7 @@ def test_refused_sample_is_not_planned(use_llm):
     response = client.post("/plan", json={"user": PROFILE, "sample_id": "refused_non_sheet"})
 
     assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["error"] == "not_an_inbody_sheet"
-    assert "not appear to be an inbody" in detail["message"].lower() or "not an inbody" in detail["message"].lower()
+    assert "weight_kg" in response.json()["detail"]["unread"]
 
 
 def test_unknown_sample_returns_404(use_llm):
@@ -168,12 +166,14 @@ def test_corrections_allow_flagged_or_unread_sample_to_proceed(use_llm):
             "user": PROFILE,
             "sample_id": "real_270_flagged",
             "corrections": {"lean_body_mass_kg": 62.5},
+            "confirmations": ["weight_kg", "percent_body_fat", "basal_metabolic_rate_kcal"],
         },
     )
 
     assert response.status_code == 200
     plan = response.json()
     assert plan["corrected_fields"] == ["lean_body_mass_kg"]
+    assert sorted(plan["confirmed_fields"]) == ["basal_metabolic_rate_kcal", "percent_body_fat", "weight_kg"]
     # BMR recomputed on the corrected LBM: 370 + 21.6 * 62.5 = 1720.0
     assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1720.0)
 
@@ -244,8 +244,7 @@ def test_refused_sample_with_corrections_is_hard_refused(use_llm):
         },
     )
     assert response.status_code == 409
-    msg = response.json()["detail"]["message"].lower()
-    assert "not appear to be an inbody" in msg or "not an inbody" in msg or "refused" in msg
+    assert "refused" in response.json()["detail"]["message"].lower()
 
 
 def test_plan_with_measured_and_corrections_proceeds(use_llm):

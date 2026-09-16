@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
+import { API_URL } from "@/lib/config";
 import {
   FIELD_CONSTRAINTS,
   getFieldLabel,
+  getUnresolvedFlagged,
   normalizeFieldKey,
   parseAndValidateFieldInput,
   validateFieldValue,
@@ -178,6 +180,7 @@ function Row({
 export default function PreviewEdit() {
   const router = useRouter();
   const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
+  const [sampleId, setSampleId] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>({});
   const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
@@ -192,10 +195,12 @@ export default function PreviewEdit() {
     const storedCorrections =
       loadJSON<Record<string, { value: number; unit?: string }>>(SESSION_KEYS.corrections) ?? {};
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
+    const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExtraction(loadedExtraction);
     setCorrections(storedCorrections);
+    setSampleId(loadedSampleId);
 
     const storedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
     setConfirmedKeys(new Set(storedConfirmations.map(normalizeFieldKey)));
@@ -398,8 +403,10 @@ export default function PreviewEdit() {
     Object.values(errors).some(Boolean) || crossFieldError,
   );
 
-  const unresolvedFlagged = Array.from(flaggedKeys).filter(
-    (f) => !(f in corrections) && !confirmedKeys.has(f),
+  const unresolvedFlagged = getUnresolvedFlagged(
+    flaggedKeys,
+    corrections,
+    confirmedKeys,
   );
 
   const handleConfirm = () => {
@@ -436,14 +443,26 @@ export default function PreviewEdit() {
         </div>
 
         <div className="relative mx-[30px] mt-[31px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
-          <ReportPhoto />
+          {sampleId ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              alt="Sample report"
+              className="size-full object-cover opacity-90"
+              src={`${API_URL}/samples/${sampleId}/image`}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <ReportPhoto />
+          )}
           <Link
-            href="/upload/capture"
-            className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white"
+            href={sampleId ? "/upload" : "/upload/capture"}
+            className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white shadow"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="size-[14px]" src={imgCamera} />
-            Retake
+            {sampleId ? "Change Sheet" : "Retake"}
           </Link>
         </div>
 
