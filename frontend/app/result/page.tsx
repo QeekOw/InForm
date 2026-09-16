@@ -132,6 +132,7 @@ export default function Result() {
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const loadedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
     const loadedMeasured =
       loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -161,17 +162,20 @@ export default function Result() {
             user: loadedProfile,
             measured: loadedMeasured,
             ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(loadedConfirmations.length > 0 ? { confirmed_fields: loadedConfirmations } : {}),
           }
         : loadedSampleId
           ? {
               user: loadedProfile,
               sample_id: loadedSampleId,
               ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+              ...(loadedConfirmations.length > 0 ? { confirmed_fields: loadedConfirmations } : {}),
             }
           : {
               user: loadedProfile,
               inbody: loadedReading,
               ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+              ...(loadedConfirmations.length > 0 ? { confirmed_fields: loadedConfirmations } : {}),
             };
 
     fetch(`${API_URL}/plan`, {

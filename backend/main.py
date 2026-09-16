@@ -125,6 +125,8 @@ class PlanRequest(BaseModel):
     measured: PartialInBody | None = None
     # Corrections typed by a person (recorded alongside measured fields, never merged into them)
     corrections: dict[str, Any] | None = None
+    # Flagged measured values explicitly checked against the sheet and confirmed unchanged.
+    confirmed_fields: list[str] = Field(default_factory=list)
     # Direct InBody reading (retained for backward compatibility)
     inbody: InBodyPayload | None = None
 
@@ -147,6 +149,7 @@ def _apply_plan_corrections(
     base: PartialInBody,
     corrections: dict[str, Any] | None,
     source_device: Literal["inbody_270", "inbody_570"] | None = None,
+    confirmed_fields: list[str] | None = None,
 ) -> tuple[InBodyPayload, list[str]]:
     """Deduplicated helper to validate and apply corrections, mapping domain exceptions to HTTP responses."""
     try:
@@ -154,6 +157,7 @@ def _apply_plan_corrections(
             base,
             corrections or {},
             source_device=source_device,
+            confirmed_fields=set(confirmed_fields or []),
         )
     except UnreadFieldsError as exc:
         raise HTTPException(
@@ -196,9 +200,12 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
             )
 
         base_measured = extraction.data
-        if request.corrections:
+        if request.corrections or request.confirmed_fields:
             payload, corrected = _apply_plan_corrections(
-                base_measured, request.corrections, source_device=base_measured.source_device
+                base_measured,
+                request.corrections,
+                source_device=base_measured.source_device,
+                confirmed_fields=request.confirmed_fields,
             )
             return payload, base_measured, corrected
 
@@ -222,7 +229,10 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
     if request.measured is not None:
         base_measured = request.measured
         payload, corrected = _apply_plan_corrections(
-            base_measured, request.corrections, source_device=base_measured.source_device
+            base_measured,
+            request.corrections,
+            source_device=base_measured.source_device,
+            confirmed_fields=request.confirmed_fields,
         )
         return payload, base_measured, corrected
 
@@ -230,7 +240,10 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
         base_measured = PartialInBody(**request.inbody.model_dump())
         if request.corrections:
             payload, corrected = _apply_plan_corrections(
-                base_measured, request.corrections, source_device=request.inbody.source_device
+                base_measured,
+                request.corrections,
+                source_device=request.inbody.source_device,
+                confirmed_fields=request.confirmed_fields,
             )
             return payload, base_measured, corrected
         return request.inbody, base_measured, []
@@ -252,6 +265,7 @@ class PlanResponse(BaseModel):
     # Recorded alongside measured fields, never merged into them
     measured: PartialInBody | None = None
     corrected_fields: list[str] = Field(default_factory=list)
+    confirmed_fields: list[str] = Field(default_factory=list)
 
 
 @app.post("/plan")
@@ -287,4 +301,5 @@ def plan(
         narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
         measured=base_measured,
         corrected_fields=corrected_fields,
+        confirmed_fields=request.confirmed_fields,
     )

@@ -185,6 +185,29 @@ def test_unresolved_cross_check_flags_raise_error():
     assert "lean_body_mass_kg" in exc_info.value.flagged_fields
 
 
+def test_person_can_confirm_unchanged_cross_check_values():
+    measured = _partial_inbody(
+        weight_kg=84.8,
+        percent_body_fat=26.3,
+        lean_body_mass_kg=76.0,
+        basal_metabolic_rate_kcal=1721.0,
+    )
+
+    payload, corrected = apply_corrections(
+        measured,
+        {},
+        confirmed_fields={
+            "weight_kg",
+            "percent_body_fat",
+            "lean_body_mass_kg",
+            "basal_metabolic_rate_kcal",
+        },
+    )
+
+    assert payload.lean_body_mass_kg == 76.0
+    assert corrected == []
+
+
 def test_field_specs_bundle_constraints():
     """Data Clumps fix: verify FIELD_SPECS bundles label, range, units."""
     assert "weight_kg" in FIELD_SPECS

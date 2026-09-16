@@ -11,6 +11,7 @@ export function confirmReading(
   reading: InBodyPayload,
   corrections?: Record<string, number | { value: number; unit?: string }>,
   measured?: PartialInBody | null,
+  confirmedFields: string[] = [],
 ): string {
   saveJSON(SESSION_KEYS.reading, reading);
   if (measured) {
@@ -20,6 +21,11 @@ export function confirmReading(
     saveJSON(SESSION_KEYS.corrections, corrections);
   } else {
     removeSessionItem(SESSION_KEYS.corrections);
+  }
+  if (confirmedFields.length > 0) {
+    saveJSON(SESSION_KEYS.confirmations, confirmedFields);
+  } else {
+    removeSessionItem(SESSION_KEYS.confirmations);
   }
   removeSessionItem(SESSION_KEYS.photo);
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";

@@ -20,6 +20,7 @@ import {
   blankRequiredFields,
   type InBodyDraft,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
   type ScalarInBodyField,
   type SegmentalLeanField,
@@ -37,6 +38,14 @@ function isSegmentField(key: string): key is SegmentalLeanField {
     key === "right_leg_kg" ||
     key === "trunk_kg"
   );
+}
+
+function fieldValue(reading: InBodyPayload | PartialInBody, key: string): number | null {
+  if (key.startsWith("segmental_lean.")) {
+    const segment = key.split(".", 2)[1] as keyof InBodyPayload["segmental_lean"];
+    return reading.segmental_lean?.[segment] ?? null;
+  }
+  return reading[key as keyof InBodyPayload] as number | null;
 }
 
 function ValueField({
@@ -328,7 +337,26 @@ export default function PreviewEdit() {
 
     // Every required field is filled and valid.
     // Store corrections alongside measured fields (never merged into them)
-    router.push(confirmReading(draft as InBodyPayload, corrections, extraction?.data));
+    const correctionsForPlan = { ...corrections };
+    const confirmedFields: string[] = [];
+    const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
+
+    for (const flaggedField of flaggedFields) {
+      const measuredValue = extraction?.data ? fieldValue(extraction.data, flaggedField) : null;
+      if (fieldValue(draft, flaggedField) === measuredValue) {
+        delete correctionsForPlan[flaggedField];
+        confirmedFields.push(flaggedField);
+      }
+    }
+
+    router.push(
+      confirmReading(
+        draft as InBodyPayload,
+        correctionsForPlan,
+        extraction?.data,
+        confirmedFields,
+      ),
+    );
   };
 
   return (
@@ -362,6 +390,11 @@ export default function PreviewEdit() {
           {unreadKeys.size > 0 && (
             <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-[11px] text-rose-900">
               <span className="font-bold">Enter unread values:</span> Type the missing values off your sheet. They are recorded as your corrections.
+            </div>
+          )}
+          {extraction?.flagged && extraction.flagged.length > 0 && (
+            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
+              <span className="font-bold">Review flagged values:</span> Compare them with your sheet. Leave a value unchanged to confirm it, or edit it to record a correction.
             </div>
           )}
 

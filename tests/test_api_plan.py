@@ -142,6 +142,34 @@ def test_flagged_sample_is_not_planned_without_a_person(use_llm):
     assert detail["unread"] == []
 
 
+def test_confirmed_flagged_sample_can_be_planned_without_correction(use_llm):
+    """AC: confirming unchanged flagged values proceeds without recording corrections."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_flagged",
+            "confirmed_fields": [
+                "weight_kg",
+                "percent_body_fat",
+                "lean_body_mass_kg",
+                "basal_metabolic_rate_kcal",
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    plan = response.json()
+    assert plan["corrected_fields"] == []
+    assert plan["confirmed_fields"] == [
+        "weight_kg",
+        "percent_body_fat",
+        "lean_body_mass_kg",
+        "basal_metabolic_rate_kcal",
+    ]
+
+
 def test_refused_sample_is_not_planned(use_llm):
     use_llm(_llm_raising())
     response = client.post("/plan", json={"user": PROFILE, "sample_id": "refused_non_sheet"})
@@ -282,4 +310,3 @@ def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
     assert response.status_code == 409
     detail = response.json()["detail"]
     assert "lean_body_mass_kg" in detail["flagged"]
-

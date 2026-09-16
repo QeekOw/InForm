@@ -192,13 +192,15 @@ def apply_corrections(
     measured: PartialInBody,
     corrections: dict[str, float | int | CorrectionValue | dict[str, Any]],
     source_device: Literal["inbody_270", "inbody_570"] | None = None,
+    confirmed_fields: set[str] | None = None,
 ) -> tuple[InBodyPayload, list[str]]:
     """Validate and apply human corrections over a measured PartialInBody.
 
     Returns (InBodyPayload, corrected_field_names).
     Does NOT mutate the original measured object.
     Raises ValueError if any correction is out-of-range or wrong-unit.
-    Raises CrossCheckFlaggedError if ADR-0008 §2 cross-check gate fails.
+    Raises CrossCheckFlaggedError if ADR-0008 §2 cross-check gate fails and
+    the person has not explicitly confirmed the remaining flagged fields.
     Raises UnreadFieldsError if any required field is still unread (None).
     """
     flat = flatten_corrections(corrections)
@@ -255,8 +257,11 @@ def apply_corrections(
     # ADR-0008 §2: Re-run cross-check gate on the effective reading
     effective_partial = PartialInBody.model_validate(data)
     remaining_flags = _cross_check(effective_partial)
-    if remaining_flags:
-        raise CrossCheckFlaggedError(remaining_flags)
+    unresolved_flags = [
+        field for field in remaining_flags if field not in (confirmed_fields or set())
+    ]
+    if unresolved_flags:
+        raise CrossCheckFlaggedError(unresolved_flags)
 
     # Build validated InBodyPayload
     payload = InBodyPayload.model_validate(data)

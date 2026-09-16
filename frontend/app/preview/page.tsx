@@ -14,6 +14,7 @@ import {
   DEFAULT_READING,
   SEGMENTAL_LEAN_COLUMNS,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
 import { loadJSON, SESSION_KEYS } from "@/lib/session";
@@ -70,6 +71,14 @@ function Row({
   );
 }
 
+function fieldValue(reading: InBodyPayload | PartialInBody, key: string): number | null {
+  if (key.startsWith("segmental_lean.")) {
+    const segment = key.split(".", 2)[1] as keyof InBodyPayload["segmental_lean"];
+    return reading.segmental_lean?.[segment] ?? null;
+  }
+  return reading[key as keyof InBodyPayload] as number | null;
+}
+
 export default function Preview() {
   const router = useRouter();
   const [reading, setReading] = useState<InBodyPayload | null>(null);
@@ -107,7 +116,26 @@ export default function Preview() {
 
   const handleConfirm = () => {
     if (reading && remainingUnread.length === 0) {
-      router.push(confirmReading(reading, corrections as Record<string, number>, extraction?.data));
+      const correctionsForPlan = { ...corrections };
+      const confirmedFields: string[] = [];
+
+      for (const flaggedField of flaggedFields) {
+        const measuredValue = extraction?.data ? fieldValue(extraction.data, flaggedField) : null;
+        const currentValue = fieldValue(reading, flaggedField);
+        if (currentValue === measuredValue) {
+          delete correctionsForPlan[flaggedField];
+          confirmedFields.push(flaggedField);
+        }
+      }
+
+      router.push(
+        confirmReading(
+          reading,
+          correctionsForPlan as Record<string, number>,
+          extraction?.data,
+          confirmedFields,
+        ),
+      );
     }
   };
 
@@ -234,7 +262,7 @@ export default function Preview() {
               {/* Flagged Fields Notice */}
               {flaggedFields.size > 0 && (
                 <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-                  <span className="font-bold">Notice:</span> One or more values triggered physiological cross-checks. You can review and edit them below before confirming.
+                  <span className="font-bold">Review required:</span> Compare the flagged values with your sheet. Leave a value unchanged to confirm it, or edit it to record a correction.
                 </div>
               )}
 

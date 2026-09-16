@@ -15,7 +15,10 @@ Three endpoints:
 - `POST /plan` — the real thing. Takes a `UserProfile` and a complete
   `InBodyPayload` (exact shape of `inform.user.UserProfile` /
   `inform.inbody.InBodyPayload` — FastAPI validates against those pydantic
-  models directly), and runs:
+  models directly). For partial or flagged reads, send the measured values
+  plus `corrections` for values the person changed and `confirmed_fields` for
+  flagged values the person checked and left unchanged. Unresolved unread or
+  flagged fields are rejected. The endpoint then runs:
   1. `inform.nutrition_engine.compute_targets` — Katch-McArdle BMR, TDEE, calorie
      target, macro split.
   2. `inform.exercise_filter.recommend_exercises` — bilateral-asymmetry detection
