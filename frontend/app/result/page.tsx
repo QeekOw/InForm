@@ -15,7 +15,7 @@ import {
   type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
-import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 import { ACTIVITY_LABELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
 const imgBack = "/icons/result/back-arrow.svg";
@@ -146,6 +146,9 @@ export default function Result() {
     setCorrections(loadedCorrections);
     setConfirmations(loadedConfirmations);
     setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
+
+    // ADR-0011: The photo is never persisted anywhere after the scan is saved/planned
+    removeSessionItem(SESSION_KEYS.photo);
 
     const hasCorrections = Object.keys(loadedCorrections).length > 0;
     const hasConfirmations = loadedConfirmations.length > 0;

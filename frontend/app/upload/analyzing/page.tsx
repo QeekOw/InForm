@@ -15,6 +15,7 @@ function AnalyzingContent() {
   const searchParams = useSearchParams();
   const paramReadId = searchParams.get("read_id");
   const isLive = searchParams.get("live") === "1";
+  const isUpload = searchParams.get("upload") === "1";
 
   const [readId, setReadId] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
@@ -40,7 +41,33 @@ function AnalyzingContent() {
     let cancelled = false;
 
     if (!readId) {
-      // Stand-in for manual mock photo uploads without a live read_id
+      const photo = loadJSON<string>(SESSION_KEYS.photo);
+      if (photo) {
+        // Automatically start reading the uploaded photo in session if read_id is missing
+        fetch(`${API_URL}/reads`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_data: photo, live: true }),
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error("Failed to start reading");
+            return res.json();
+          })
+          .then((job: ReadJob) => {
+            if (!cancelled) {
+              saveJSON(SESSION_KEYS.readId, job.read_id);
+              setReadId(job.read_id);
+            }
+          })
+          .catch((err) => {
+            console.error("Failed to start read from photo in session:", err);
+            if (!cancelled) router.push("/preview");
+          });
+        return () => {
+          cancelled = true;
+        };
+      }
+
       const timer = setTimeout(() => {
         if (!cancelled) router.push("/preview");
       }, 3000);
@@ -80,7 +107,10 @@ function AnalyzingContent() {
             // Brief pause at 100% so user sees completion before transition
             await new Promise((r) => setTimeout(r, 600));
             if (!cancelled) {
-              router.push(extraction && isCleanRead(extraction) ? "/result" : "/preview");
+              // Uploaded photos MUST go to preview for side-by-side review (ADR-0011)
+              const sampleId = loadJSON<string>(SESSION_KEYS.sampleId);
+              const isUserUpload = isUpload || !sampleId;
+              router.push(isUserUpload || !extraction || !isCleanRead(extraction) ? "/preview" : "/result");
             }
             break;
           } else if (job.status === "refused") {
@@ -113,7 +143,7 @@ function AnalyzingContent() {
     return () => {
       cancelled = true;
     };
-  }, [readId, router]);
+  }, [readId, router, isUpload]);
 
   const percent = Math.min(100, Math.max(0, Math.round(progress * 100)));
 
@@ -122,10 +152,16 @@ function AnalyzingContent() {
       <div className="flex h-full flex-col justify-between px-6 pt-12 pb-8">
         <div>
           <h1 className="text-center text-[22px] font-bold text-[#fcfcfc]">
-            {isLive ? "Running Live Inference..." : "Analyzing your sheet..."}
+            {isUpload
+              ? "Analyzing your uploaded sheet..."
+              : isLive
+              ? "Running Live Inference..."
+              : "Analyzing your sheet..."}
           </h1>
           <p className="mt-1 text-center text-[12px] text-white/70">
-            {isLive
+            {isUpload
+              ? "Extracting body composition parameters from your photo"
+              : isLive
               ? "Self-hosted Donut model running on CPU (~45s expected)"
               : "Extracting body composition parameters"}
           </p>

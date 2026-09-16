@@ -25,6 +25,8 @@ export default function Upload() {
   const [pickError, setPickError] = useState<string | null>(null);
   const [scepticModalSample, setScepticModalSample] = useState<SampleSheetMeta | null>(null);
   const [startingLiveRead, setStartingLiveRead] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Fetch live manifest from backend on mount
   useEffect(() => {
@@ -120,18 +122,41 @@ export default function Upload() {
     if (!file) return;
 
     clearSheet();
+    setUploadingPhoto(true);
+    setUploadError(null);
 
+    let photoDataUrl = "";
     if (file.type.startsWith("image/")) {
       try {
-        saveJSON(SESSION_KEYS.photo, await fileToDataUrl(file));
-      } catch {
-        // Non-fatal: the flow continues without a photo to show.
+        photoDataUrl = await fileToDataUrl(file);
+        saveJSON(SESSION_KEYS.photo, photoDataUrl);
+      } catch (err) {
+        console.error("Error converting file to data URL:", err);
       }
     } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-      saveJSON(SESSION_KEYS.photo, createPdfDataUrl(file.name));
+      photoDataUrl = createPdfDataUrl(file.name);
+      saveJSON(SESSION_KEYS.photo, photoDataUrl);
     }
 
-    router.push("/upload/analyzing");
+    try {
+      const res = await fetch(`${API_URL}/reads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_data: photoDataUrl, live: true }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to start reading: ${res.statusText}`);
+      }
+
+      const job: ReadJob = await res.json();
+      saveJSON(SESSION_KEYS.readId, job.read_id);
+      router.push(`/upload/analyzing?read_id=${job.read_id}&upload=1`);
+    } catch (err) {
+      console.error("Error initiating read for uploaded sheet:", err);
+      setUploadError("Could not start analyzing this photo. Check your connection and try again.");
+      setUploadingPhoto(false);
+    }
   };
 
   return (
@@ -286,16 +311,40 @@ export default function Upload() {
           <div className="h-px flex-1 bg-white/20" />
         </div>
 
+        {/* Student Project and Privacy Notice (Issue #45 / ADR-0011) */}
+        <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3.5 text-[11px] leading-relaxed text-zinc-200">
+          <div className="flex items-center gap-2 font-bold text-emerald-300 text-[12px]">
+            <span>🎓 Student Project &amp; Privacy Notice</span>
+          </div>
+          <p className="mt-1.5 text-zinc-300">
+            InForm is an academic student research prototype. When you upload or photograph your InBody sheet:
+          </p>
+          <ul className="mt-1.5 list-disc pl-4 space-y-1 text-zinc-300">
+            <li>
+              <strong>Temporary session only:</strong> Your photo is held in memory during this session only so you can review extracted numbers side-by-side.
+            </li>
+            <li>
+              <strong>Zero persistence:</strong> Your photo is <strong>never</strong> written to a database, cloud storage, disk, or logs (ADR-0011).
+            </li>
+            <li>
+              <strong>Discarded on save:</strong> Once you confirm or save your scan, the photo is permanently discarded. Only your verified numbers are used for your plan.
+            </li>
+          </ul>
+        </div>
+
         <div>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-[75px] w-full flex-col items-center justify-center gap-1 rounded-[15px] border-2 border-dashed border-white/30 bg-white/5 hover:bg-white/10 transition-colors"
+            disabled={uploadingPhoto}
+            className="flex h-[75px] w-full flex-col items-center justify-center gap-1 rounded-[15px] border-2 border-dashed border-white/30 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="size-6 opacity-70" src={imgUpload} />
             <span className="text-[11px] font-medium text-white/80">
-              Upload from photo library (JPG, PNG, PDF)
+              {uploadingPhoto
+                ? "Starting model analysis…"
+                : "Upload from photo library (JPG, PNG, PDF)"}
             </span>
           </button>
           <input
@@ -308,12 +357,18 @@ export default function Upload() {
 
           <Link
             href="/upload/capture"
-            className="mt-3 flex h-[38px] w-full items-center justify-center gap-[8px] rounded-lg bg-[#117d69] text-[13px] font-bold text-white shadow-sm"
+            className="mt-3 flex h-[38px] w-full items-center justify-center gap-[8px] rounded-lg bg-[#117d69] text-[13px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="size-4" src={imgCamera} />
             Take Photo with Camera
           </Link>
+
+          {uploadError && (
+            <p role="alert" className="mt-3 text-[12px] text-rose-300">
+              {uploadError}
+            </p>
+          )}
         </div>
       </div>
 

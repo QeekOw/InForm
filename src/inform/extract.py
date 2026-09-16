@@ -1,6 +1,7 @@
+import io
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Any, BinaryIO, Callable
 
 from inform.engines import donut
 from inform.errors import DonutCheckpointError, MissingRequiredFieldsError
@@ -12,7 +13,7 @@ from inform.inbody import (
     partial_field_value,
 )
 
-Engine = Callable[[Path], PartialInBody]
+Engine = Callable[[Path | BinaryIO | bytes | Any], PartialInBody]
 
 # ponytail: fixed calibration knobs, not learned. Tune against real
 # misread cases if the gate proves too tight/loose in practice.
@@ -69,7 +70,9 @@ def default_engine(checkpoint: str | Path | None = None) -> Engine:
         raise DonutCheckpointError(ckpt) from exc
 
 
-def extract_inbody(image_path: Path, engine: Engine | None = None) -> InBodyExtraction:
+def extract_inbody(
+    image_path: Path | BinaryIO | bytes | Any, engine: Engine | None = None
+) -> InBodyExtraction:
     """The single production seam: image in, InBodyExtraction out.
 
     Partial extraction (ADR-0008 amended): return every field the engine read,
@@ -84,7 +87,11 @@ def extract_inbody(image_path: Path, engine: Engine | None = None) -> InBodyExtr
     """
     if engine is None:
         engine = default_engine()
-    partial = engine(image_path)
+    if isinstance(image_path, bytes):
+        image_input = io.BytesIO(image_path)
+    else:
+        image_input = image_path
+    partial = engine(image_input)
     unread = [f for f in REQUIRED_DOTTED_FIELDS if partial_field_value(partial, f) is None]
     if len(unread) == len(REQUIRED_DOTTED_FIELDS):
         raise MissingRequiredFieldsError(unread)

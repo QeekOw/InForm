@@ -129,8 +129,17 @@ def get_engine() -> Engine | None:
 
 
 class CreateReadRequest(BaseModel):
-    sample_id: str
+    sample_id: str | None = None
+    image_data: str | None = None
     live: bool = False
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "CreateReadRequest":
+        has_sample = self.sample_id is not None
+        has_image = self.image_data is not None
+        if has_sample == has_image:
+            raise ValueError("Provide either sample_id or image_data, not both or neither")
+        return self
 
 
 class ReadJobResponse(BaseModel):
@@ -153,12 +162,15 @@ def create_read(
     try:
         job = read_manager.create_read(
             sample_id=request.sample_id,
+            image_data=request.image_data,
             live=request.live,
             engine_factory=lambda: engine,
         )
         return ReadJobResponse(**job.to_dict())
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.get("/reads/{read_id}", response_model=ReadJobResponse)

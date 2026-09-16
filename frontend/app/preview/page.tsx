@@ -270,49 +270,95 @@ export default function Preview() {
                 InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 or 570 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
               </p>
             </div>
-            <Link
-              href="/upload"
-              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-            >
-              ← Choose another sample sheet
-            </Link>
-            <Link
-              href="/upload/capture"
-              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-            >
-              Take or upload another photo
-            </Link>
+            {sampleId ? (
+              <>
+                <Link
+                  href="/upload"
+                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+                >
+                  ← Choose another sample sheet
+                </Link>
+                <Link
+                  href="/upload/capture"
+                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                >
+                  Take or upload another photo
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/upload/capture"
+                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+                >
+                  Take or upload an InBody sheet
+                </Link>
+                <Link
+                  href="/upload"
+                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                >
+                  ← Or try a sample sheet from the gallery
+                </Link>
+              </>
+            )}
           </div>
         ) : isRefusedSheet ? (
           /* State 2: Whole-sheet refusal / engine refuses entirely */
           <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
-                Careful verification
+                {sampleId ? "Careful verification" : "Photo unreadable"}
               </span>
             </div>
-            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">Unable to read this sheet</h2>
+            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">
+              {sampleId ? "Unable to read this sheet" : "Photo too blurry to read"}
+            </h2>
             <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
-              We couldn&apos;t read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence.
+              {sampleId
+                ? "We couldn't read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence."
+                : "The numbers on this photo couldn't be read clearly enough to build your plan. Rather than guess or fabricate missing numbers, InForm asks for a retake so you know the fix is on your side."}
             </p>
             <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
-              <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
+              <p className="font-bold text-zinc-800">
+                {sampleId ? "Why was this sheet declined?" : "Tips for a clear scan"}
+              </p>
               <p className="mt-1">
-                Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan.
+                {sampleId
+                  ? "Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan."
+                  : "Lay your sheet flat, ensure good overhead lighting without glare or dark shadows, and hold your camera steady so all table rows and numbers are sharp and in focus."}
               </p>
             </div>
-            <Link
-              href="/upload"
-              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-            >
-              ← Choose another sample sheet
-            </Link>
-            <Link
-              href="/upload/capture"
-              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-            >
-              Retake with clearer lighting
-            </Link>
+            {sampleId ? (
+              <>
+                <Link
+                  href="/upload"
+                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+                >
+                  ← Choose another sample sheet
+                </Link>
+                <Link
+                  href="/upload/capture"
+                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                >
+                  Retake with clearer lighting
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/upload/capture"
+                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+                >
+                  Retake Photo
+                </Link>
+                <Link
+                  href="/upload"
+                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                >
+                  Upload another file or try a sample sheet
+                </Link>
+              </>
+            )}
           </div>
         ) : reading && reading.segmental_lean ? (
           /* Normal / Partial / Flagged Extraction View */
