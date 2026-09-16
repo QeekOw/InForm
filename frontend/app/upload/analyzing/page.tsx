@@ -154,7 +154,7 @@ function AnalyzingContent() {
 
           <div className="mt-3 flex items-center justify-between text-[10px] text-white/50">
             <span>Elapsed: {elapsed}s</span>
-            <span>{isLive ? "Expected: ~45s" : "Instant"}</span>
+            <span>{isLive ? "Estimated progress (~45s on CPU)" : "Instant"}</span>
           </div>
         </div>
 

@@ -156,16 +156,7 @@ def create_read(
             live=request.live,
             engine_factory=lambda: engine,
         )
-        prog, msg = job.current_progress_and_message()
-        return ReadJobResponse(
-            read_id=job.read_id,
-            sample_id=job.sample_id,
-            live=job.live,
-            status=job.status,
-            progress=prog,
-            message=msg,
-            extraction=job.extraction,
-        )
+        return ReadJobResponse(**job.to_dict())
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -180,16 +171,7 @@ async def poll_read(
     clamped_timeout = max(0.0, min(timeout, 25.0))
     try:
         job = await read_manager.poll(read_id, timeout=clamped_timeout)
-        prog, msg = job.current_progress_and_message()
-        return ReadJobResponse(
-            read_id=job.read_id,
-            sample_id=job.sample_id,
-            live=job.live,
-            status=job.status,
-            progress=prog,
-            message=msg,
-            extraction=job.extraction,
-        )
+        return ReadJobResponse(**job.to_dict())
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -266,28 +248,27 @@ def _apply_plan_corrections(
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+def _require_usable_extraction(extraction: ExtractionItem | None) -> tuple[PartialInBody, str | None, list[str]]:
+    """Validate extraction is not refused and has data, returning (measured, source_device, initial_flagged)."""
+    if extraction is None or extraction.data is None or extraction.status == "refused":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
+                "unread": extraction.unread if extraction else [],
+                "flagged": extraction.flagged if extraction else [],
+            },
+        )
+    return extraction.data, extraction.data.source_device, extraction.flagged
+
+
 def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody, list[str], list[str]]:
     """Resolve reading source into (effective_payload, base_measured, corrected_field_keys, confirmed_field_keys)."""
     if request.sample_id is not None:
         extraction = load_extractions().extractions.get(request.sample_id)
         if extraction is None:
             raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
-
-        # ADR-0008 Amendment §3: The zero-read floor case (data is None) or non-sheet is a hard refusal.
-        # Partial extraction only applies once some real data is read.
-        if extraction.data is None or extraction.status == "refused":
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
-                    "unread": extraction.unread,
-                    "flagged": extraction.flagged,
-                },
-            )
-
-        base_measured = extraction.data
-        source_device = base_measured.source_device
-        initial_flagged = extraction.flagged
+        base_measured, source_device, initial_flagged = _require_usable_extraction(extraction)
 
     elif request.read_id is not None:
         job = read_manager.get(request.read_id)
@@ -299,20 +280,7 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
                 status_code=409,
                 detail="Building a plan is impossible while the read is still in progress.",
             )
-
-        if job.status == "refused" or job.extraction is None or job.extraction.data is None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
-                    "unread": job.extraction.unread if job.extraction else [],
-                    "flagged": job.extraction.flagged if job.extraction else [],
-                },
-            )
-
-        base_measured = job.extraction.data
-        source_device = base_measured.source_device
-        initial_flagged = job.extraction.flagged
+        base_measured, source_device, initial_flagged = _require_usable_extraction(job.extraction)
 
     elif request.measured is not None:
         base_measured = request.measured

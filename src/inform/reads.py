@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import threading
 import time
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 import uuid
 
 from inform.extract import Engine
@@ -34,7 +34,7 @@ _STAGES: list[tuple[float, float, str]] = [
     (0.15, 0.35, "Analyzing visual document geometry and layout..."),
     (0.35, 0.75, "Transformer decoding body composition tokens..."),
     (0.75, 0.90, "Extracting segmental lean and fat parameters..."),
-    (0.90, 0.96, "Evaluating bilateral symmetry & Katch-McArdle cross-checks..."),
+    (0.90, 0.96, "Evaluating Katch–McArdle and LBM cross-checks..."),
 ]
 
 
@@ -69,6 +69,19 @@ class ReadJob:
 
         return round(fraction, 2), current_msg
 
+    def to_dict(self) -> dict[str, Any]:
+        """Convert job to dictionary with current progress and stage message."""
+        prog, msg = self.current_progress_and_message()
+        return {
+            "read_id": self.read_id,
+            "sample_id": self.sample_id,
+            "live": self.live,
+            "status": self.status,
+            "progress": prog,
+            "message": msg,
+            "extraction": self.extraction,
+        }
+
 
 class ReadManager:
     """In-memory manager tracking active and completed read jobs."""
@@ -86,7 +99,6 @@ class ReadManager:
         sample_id: str,
         live: bool = False,
         engine_factory: Callable[[], Engine | None] | None = None,
-        base_dir: Path | None = None,
     ) -> ReadJob:
         """Create a new read job.
         
@@ -94,7 +106,7 @@ class ReadManager:
         If live=True, launches background inference with honest progress updates.
         """
         read_id = f"read_{uuid.uuid4().hex[:12]}"
-        repo_root = base_dir or _REPO_ROOT
+        repo_root = _REPO_ROOT
 
         manifest = load_manifest()
         sample = next((s for s in manifest.samples if s.id == sample_id), None)
