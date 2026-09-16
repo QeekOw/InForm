@@ -132,6 +132,7 @@ export default function Result() {
       return;
     }
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
+    const loadedReadId = loadJSON<string>(SESSION_KEYS.readId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
     const loadedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
@@ -160,13 +161,20 @@ export default function Result() {
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
 
-    const requestBody = loadedSampleId
+    const requestBody = loadedReadId
       ? {
           user: loadedProfile,
-          sample_id: loadedSampleId,
+          read_id: loadedReadId,
           ...(hasCorrections ? { corrections: loadedCorrections } : {}),
           ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
         }
+      : loadedSampleId
+        ? {
+            user: loadedProfile,
+            sample_id: loadedSampleId,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+          }
       : loadedMeasured
         ? {
             user: loadedProfile,

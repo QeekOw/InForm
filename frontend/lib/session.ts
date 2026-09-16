@@ -18,6 +18,8 @@ export const SESSION_KEYS = {
   corrections: "inform:corrections",
   // Confirmations of unchanged flagged fields (issue #39)
   confirmations: "inform:confirmations",
+  // Live or stored read job identifier (issue #40)
+  readId: "inform:readId",
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
@@ -60,6 +62,7 @@ export function clearSheet(): void {
     SESSION_KEYS.reading,
     SESSION_KEYS.corrections,
     SESSION_KEYS.confirmations,
+    SESSION_KEYS.readId,
   ]) {
     removeSessionItem(key);
   }

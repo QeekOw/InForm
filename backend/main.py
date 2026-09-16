@@ -23,10 +23,12 @@ from inform.corrections import (
 from inform.exercise import ExercisePlan
 from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
+from inform.extract import Engine
 from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
+from inform.reads import read_manager
 from inform.samples import (
     ExtractionItem,
     load_extractions,
@@ -118,10 +120,86 @@ def get_sample_image(sample_id: str):
     return FileResponse(img_path, media_type="image/png")
 
 
+def get_engine() -> Engine | None:
+    """Module 1's runtime engine; None lets extract_sheet_for_sample use default_engine().
+
+    A FastAPI dependency so tests can inject a stub engine.
+    """
+    return None
+
+
+class CreateReadRequest(BaseModel):
+    sample_id: str
+    live: bool = False
+
+
+class ReadJobResponse(BaseModel):
+    read_id: str
+    sample_id: str | None
+    live: bool
+    status: Literal["pending", "complete", "refused"]
+    progress: float
+    message: str
+    extraction: ExtractionItem | None = None
+
+
+@app.post("/reads", response_model=ReadJobResponse)
+@app.post("/api/reads", response_model=ReadJobResponse)
+def create_read(
+    request: CreateReadRequest,
+    engine: Engine | None = Depends(get_engine),
+) -> ReadJobResponse:
+    """Start reading a sheet, returning immediately with a read job identifier."""
+    try:
+        job = read_manager.create_read(
+            sample_id=request.sample_id,
+            live=request.live,
+            engine_factory=lambda: engine,
+        )
+        prog, msg = job.current_progress_and_message()
+        return ReadJobResponse(
+            read_id=job.read_id,
+            sample_id=job.sample_id,
+            live=job.live,
+            status=job.status,
+            progress=prog,
+            message=msg,
+            extraction=job.extraction,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/reads/{read_id}", response_model=ReadJobResponse)
+@app.get("/api/reads/{read_id}", response_model=ReadJobResponse)
+async def poll_read(
+    read_id: str,
+    timeout: float = 10.0,
+) -> ReadJobResponse:
+    """Long poll a read job with a timeout surviving host network limits."""
+    clamped_timeout = max(0.0, min(timeout, 25.0))
+    try:
+        job = await read_manager.poll(read_id, timeout=clamped_timeout)
+        prog, msg = job.current_progress_and_message()
+        return ReadJobResponse(
+            read_id=job.read_id,
+            sample_id=job.sample_id,
+            live=job.live,
+            status=job.status,
+            progress=prog,
+            message=msg,
+            extraction=job.extraction,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 class PlanRequest(BaseModel):
     user: UserProfile
     # A Sample sheet whose stored read the server plans from, with optional human corrections
     sample_id: str | None = None
+    # A Read job identifier (stored or live read)
+    read_id: str | None = None
     # An explicit measured read with optional human corrections
     measured: PartialInBody | None = None
     # Corrections typed by a person (recorded alongside measured fields, never merged into them)
@@ -138,9 +216,9 @@ class PlanRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_source(self) -> "PlanRequest":
-        sources = [s is not None for s in (self.sample_id, self.measured, self.inbody)]
+        sources = [s is not None for s in (self.sample_id, self.read_id, self.measured, self.inbody)]
         if sum(sources) != 1:
-            raise ValueError("Provide exactly one reading source (sample_id, measured, or inbody)")
+            raise ValueError("Provide exactly one reading source (sample_id, read_id, measured, or inbody)")
         return self
 
 
@@ -210,6 +288,31 @@ def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody
         base_measured = extraction.data
         source_device = base_measured.source_device
         initial_flagged = extraction.flagged
+
+    elif request.read_id is not None:
+        job = read_manager.get(request.read_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Read '{request.read_id}' not found")
+
+        if job.status == "pending":
+            raise HTTPException(
+                status_code=409,
+                detail="Building a plan is impossible while the read is still in progress.",
+            )
+
+        if job.status == "refused" or job.extraction is None or job.extraction.data is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
+                    "unread": job.extraction.unread if job.extraction else [],
+                    "flagged": job.extraction.flagged if job.extraction else [],
+                },
+            )
+
+        base_measured = job.extraction.data
+        source_device = base_measured.source_device
+        initial_flagged = job.extraction.flagged
 
     elif request.measured is not None:
         base_measured = request.measured

@@ -13,6 +13,8 @@ from typing import Any, Callable, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
+T = TypeVar("T", bound=BaseModel)
+
 from inform.errors import (
     InBodyExtractionError,
     MissingRequiredFieldsError,
@@ -80,12 +82,7 @@ def current_checkpoint_id() -> str:
     return os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
 
 
-_ModelT = TypeVar("_ModelT", bound=BaseModel)
-
-
-def _load_json_model(
-    model_cls: type[_ModelT], path: Path | str | None, default_path: Path
-) -> _ModelT:
+def _load_json_model(model_cls: type[T], path: Path | str | None, default_path: Path) -> T:
     p = Path(path) if path is not None else default_path
     if not p.is_absolute():
         p = _REPO_ROOT / p
