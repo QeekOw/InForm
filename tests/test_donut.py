@@ -28,7 +28,7 @@ def test_parses_clean_generation():
 
 
 def test_tolerates_residual_task_token():
-    # skip_special_tokens normally removes it, but be robust if it lingers.
+    # The engine decodes with special tokens kept (#58), so it is always there.
     assert _to_partial(TASK_TOKEN + _GOOD.model_dump_json()) == _GOOD_PARTIAL
 
 
@@ -59,3 +59,34 @@ def test_bad_typed_field_is_dropped_but_others_kept():
     assert partial.weight_kg is None  # the bad field is dropped -> unread
     assert partial.lean_body_mass_kg == 58.0  # the rest survives
     assert partial.segmental_lean.trunk_kg == 24.5
+def test_lone_one_written_as_unk_reads_as_one():
+    # The tokenizer has no token for a lone "1"; its id is <unk>'s, so the model
+    # writes 57.1 as 57.<unk>. Deleting <unk> left "57.", invalid JSON that cost
+    # every field after it. In the training targets <unk> only ever stands for
+    # "1", so reading it back is the model's own value, not a guess.
+    partial = _to_partial(
+        '{"weight_kg":66.2,"lean_body_mass_kg":57.<unk>,"percent_body_fat":13.8}'
+    )
+
+    assert partial.lean_body_mass_kg == 57.1
+    assert partial.percent_body_fat == 13.8
+
+
+def test_end_token_kept_by_decode_does_not_cost_the_last_field():
+    # The engine decodes with special tokens kept so <unk> survives to be read as
+    # "1" (#58). The end-of-sequence token comes through with it.
+    partial = _to_partial(TASK_TOKEN + '{"weight_kg":66.2,"percent_body_fat":13.8}</s>')
+
+    assert partial.weight_kg == 66.2
+    assert partial.percent_body_fat == 13.8
+
+
+def test_other_special_tokens_the_decode_keeps_are_not_part_of_the_read():
+    # Skipping special tokens used to drop these as well. Kept, a leading <s>
+    # refused the whole sheet and trailing padding cost the last field.
+    partial = _to_partial(
+        "<s>" + TASK_TOKEN + '{"weight_kg":66.2,"percent_body_fat":13.8}</s><pad><mask>'
+    )
+
+    assert partial.weight_kg == 66.2
+    assert partial.percent_body_fat == 13.8

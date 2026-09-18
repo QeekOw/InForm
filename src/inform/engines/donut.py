@@ -10,8 +10,17 @@ from inform.inbody import PartialInBody
 # importable without torch/transformers (the training extra).
 TASK_TOKEN = "<s_inbody>"
 
+# The Donut tokenizer's unk_token. It has no token for a lone "1": that digit's
+# id is <unk>'s, so the model writes 57.1 as 57.<unk>. Across every training
+# target <unk> stands for "1" and nothing else, so it reads back as "1" (#58).
+_UNK_TOKEN = "<unk>"
+# The tokenizer's other special tokens, plus the task token. Keeping special
+# tokens in the decode brings these along, and none of them is part of a read.
+_STRIPPED_TOKENS = (TASK_TOKEN, "<s>", "</s>", "<pad>", "<mask>")
+
 # The target the model emits is TASK_TOKEN + payload JSON + eos. Generation
-# reverses that: decode, drop special tokens, JSON-parse into an InBodyPayload.
+# reverses that: decode keeping special tokens, strip all but <unk>, read <unk>
+# as "1", JSON-parse into an InBodyPayload.
 _MAX_NEW_TOKENS = 512
 
 
@@ -50,9 +59,8 @@ def load_engine(checkpoint_source: str | Path):
             eos_token_id=processor.tokenizer.eos_token_id,
             pad_token_id=processor.tokenizer.pad_token_id,
         )
-        # skip_special_tokens drops eos/pad and TASK_TOKEN (an added special
-        # token), leaving the raw JSON the model committed to.
-        decoded = processor.batch_decode(outputs, skip_special_tokens=True)[0]
+        # Kept, not skipped: skipping would delete <unk> too (see _UNK_TOKEN).
+        decoded = processor.batch_decode(outputs, skip_special_tokens=False)[0]
         return _to_partial(decoded)
 
     return extract
@@ -64,8 +72,12 @@ def _to_partial(decoded: str) -> PartialInBody:
     # floor-reject (nothing readable) vs partial (ADR-0008 amended). Never
     # fabricates: unparseable/invalid output yields an empty read (all None),
     # not a guessed value — the fail-closed guarantee is preserved.
+    body = decoded
+    for token in _STRIPPED_TOKENS:
+        body = body.replace(token, "")
+    body = body.replace(_UNK_TOKEN, "1").strip()
     try:
-        data = json.loads(decoded.replace(TASK_TOKEN, "").strip())
+        data = json.loads(body)
     except json.JSONDecodeError:
         return PartialInBody()
     if not isinstance(data, dict):
