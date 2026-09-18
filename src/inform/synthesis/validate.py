@@ -144,6 +144,13 @@ def generate_fallback_plan(master: MasterPayload) -> DailyPlan:
             lines.append(f"- ⚠️ {imbalance}")
         lines.append("")
 
+    if master.exercises.unconfirmed_imbalance_pairs:
+        pairs = " and ".join(master.exercises.unconfirmed_imbalance_pairs)
+        lines.append(
+            f"Balance was not assessed for the {pairs} because those readings were not confirmed."
+        )
+        lines.append("")
+
     if master.exercises.exercises:
         lines.append("### Exercise Routine")
         for i, ex in enumerate(master.exercises.exercises, 1):

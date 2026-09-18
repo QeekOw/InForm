@@ -39,7 +39,12 @@ def test_assemble_master_payload(fake_openai, raw_segmental):
     fake_openai(_raw(raw_segmental, visceral_fat_level=7))
     user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
 
-    master = assemble_master_payload(FIXTURE, user, _pool())
+    master = assemble_master_payload(
+        FIXTURE,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert isinstance(master, MasterPayload)
     assert master.inbody.lean_body_mass_kg == 58.0
@@ -79,7 +84,12 @@ def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmen
     )
     user = _user(fitness_goal="hypertrophy")
 
-    master = assemble_master_payload(FIXTURE, user, _pool())
+    master = assemble_master_payload(
+        FIXTURE,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert master.exercises.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"
@@ -122,7 +132,12 @@ def test_build_master_payload_from_payload():
     inbody = _inbody(visceral_fat_level=7)
     user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
 
-    master = build_master_payload(inbody, user, _pool())
+    master = build_master_payload(
+        inbody,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert isinstance(master, MasterPayload)
     assert master.inbody.lean_body_mass_kg == 58.0
@@ -179,7 +194,12 @@ def test_build_master_payload_wires_asymmetry_from_payload():
     )
     user = _user(fitness_goal="hypertrophy")
 
-    master = build_master_payload(inbody, user, _pool())
+    master = build_master_payload(
+        inbody,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert master.exercises.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"

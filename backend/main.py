@@ -362,7 +362,12 @@ def plan(
     """
     inbody, base_measured, corrected_fields, confirmed_fields = _inbody_for_plan(request)
     nutrition = compute_targets(request.user, inbody)
-    exercises = recommend_exercises(request.user, inbody, DEFAULT_EXERCISE_POOL)
+    exercises = recommend_exercises(
+        request.user,
+        inbody,
+        DEFAULT_EXERCISE_POOL,
+        set(confirmed_fields) | set(corrected_fields),
+    )
     master = MasterPayload(
         user=request.user,
         inbody=inbody,

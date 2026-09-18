@@ -406,16 +406,24 @@ export default function Result() {
           {/* Screen 6: imbalances */}
           <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
             <p className="text-[13px] font-bold">Left/right balance</p>
-            {state.plan.exercises.detected_imbalances.length === 0 ? (
+            {state.plan.exercises.detected_imbalances.length === 0 &&
+            state.plan.exercises.unconfirmed_imbalance_pairs.length === 0 ? (
               <p className="mt-1 text-[11px] text-[#117d69]">
                 Your left and right sides are within 5% of each other. No imbalance to correct.
               </p>
-            ) : (
+            ) : state.plan.exercises.detected_imbalances.length > 0 ? (
               state.plan.exercises.detected_imbalances.map((imbalance) => (
                 <p key={imbalance} className="mt-1 text-[11px]">
                   {imbalance}
                 </p>
               ))
+            ) : null}
+            {state.plan.exercises.unconfirmed_imbalance_pairs.length > 0 && (
+              <p className="mt-2 text-[11px] text-amber-800">
+                Balance wasn’t assessed for the {state.plan.exercises.unconfirmed_imbalance_pairs.join(" and ")} because those readings weren’t confirmed. {" "}
+                <Link className="font-bold underline" href="/preview">Review readings</Link>
+                {" "}to check them against your sheet and see recommendations.
+              </p>
             )}
           </div>
 

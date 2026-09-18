@@ -25,7 +25,10 @@ _FAT_LOSS_HIGH_VISCERAL_CARDIO_COUNT = 3
 
 
 def recommend_exercises(
-    user: UserProfile, inbody: InBodyPayload, exercise_pool: list[Exercise]
+    user: UserProfile,
+    inbody: InBodyPayload,
+    exercise_pool: list[Exercise],
+    confirmed_fields: set[str] | None = None,
 ) -> ExercisePlan:
     """Module 3: deterministic constraint-based filtering over exercise_pool.
 
@@ -35,8 +38,10 @@ def recommend_exercises(
     independent of that data-acquisition concern).
     """
     detected_imbalances: list[str] = []
+    unconfirmed_imbalance_pairs: list[str] = []
     selected: list[Exercise] = []
     seen_names: set[str] = set()
+    confirmed = confirmed_fields or set()
 
     def _add(exercises: list[Exercise]) -> None:
         for ex in exercises:
@@ -46,6 +51,14 @@ def recommend_exercises(
 
     # 3.1.3.1 Imbalance correction
     for limb, (left_field, right_field, body_parts) in _LIMB_PAIRS.items():
+        pair_fields = {
+            f"segmental_lean.{left_field}",
+            f"segmental_lean.{right_field}",
+        }
+        if not pair_fields <= confirmed:
+            unconfirmed_imbalance_pairs.append(limb)
+            continue
+
         left = getattr(inbody.segmental_lean, left_field)
         right = getattr(inbody.segmental_lean, right_field)
         deviation_pct = abs(left - right) / max(left, right) * 100
@@ -79,4 +92,8 @@ def recommend_exercises(
         )
         _add(cardio[:count])
 
-    return ExercisePlan(exercises=selected, detected_imbalances=detected_imbalances)
+    return ExercisePlan(
+        exercises=selected,
+        detected_imbalances=detected_imbalances,
+        unconfirmed_imbalance_pairs=unconfirmed_imbalance_pairs,
+    )
