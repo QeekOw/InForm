@@ -29,7 +29,7 @@ TASK_TOKEN = "<s_inbody>"
 DATASET_IMAGE_SUFFIX = ".jpg"
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
-_DEVICES = ("inbody_270", "inbody_570")
+_DEVICES = ("inbody_270",)
 
 # What a dataset says about itself, written beside the sheets. A retrain is
 # always a comparison between two datasets, and the v4 retrain could not be
@@ -104,7 +104,7 @@ def write_manifest(
 
 def generate_dataset(
     output_dir: Path,
-    n_per_device: int = 2500,
+    n_per_device: int = 5000,
     seed_start: int = 0,
     devices: tuple[str, ...] = _DEVICES,
 ) -> None:

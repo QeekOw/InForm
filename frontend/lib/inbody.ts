@@ -1,7 +1,7 @@
 // Mirrors inform.inbody.InBodyPayload (src/inform/inbody.py) so the reading
 // sent to POST /plan matches the backend's pydantic model field for field.
 
-export type SheetType = "inbody_270" | "inbody_570";
+export type SheetType = "inbody_270";
 
 export type SegmentalLean = {
   left_arm_kg: number;

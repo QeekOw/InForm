@@ -77,7 +77,7 @@ inbody = InBodyPayload(
         left_leg_kg=7.8, right_leg_kg=7.9, trunk_kg=22.0,
     ),
     visceral_fat_level=8,
-    source_device="inbody_570",
+    source_device="inbody_270",
 )
 
 # Modules 2 and 3 do the math; Module 4 writes the plan.
@@ -127,7 +127,7 @@ Stages 1 to 3 produce one consolidated object, the `MasterPayload`, which is the
 
 **Is my health data sent anywhere?** By default the photo is read on your machine by the self-hosted Donut engine, so the image never leaves your computer. The plan-writing step still calls OpenAI. If you deliberately switch photo-reading to the VLM engine, that path is meant for synthetic or consented images, not real medical data (see [ADR-0005](docs/adr/0005-inference-privacy-posture.md)). The deterministic calculation path runs fully on your machine.
 
-**Which devices are supported?** InBody 270 and InBody 570 result sheets.
+**Which devices are supported?** InBody 270 result sheets.
 
 **Do I need a GPU?** No. The default Donut engine runs on CPU (a GPU just makes reading a photo faster), and the deterministic core needs nothing special. A GPU only really matters if you want to fine-tune the OCR model yourself.
 

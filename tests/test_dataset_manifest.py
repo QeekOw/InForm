@@ -24,14 +24,13 @@ from inform.training.dataset import (
 
 def test_the_fingerprint_covers_the_generator_and_every_device_template():
     # Sensitivity is the property that matters and the one a hash cannot
-    # assert about itself, so pin the inputs instead. A third device template
-    # added later is covered without editing this test; a template moved out
+    # assert about itself, so pin the active template. A template moved out
     # of the glob fails it.
     names = sorted(p.name for p in fingerprint_inputs())
 
     assert "__init__.py" in names
     assert "inbody_270.html" in names
-    assert "inbody_570.html" in names
+    assert "inbody_570.html" not in names
 
 
 def test_the_fingerprint_is_stable_across_calls():
@@ -69,10 +68,8 @@ def test_shards_into_one_directory_each_keep_their_own_manifest(tmp_path):
     assert found == ["dataset.000000-000001.json", "dataset.000002-000003.json"]
 
 
-def test_the_manifest_counts_every_device(tmp_path):
-    manifest = write_manifest(
-        tmp_path, devices=("inbody_270", "inbody_570"), n_per_device=2500, seed_start=0
-    )
+def test_the_manifest_counts_the_sole_supported_device(tmp_path):
+    manifest = write_manifest(tmp_path, devices=("inbody_270",), n_per_device=2500, seed_start=0)
 
-    assert manifest["sheets"] == 5000
-    assert manifest["seed_end"] == 4999
+    assert manifest["sheets"] == 2500
+    assert manifest["seed_end"] == 2499

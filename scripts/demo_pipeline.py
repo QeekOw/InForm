@@ -26,7 +26,7 @@ from inform.user import UserProfile  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("image", type=Path, help="Path to an InBody 270/570 sheet photo")
+    parser.add_argument("image", type=Path, help="Path to an InBody 270 sheet photo")
     parser.add_argument("--age", type=int, default=30)
     parser.add_argument("--sex", choices=["male", "female"], default="female")
     parser.add_argument("--activity", type=float, default=1.55, help="Activity multiplier")

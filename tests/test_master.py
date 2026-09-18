@@ -22,7 +22,7 @@ def _inbody(**overrides) -> InBodyPayload:
             right_leg_kg=8.2,
             trunk_kg=24.5,
         ),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
     fields.update(overrides)
     return InBodyPayload(**fields)

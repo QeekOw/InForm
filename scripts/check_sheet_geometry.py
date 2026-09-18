@@ -34,14 +34,14 @@ from inform.synthetic import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--samples", type=int, default=6, help="Sheets per device")
+    parser.add_argument("--samples", type=int, default=6, help="InBody 270 sheets")
     parser.add_argument("--seed-start", type=int, default=9001)
     args = parser.parse_args()
 
     print(f"target: aspect {SHEET_ASPECT:.3f} +/- {SHEET_ASPECT_TOLERANCE}   width >= {MIN_SHEET_WIDTH_PX}px\n")
     failures = 0
 
-    for device in ("inbody_270", "inbody_570"):
+    for device in ("inbody_270",):
         aspects, widths = [], []
         for seed in range(args.seed_start, args.seed_start + args.samples):
             rendered = _render(device, _generate_values(device, seed))

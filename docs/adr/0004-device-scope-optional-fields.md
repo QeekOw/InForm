@@ -1,6 +1,6 @@
 # ADR-0004: Support InBody 270 + 570; make device-specific fields optional
 
-**Status:** Accepted
+**Status:** Superseded in part by [ADR-0013](0013-retire-inbody-570.md)
 **Date:** 2026-08-16
 **Module:** 1 (OCR) → contract for Module 3 (recommender)
 **Paper ref:** §3.3 (2,500× InBody 270 + 2,500× 570), §3.1.3.2 (visceral-fat exercise rule)

@@ -98,7 +98,7 @@ curl -X POST http://localhost:8000/plan \
       "weight_kg": 68.0, "lean_body_mass_kg": 50.0, "percent_body_fat": 26.5,
       "skeletal_muscle_mass_kg": 28.0, "basal_metabolic_rate_kcal": 1450.0,
       "segmental_lean": {"left_arm_kg": 2.4, "right_arm_kg": 2.7, "left_leg_kg": 7.8, "right_leg_kg": 7.9, "trunk_kg": 22.0},
-      "source_device": "inbody_570", "visceral_fat_level": 8
+      "source_device": "inbody_270", "visceral_fat_level": 8
     }
   }'
 ```

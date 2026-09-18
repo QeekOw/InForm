@@ -16,7 +16,7 @@ def _sample_partial() -> PartialInBody:
         segmental_lean=PartialSegmentalLean(
             left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
         ),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
 
 

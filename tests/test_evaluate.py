@@ -14,7 +14,7 @@ _TRUTH = InBodyPayload(
         left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
     ),
     visceral_fat_level=7,
-    source_device="inbody_570",
+    source_device="inbody_270",
 )
 _IMAGE = Path("sheet.png")
 

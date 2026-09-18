@@ -11,7 +11,7 @@ from inform.user import UserProfile
 
 
 def _create_test_master(
-    device: str = "inbody_570", visceral_fat: int | None = 6
+    device: str = "inbody_270", visceral_fat: int | None = 6
 ) -> MasterPayload:
     seg = SegmentalLean(
         left_arm_kg=3.4,

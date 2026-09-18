@@ -18,13 +18,20 @@ _GOOD = InBodyPayload(
     segmental_lean=dict(
         left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
     ),
-    source_device="inbody_570",
+    source_device="inbody_270",
 )
 _GOOD_PARTIAL = PartialInBody.model_validate(_GOOD.model_dump())
 
 
 def test_parses_clean_generation():
     assert _to_partial(_GOOD.model_dump_json()) == _GOOD_PARTIAL
+
+
+def test_parses_quoted_pbf_target_as_a_number():
+    data = _GOOD.model_dump()
+    data["percent_body_fat"] = f"{_GOOD.percent_body_fat:.1f}"
+
+    assert _to_partial(json.dumps(data)).percent_body_fat == _GOOD.percent_body_fat
 
 
 def test_tolerates_residual_task_token():

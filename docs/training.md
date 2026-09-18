@@ -11,27 +11,26 @@ pip install -e ".[dev,training]"
 
 ## 1. Generate the synthetic dataset
 
-Paper target: ~5,000 sheets, ~2,500 each for InBody 270 and 570 (ADR-0007).
+Current target: 5,000 InBody 270 sheets (ADR-0007 / ADR-0013), preserving the
+previous training-set size after retiring the 570.
 Rendering shells out to a headless Chrome/Edge per sheet. Measured at the A4
 geometry: **5.05s/sheet**, so ~7.6 hours for the full set sequentially. (It was
 ~1s/sheet before the sheet became A4-portrait at 2.5x device scale, which is
 where the older "about an hour" figure came from.)
 
 ```
-python -m inform.training.dataset --output-dir data/synthetic --n-per-device 2500
+python -m inform.training.dataset --output-dir data/synthetic --n-per-device 5000
 ```
 
 Writes one `<device>_<seed>.jpg` + matching `.json` ground truth per sheet.
 
 **Shard it.** A sheet depends only on its device and seed, and the filename is
 `{device}_{seed:06d}`, so disjoint `--seed-start` ranges produce byte-identical
-output to one sequential run. Seeds run continuously across devices within one
-call, so a two-device 2500-each run covers 0-2499 (270) then 2500-4999 (570);
-shard each device separately with `--device`:
+output to one sequential run. All active generation is InBody 270, so shard its
+seed range directly:
 
 ```
 python -m inform.training.dataset --output-dir <dir> --device inbody_270 --seed-start 0    --n-per-device 625
-python -m inform.training.dataset --output-dir <dir> --device inbody_570 --seed-start 2500 --n-per-device 625
 ```
 
 Use a disjoint `--seed-start` (e.g. 100000) for the held-out set so it never

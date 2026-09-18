@@ -51,7 +51,7 @@ def _bands(device: str) -> tuple[tuple[float, float], tuple[float, float]]:
     return tick_band, value_band
 
 
-@pytest.mark.parametrize("device", ["inbody_270", "inbody_570"])
+@pytest.mark.parametrize("device", ["inbody_270"])
 def test_the_bar_value_sits_below_the_tick_labels(device):
     (_, tick_bottom), (value_top, _) = _bands(device)
 
@@ -61,7 +61,7 @@ def test_the_bar_value_sits_below_the_tick_labels(device):
     )
 
 
-@pytest.mark.parametrize("device", ["inbody_270", "inbody_570"])
+@pytest.mark.parametrize("device", ["inbody_270"])
 def test_the_bar_value_stays_inside_its_row(device):
     css = (_TEMPLATES / f"{device}.html").read_text(encoding="utf-8")
     plot_height = _px(_rule(css, ".grow .plot")["height"])
@@ -70,7 +70,7 @@ def test_the_bar_value_stays_inside_its_row(device):
     assert value_bottom <= plot_height
 
 
-@pytest.mark.parametrize("device", ["inbody_270", "inbody_570"])
+@pytest.mark.parametrize("device", ["inbody_270"])
 def test_the_value_is_not_masked_over_whatever_is_behind_it(device):
     # The white background and halo existed to punch a hole through the tick
     # label the value was printed on top of. Nothing is behind it now, and a

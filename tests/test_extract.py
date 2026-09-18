@@ -5,14 +5,17 @@
 # will run against the synthetic-generator's labeled sheets (issue #5).
 from pathlib import Path
 
+import pytest
+
 from inform.engines.vlm import _RawExtraction
+from inform.errors import NotAnInBodySheetError
 from inform.extract import extract_inbody
-from inform.inbody import InBodyPayload, SegmentalLean
+from inform.inbody import InBodyPayload, PartialInBody, SegmentalLean
 
 FIXTURE = Path(__file__).parent / "fixtures" / "inbody_sample.png"
 
 
-def test_extracts_570_sheet_with_visceral_fat(fake_openai, raw_segmental):
+def test_extracts_270_sheet_with_visceral_fat(fake_openai, raw_segmental):
     fake_openai(
         _RawExtraction(
             is_inbody_sheet=True,
@@ -23,7 +26,7 @@ def test_extracts_570_sheet_with_visceral_fat(fake_openai, raw_segmental):
             basal_metabolic_rate_kcal=1622.8,
             segmental_lean=raw_segmental(),
             visceral_fat_level=7,
-            source_device="inbody_570",
+            source_device="inbody_270",
         )
     )
 
@@ -41,7 +44,7 @@ def test_extracts_570_sheet_with_visceral_fat(fake_openai, raw_segmental):
             left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
         ),
         visceral_fat_level=7,
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
 
 
@@ -76,7 +79,7 @@ def test_binds_structured_output_schema_and_encodes_image(fake_openai, raw_segme
             skeletal_muscle_mass_kg=33.0,
             basal_metabolic_rate_kcal=1622.8,
             segmental_lean=raw_segmental(),
-            source_device="inbody_570",
+            source_device="inbody_270",
         )
     )
 
@@ -86,3 +89,13 @@ def test_binds_structured_output_schema_and_encodes_image(fake_openai, raw_segme
     assert call_kwargs["response_format"] is _RawExtraction
     image_content = call_kwargs["messages"][1]["content"][0]
     assert image_content["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_refuses_explicit_570_read_from_an_engine():
+    with pytest.raises(NotAnInBodySheetError):
+        extract_inbody(FIXTURE, engine=lambda _image: PartialInBody(source_device="inbody_570"))
+
+
+def test_refuses_read_without_an_established_270_device():
+    with pytest.raises(NotAnInBodySheetError):
+        extract_inbody(FIXTURE, engine=lambda _image: PartialInBody(weight_kg=70.0))

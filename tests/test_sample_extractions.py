@@ -43,7 +43,7 @@ def test_manifest_schema_and_provenance():
         assert sample.name, f"Sample {sample.id} name must not be empty"
         assert sample.provenance in ("synthetic", "real")
         if sample.source_device is not None:
-            assert sample.source_device in ("inbody_270", "inbody_570")
+            assert sample.source_device == "inbody_270"
 
         img_path = _REPO_ROOT / sample.image_path
         assert img_path.exists(), f"Sample image file does not exist: {img_path}"

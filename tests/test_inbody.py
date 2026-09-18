@@ -22,7 +22,7 @@ def _payload(**overrides) -> InBodyPayload:
         skeletal_muscle_mass_kg=33.0,
         basal_metabolic_rate_kcal=1622.8,
         segmental_lean=_segmental(),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
     fields.update(overrides)
     return InBodyPayload(**fields)
@@ -31,7 +31,7 @@ def _payload(**overrides) -> InBodyPayload:
 def test_valid_570_payload_with_visceral_fat():
     payload = _payload(visceral_fat_level=7)
     assert payload.visceral_fat_level == 7
-    assert payload.source_device == "inbody_570"
+    assert payload.source_device == "inbody_270"
 
 
 def test_valid_270_payload_without_visceral_fat():

@@ -9,14 +9,6 @@
       "description": "Clean synthetic InBody 270 scan; all required fields read without flags."
     },
     {
-      "id": "synthetic_570_clean",
-      "name": "Synthetic InBody 570 (Clean)",
-      "provenance": "synthetic",
-      "source_device": "inbody_570",
-      "image_path": "data/samples/synthetic_570_clean.png",
-      "description": "Clean synthetic InBody 570 scan; includes segmental lean analysis and visceral fat level."
-    },
-    {
       "id": "real_270_clean",
       "name": "Real InBody 270 Printout (Redacted, Misread LBM)",
       "provenance": "real",

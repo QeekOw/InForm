@@ -27,7 +27,7 @@ def _sample_master() -> MasterPayload:
         skeletal_muscle_mass_kg=35.0,
         basal_metabolic_rate_kcal=1687.6,
         segmental_lean=seg,
-        source_device="inbody_570",
+        source_device="inbody_270",
         visceral_fat_level=6,
     )
     user = UserProfile(

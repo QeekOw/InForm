@@ -14,8 +14,7 @@ from inform.formulas import katch_mcardle_bmr
 from inform.inbody import InBodyPayload, SegmentalLean
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
-# Both devices render a full-page portrait clone of a real sheet.
-_WINDOW_SIZE = {"inbody_270": "1060,1680", "inbody_570": "1060,1780"}
+_WINDOW_SIZE = "1060,1680"
 _SHEET_JPEG_QUALITY = 92
 
 # Target geometry of a rendered sheet, shared by tests and
@@ -56,10 +55,9 @@ _SMM_FRACTION_OF_LBM_RANGE = (0.55, 0.65)
 _VISCERAL_FAT_RANGE = (1, 20)
 _SEGMENT_FRACTIONS_OF_LBM = {"left_arm_kg": 0.08, "right_arm_kg": 0.08, "left_leg_kg": 0.17, "right_leg_kg": 0.17}
 
-# Decimals a device prints limb lean mass to. A real 270 prints two; trained only
-# on one-decimal limbs, the model cut real arms short (#59). No real 570 has been
-# seen, so it keeps the one decimal it always had.
-_LIMB_DECIMALS = {"inbody_270": 2, "inbody_570": 1}
+# A real 270 prints limb lean mass to two decimals; trained only on one-decimal
+# limbs, the model cut real arms short (#59).
+_LIMB_DECIMALS = 2
 
 # The fat analogue of the table above: each limb's share of total body fat, and
 # the reference physique its sufficiency is scored against. Segmental fat is
@@ -102,7 +100,7 @@ _BROWSER_CANDIDATES = (
 )
 
 
-def generate_sheet(device: Literal["inbody_270", "inbody_570"], seed: int) -> tuple[bytes, InBodyPayload]:
+def generate_sheet(device: Literal["inbody_270"], seed: int) -> tuple[bytes, InBodyPayload]:
     """Render one synthetic InBody sheet + its exact ground-truth payload (ADR-0007)."""
     payload = _generate_values(device, seed)
     image = _render(device, payload)
@@ -113,7 +111,9 @@ def generate_sheet(device: Literal["inbody_270", "inbody_570"], seed: int) -> tu
     return buffer.getvalue(), payload
 
 
-def _generate_values(device: Literal["inbody_270", "inbody_570"], seed: int) -> InBodyPayload:
+def _generate_values(device: Literal["inbody_270"], seed: int) -> InBodyPayload:
+    if device != "inbody_270":
+        raise ValueError("InBody 270 is the only supported synthetic device")
     rng = random.Random(seed)
 
     weight_kg = round(rng.uniform(*_WEIGHT_RANGE_KG), 1)
@@ -132,7 +132,7 @@ def _generate_values(device: Literal["inbody_270", "inbody_570"], seed: int) -> 
         percent_body_fat=percent_body_fat,
         skeletal_muscle_mass_kg=skeletal_muscle_mass_kg,
         basal_metabolic_rate_kcal=basal_metabolic_rate_kcal,
-        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS[device]),
+        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS),
         visceral_fat_level=visceral_fat_level,
         source_device=device,
     )
@@ -353,7 +353,7 @@ def _graded_fields(payload: InBodyPayload) -> dict:
     Limbs are printed to the device's decimals, so a 270 arm of 3.4 prints 3.40.
     """
     seg = payload.segmental_lean
-    decimals = _LIMB_DECIMALS[payload.source_device]
+    decimals = _LIMB_DECIMALS
     return {
         "weight_kg": payload.weight_kg,
         "lean_body_mass_kg": payload.lean_body_mass_kg,  # 270 renders this as "Fat Free Mass"
@@ -373,16 +373,17 @@ def label_json(payload: InBodyPayload) -> str:
     model to stop a digit early (#59). JSON still parses 3.40 as 3.4, so this
     changes the training target and nothing that reads the label back.
     """
-    decimals = _LIMB_DECIMALS[payload.source_device]
-    return _LIMB_IN_JSON.sub(
-        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{decimals}f}', payload.model_dump_json()
+    label = _LIMB_IN_JSON.sub(
+        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{_LIMB_DECIMALS}f}', payload.model_dump_json()
+    )
+    return re.sub(
+        r'"percent_body_fat":(-?\d+(?:\.\d+)?)',
+        lambda m: f'"percent_body_fat":"{float(m.group(1)):.1f}"',
+        label,
     )
 
 
-def _fill_template(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> str:
-    # Both devices are now full realistic clones (270 in #13, adult 570 follow-up):
-    # graded target fields sit amid the coherent distractor surround. Each template
-    # pulls the keys it needs from this shared dict; unused keys are ignored.
+def _fill_template(device: Literal["inbody_270"], payload: InBodyPayload) -> str:
     template = Template((_TEMPLATE_DIR / f"{device}.html").read_text(encoding="utf-8"))
     values = _graded_fields(payload) | _derive_render_values(payload)
     return template.substitute(values)
@@ -404,7 +405,7 @@ def _find_browser() -> str:
     )
 
 
-def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> Image.Image:
+def _render(device: Literal["inbody_270"], payload: InBodyPayload) -> Image.Image:
     html = _fill_template(device, payload)
     with tempfile.TemporaryDirectory() as tmp_dir:
         html_path = Path(tmp_dir) / "sheet.html"
@@ -424,7 +425,7 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
                 # screenshot -- so concurrent renders (sharded dataset
                 # generation) silently lose sheets without a non-zero exit.
                 f"--user-data-dir={Path(tmp_dir) / 'profile'}",
-                f"--window-size={_WINDOW_SIZE[device]}",
+                f"--window-size={_WINDOW_SIZE}",
                 f"--force-device-scale-factor={_DEVICE_SCALE_FACTOR}",
                 "--hide-scrollbars",
                 html_path.as_uri(),

@@ -23,7 +23,7 @@ def _raw(raw_segmental, **overrides) -> _RawExtraction:
         skeletal_muscle_mass_kg=33.0,
         basal_metabolic_rate_kcal=1622.8,
         segmental_lean=raw_segmental(),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
     fields.update(overrides)
     return _RawExtraction(**fields)

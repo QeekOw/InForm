@@ -11,10 +11,10 @@ def test_list_samples_returns_all_manifest_sheets_with_provenance():
     assert response.status_code == 200
     samples = response.json()
 
-    assert len(samples) >= 5
+    assert len(samples) >= 4
     sample_ids = {s["id"] for s in samples}
     assert "synthetic_270_clean" in sample_ids
-    assert "synthetic_570_clean" in sample_ids
+    assert "synthetic_570_clean" not in sample_ids
     assert "real_270_clean" in sample_ids
     assert "real_270_flagged" in sample_ids
     assert "refused_non_sheet" in sample_ids

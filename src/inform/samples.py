@@ -38,7 +38,7 @@ class SampleSheet(BaseModel):
     id: str
     name: str
     provenance: Literal["synthetic", "real"]
-    source_device: Literal["inbody_270", "inbody_570"] | None = None
+    source_device: Literal["inbody_270"] | None = None
     image_path: str
     description: str
 

@@ -189,3 +189,32 @@ gutter is wrong".
 Ground-truth invariants and the `InBodyPayload` contract remain untouched, as in every amendment
 above.
 
+## Amendment (2026-09-18) — quoted PBF target and paired promotion gate
+
+The v7 limb-label correction fixed the arm reads but caused a real-photo PBF cross-field
+attribution regression, including the format-shape-bleed subtype. The rendered PBF field itself
+remained a numeric value with one decimal place. The next retrain therefore changes only its
+training-target representation, not its rendered spelling, physiology, layout, or augmentation.
+
+### Decision
+
+- Render PBF as the existing numeric one-decimal value, but serialize its JSON target as a quoted
+  one-decimal string. The parser must accept that target and retain PBF's numeric runtime
+  interface.
+- Keep the v7 limb representations unchanged. No additional formatting or augmentation change is
+  part of this experiment.
+- Per [ADR-0013](0013-retire-inbody-570.md), v8 generation, training, and evaluation use only
+  InBody 270 sheets. Generate 5,000 such sheets to preserve the prior training-set size.
+- Score every planned v8 checkpoint against the fixed 12-sheet development regression set. A
+  candidate requires PBF at least 10/12, both arms at 12/12, and a flagged/unread split no worse
+  than v5; record the v5 split before comparing it.
+- Freeze the candidate checkpoint and training recipe before scoring it once against an independent
+  confirmation set of at least five newly collected real InBody 270 sheets. Until that set passes,
+  v5 remains the default.
+
+### Consequences
+
+The experiment is falsifiable: a failed gate ends this formatting line of investigation rather
+than adding another synthetic-data variation. Tests cover rendered one-decimal PBF spelling and
+quoted-target parser compatibility without using real hold-out data.
+

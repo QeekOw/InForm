@@ -40,7 +40,9 @@ only — it must never mutate a deterministic number (enforced by validation).
   LBM** (LBM also includes water, organs, bone mineral). Katch–McArdle uses LBM, *not* SMM.
   Do not conflate them.
 - **PBF (Percent Body Fat)** — body fat as a percentage of total weight. Used to cross-check
-  LBM.
+  LBM. A **cross-field attribution error** is an OCR read whose value is attributed to PBF from
+  a different field; **format-shape bleed** is its observed subtype where a limb-style numeric
+  shape appears in the PBF read.
 - **BMR (Basal Metabolic Rate)** — resting daily calorie need. Computed deterministically via
   **Katch–McArdle** `BMR = 370 + 21.6 × LBM_kg`. The device also prints a BMR value; that
   printed value is a **cross-check only**, not authoritative (the engine recomputes for
@@ -66,9 +68,18 @@ only — it must never mutate a deterministic number (enforced by validation).
   Level), as against the five **Segmental Lean** values. Scored and reported separately,
   because a limb carries a relative tolerance the scalars do not
   ([ADR-0006](docs/adr/0006-ocr-evaluation-protocol.md)).
-- **InBody 270 / InBody 570** — the two device layouts in scope. Both report Visceral Fat Level
-  (ADR-0004 correction, issue #13); the 570 reports more, and BMR / Visceral Fat are
-  programmable outputs. See [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
+- **InBody 270** — the sole supported Module 1 device layout. It reports Visceral Fat Level
+  (ADR-0004 correction, issue #13); its BMR and Visceral Fat outputs are programmable.
+- **InBody 570** — a retired device layout, outside Module 1's training, evaluation, and runtime
+  scope. Its prior synthetic data is archival rather than active training or evaluation data.
+- **Development regression set** — the fixed 12-sheet real InBody 270 set used to select a
+  candidate OCR checkpoint. It is not independent promotion evidence.
+- **Independent confirmation set** — at least five newly collected real InBody 270 sheets, kept
+  unseen until the candidate checkpoint and its training recipe are frozen. It confirms a
+  promotion decision and must not tune that candidate.
+- **Promotion gate** — the evidence required to replace the default OCR checkpoint: on the
+  development regression set, PBF is at least 10/12, both arms are 12/12, and the flagged/unread
+  split is no worse than v5; the frozen candidate must then pass independent confirmation.
 - **Master JSON (`MasterPayload`)** — the consolidated deterministic output of Modules 1–3;
   the sole input to Module 4.
 - **Deterministic / generative boundary** — the architectural rule that all numbers are

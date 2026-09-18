@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable
 
 from inform.engines import donut
-from inform.errors import DonutCheckpointError, MissingRequiredFieldsError
+from inform.errors import DonutCheckpointError, MissingRequiredFieldsError, NotAnInBodySheetError
 from inform.formulas import katch_mcardle_bmr
 from inform.inbody import (
     REQUIRED_DOTTED_FIELDS,
@@ -87,6 +87,8 @@ def extract_inbody(image_path: Path, engine: Engine | None = None) -> InBodyExtr
     unread = [f for f in REQUIRED_DOTTED_FIELDS if partial_field_value(partial, f) is None]
     if len(unread) == len(REQUIRED_DOTTED_FIELDS):
         raise MissingRequiredFieldsError(unread)
+    if partial.source_device != "inbody_270":
+        raise NotAnInBodySheetError()
     flagged = _cross_check(partial)
     return InBodyExtraction(data=partial, unread=unread, flagged=flagged)
 

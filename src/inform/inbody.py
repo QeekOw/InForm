@@ -20,7 +20,7 @@ class InBodyPayload(BaseModel):
     skeletal_muscle_mass_kg: float
     basal_metabolic_rate_kcal: float
     segmental_lean: SegmentalLean
-    source_device: Literal["inbody_270", "inbody_570"]
+    source_device: Literal["inbody_270"]
     visceral_fat_level: int | None = None
 
 

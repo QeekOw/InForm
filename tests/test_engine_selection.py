@@ -31,7 +31,7 @@ def _complete_partial() -> PartialInBody:
         segmental_lean=PartialSegmentalLean(
             left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
         ),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
 
 
@@ -161,7 +161,7 @@ def test_default_engine_round_trips_real_checkpoint(tmp_path):
     # load_checkpoint/load_engine bind a working model, not just that it loads.
     from inform.synthetic import generate_sheet
 
-    png, truth = generate_sheet("inbody_570", seed=1)
+    png, truth = generate_sheet("inbody_270", seed=1)
     sheet = tmp_path / "sheet.png"
     sheet.write_bytes(png)
 
