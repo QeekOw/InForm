@@ -66,3 +66,35 @@ real reads marked low-confidence; nothing is ever guessed. What changes:
    vs the old all-or-nothing scoring, so pre-amendment figures are not directly comparable.
 
 Design spec: `docs/superpowers/specs/2026-08-23-partial-inbody-extraction-design.md`.
+
+## Amendment (2026-09-13): an arm read to fewer decimals than its sheet prints is flagged
+
+The real 270 prints arm and leg lean mass to two decimals. Every checkpoint so far was trained
+on synthetic sheets that print them to one, and on real photos it sometimes returns an arm with
+its last digit cut off. `donut-both-v5/checkpoint-3750` did so on 5 of the 22 two-decimal arms
+it read and `donut-both-v6/checkpoint-2500` on 6 of the 19 it read, with no leg cut on either
+(#59). A cut-off arm falls outside ADR-0006's 1% limb bound more often than not, nothing else on
+the sheet contradicts it, and it was the whole of v5's silent error on the real hold-out.
+
+**`extract_inbody` now flags an arm read to one decimal when either leg on the same read carries
+two.** The legs are the evidence of how precisely the sheet prints. A sheet that prints every limb
+to one decimal never trips it, and nothing about the device has to be known or guessed. (That was
+every synthetic sheet until ADR-0007's 2026-09-15 amendment gave the 270 two-decimal limbs.) Unlike the LBM and BMR checks, this one can name the suspect
+field, so only that arm is flagged. It changes no value: the arm is a real read a person is asked
+to compare against the sheet.
+
+**Cost.** An arm whose printed hundredths digit is zero reads back as one decimal and is flagged
+needlessly. That is about one arm in ten, and 2 of the 24 labelled arms on the hold-out. The
+check also stays silent when no leg carries two decimals, whether the legs went unread or both
+were printed with a zero hundredths digit, so a short arm on such a read is not caught.
+
+**Consequences.** Outcome splits and silent-error figures recorded before this amendment are not
+directly comparable with later ones. That includes a baseline replayed from a saved reads file,
+since the replay runs through `extract_inbody` and picks up the check. On the real hold-out the
+split (unverified/flagged/unread/refused) moved from 6/6/0/0 to 4/8/0/0 on v5 and from 8/2/2/0
+to 5/5/2/0 on v6, and neither kept a silent error (#59).
+
+**Retire it** once a checkpoint trained on two-decimal limbs stops cutting arms short, measured on
+the real hold-out rather than assumed from the training data. That retrain also changes what the
+check sees on synthetic sheets: once they print two decimals, a synthetic arm ending in zero will
+trip it too.
