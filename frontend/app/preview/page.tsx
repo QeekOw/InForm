@@ -68,7 +68,7 @@ function Row({
                 type="button"
                 onClick={onConfirm}
                 aria-label={`Confirm ${label} matches your InBody sheet`}
-                className="rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
+                className="min-h-6 min-w-6 rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
               >
                 Confirm
               </button>
@@ -84,7 +84,7 @@ function Row({
               <button
                 type="button"
                 onClick={onConfirm}
-                className="text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
+                className="min-h-6 min-w-6 text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
                 title="Undo confirmation"
               >
                 Undo
