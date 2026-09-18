@@ -11,6 +11,13 @@ _SEEDS = range(30)
 _TOLERANCE = 0.1
 
 
+def _segmental_figures(html: str) -> tuple[str, str]:
+    """The 270's Segmental Lean and Segmental Fat figure markup, separately."""
+    lean_start = html.index("Segmental Lean Analysis")
+    fat_start = html.index("Segmental Fat Analysis")
+    return html[lean_start:fat_start], html[fat_start:]
+
+
 def test_lbm_matches_weight_times_one_minus_pbf():
     for device in ("inbody_270", "inbody_570"):
         for seed in _SEEDS:
@@ -166,3 +173,107 @@ def test_derived_distractors_are_coherent_and_deterministic():
         assert 12.0 <= d["bmi"] <= 45.0
         # Deterministic given the same payload.
         assert _derive_render_values(payload) == d
+
+
+def test_rendered_sheets_are_a4_portrait_at_phone_photo_resolution():
+    # Donut learns whatever geometry the synthetic set has. A nearly-square
+    # sheet trained against real A4 photos is the diagnosed cause of the poor
+    # real-world reads (docs/ocr-eval-results.md), so the template's own
+    # geometry is locked here and not only by scripts/check_sheet_geometry.py.
+    for device in ("inbody_270", "inbody_570"):
+        rendered = _render(device, _generate_values(device, seed=9001))
+        aspect = rendered.width / rendered.height
+        assert abs(aspect - SHEET_ASPECT) <= SHEET_ASPECT_TOLERANCE, (
+            f"{device} rendered {rendered.width}x{rendered.height} (aspect {aspect:.3f})"
+        )
+        assert rendered.width >= MIN_SHEET_WIDTH_PX, f"{device} rendered {rendered.width}px wide"
+
+
+def test_render_gives_each_browser_run_its_own_profile_dir(monkeypatch):
+    # Concurrent renders (sharded dataset generation) must not share Chrome's
+    # default profile. When they do, a second instance hands off to the first
+    # and exits 0 without writing the screenshot, which surfaced as a missing
+    # PNG 574 sheets into a shard rather than as an error.
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        png = next(a.split("=", 1)[1] for a in argv if a.startswith("--screenshot="))
+        Image.new("RGB", (40, 60), "white").save(png)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _render("inbody_270", _generate_values("inbody_270", seed=1))
+    _render("inbody_270", _generate_values("inbody_270", seed=2))
+
+    profiles = [
+        next(a.split("=", 1)[1] for a in argv if a.startswith("--user-data-dir="))
+        for argv in seen
+    ]
+    assert len(profiles) == 2
+    assert profiles[0] != profiles[1], "two renders shared one Chrome profile"
+
+
+def test_render_fails_loudly_when_the_browser_writes_no_screenshot(monkeypatch):
+    # The browser can exit 0 and produce nothing. That used to surface as a
+    # FileNotFoundError from inside PIL, which says nothing about the cause;
+    # ADR-0008's fail-closed posture wants the real reason named.
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0)
+    )
+
+    with pytest.raises(RuntimeError, match="no screenshot"):
+        _render("inbody_270", _generate_values("inbody_270", seed=1))
+
+
+def test_270_segmental_figures_are_shape_indistinguishable():
+    # The defect behind the panel crossing (#50): our Segmental Fat figure
+    # rendered two lines per limb where Lean rendered three, so the model could
+    # separate the panels by counting lines — a cue that does not exist on a
+    # real 270, where both figures print kg, a percentage and a status.
+    html = _fill_template("inbody_270", _generate_values("inbody_270", seed=3))
+    lean_fig, fat_fig = _segmental_figures(html)
+
+    assert lean_fig.count('class="pct"') == 5
+    assert fat_fig.count('class="pct"') == 5
+    assert lean_fig.count('class="rate"') == fat_fig.count('class="rate"') == 5
+
+
+def test_270_segmental_fat_status_is_rendered_not_hardcoded_normal():
+    # Deriving the status but rendering a literal would pass a check on the
+    # derived values alone, so assert the status reaches the sheet.
+    payload = _generate_values("inbody_270", seed=3)
+    derived = _derive_render_values(payload)
+    _, fat_fig = _segmental_figures(_fill_template("inbody_270", payload))
+
+    for limb in ("la", "ra", "ll", "rl", "trunk"):
+        assert f"{derived[f'fat_{limb}_pct']} %" in fat_fig, limb
+        assert f'class="rate">{derived[f"fat_{limb}_rate"]}<' in fat_fig, limb
+
+
+def test_270_segmental_fat_reads_over_for_most_real_physiques():
+    # A real 270 prints "Over" for anyone carrying more fat than the lean
+    # reference, which is most people; a hardcoded "Normal" is the bug. Checked
+    # over generated payloads rather than a hand-mutated one, because editing
+    # percent_body_fat alone breaks LBM = weight x (1 - PBF/100).
+    rates = [
+        _derive_render_values(_generate_values("inbody_270", seed))[f"fat_{limb}_rate"]
+        for seed in range(200)
+        for limb in ("la", "ra", "ll", "rl", "trunk")
+    ]
+
+    assert rates.count("Over") > len(rates) // 2
+    # Trunk carries the highest skew and reads "Over" for every generated
+    # physique; the limbs are what vary, so the check spans all five.
+    assert len(set(rates)) > 1, "status must track the payload, not be a constant"
+
+
+def test_270_segmental_fat_kg_and_percentage_never_contradict():
+    # ADR-0007: the distractors must "cross-add like a real one and stay
+    # human-verifiable". Two limbs printing the same kg beside different
+    # percentages is the contradiction a person checking the sheet would spot.
+    for seed in _SEEDS:
+        d = _derive_render_values(_generate_values("inbody_270", seed))
+        for left, right in (("la", "ra"), ("ll", "rl")):
+            if d[f"fat_{left}"] == d[f"fat_{right}"]:
+                assert d[f"fat_{left}_pct"] == d[f"fat_{right}_pct"], (seed, left, right)
