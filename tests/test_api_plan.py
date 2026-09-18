@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from backend.main import app, get_llm_client
 from inform.master import DailyPlan
 from inform.samples import load_extractions
+from tests.test_master import _inbody
 
 client = TestClient(app)
 
@@ -56,14 +57,60 @@ def test_clean_sample_produces_full_plan_with_no_human_input(use_llm):
     for grams in ("protein_g", "carbs_g", "fats_g", "fiber_g"):
         assert plan["nutrition"][grams] > 0
 
-    # Legs read 6.9 vs 6.4 kg, a deviation above the 5% threshold.
-    assert plan["exercises"]["detected_imbalances"]
+    assert plan["exercises"]["detected_imbalances"] == []
+    assert plan["exercises"]["unconfirmed_imbalance_pairs"] == ["arm", "leg"]
+    assert "not assessed for the arm and leg" in plan["narrative_text"]
     exercises = plan["exercises"]["exercises"]
     assert exercises
     for ex in exercises:
         assert ex["name"] and ex["target"]
         assert ex["movement_type"] in ("corrective_unilateral", "bilateral_compound", "cardio_hiit")
     assert plan["narrative_text"]
+
+
+def test_confirmed_clean_sample_reports_imbalance(use_llm):
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "synthetic_270_clean",
+            "confirmations": [
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+                "segmental_lean.left_leg_kg",
+                "segmental_lean.right_leg_kg",
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    exercises = response.json()["exercises"]
+    assert exercises["detected_imbalances"]
+    assert exercises["unconfirmed_imbalance_pairs"] == []
+
+
+def test_corrected_segmental_value_counts_as_confirmed(use_llm):
+    use_llm(_llm_raising())
+    inbody = _inbody(
+        segmental_lean=_inbody().segmental_lean.model_copy(
+            update={"left_leg_kg": 7.9, "right_leg_kg": 9.0}
+        )
+    )
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "inbody": inbody.model_dump(),
+            "corrections": {"segmental_lean.left_leg_kg": 8.0},
+            "confirmations": ["segmental_lean.right_leg_kg"],
+        },
+    )
+
+    assert response.status_code == 200
+    exercises = response.json()["exercises"]
+    assert exercises["detected_imbalances"] == ["L/R leg lean-mass deviation 11.1%"]
+    assert exercises["unconfirmed_imbalance_pairs"] == ["arm"]
 
 
 def test_plan_needs_exactly_one_reading_source(use_llm):

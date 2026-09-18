@@ -94,7 +94,17 @@ def test_no_asymmetry_hypertrophy_selects_bilateral_compounds():
     inbody = _inbody()  # default fixture: arm 3.03%, leg 1.22% — both under threshold
     user = _user(fitness_goal="hypertrophy")
 
-    plan = recommend_exercises(user, inbody, _pool())
+    plan = recommend_exercises(
+        user,
+        inbody,
+        _pool(),
+        confirmed_fields={
+            "segmental_lean.left_arm_kg",
+            "segmental_lean.right_arm_kg",
+            "segmental_lean.left_leg_kg",
+            "segmental_lean.right_leg_kg",
+        },
+    )
 
     assert plan.detected_imbalances == []
     assert [ex.name for ex in plan.exercises] == [
@@ -113,7 +123,12 @@ def test_leg_asymmetry_over_threshold_adds_corrective_exercise():
     )
     user = _user(fitness_goal="hypertrophy")
 
-    plan = recommend_exercises(user, inbody, _pool())
+    plan = recommend_exercises(
+        user,
+        inbody,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert plan.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     names = [ex.name for ex in plan.exercises]
@@ -134,7 +149,17 @@ def test_both_limb_asymmetries_detected_in_order():
     )
     user = _user(fitness_goal="hypertrophy")
 
-    plan = recommend_exercises(user, inbody, _pool())
+    plan = recommend_exercises(
+        user,
+        inbody,
+        _pool(),
+        confirmed_fields={
+            "segmental_lean.left_arm_kg",
+            "segmental_lean.right_arm_kg",
+            "segmental_lean.left_leg_kg",
+            "segmental_lean.right_leg_kg",
+        },
+    )
 
     assert plan.detected_imbalances == [
         "L/R arm lean-mass deviation 25.0%",
@@ -142,6 +167,55 @@ def test_both_limb_asymmetries_detected_in_order():
     ]
     names = [ex.name for ex in plan.exercises]
     assert names[:2] == ["Single-arm dumbbell row", "Bulgarian split squat"]
+
+
+def test_unconfirmed_pair_is_skipped_without_blocking_confirmed_pair():
+    inbody = _inbody(
+        segmental_lean=_inbody().segmental_lean.model_copy(
+            update={
+                "left_arm_kg": 3.0,
+                "right_arm_kg": 4.0,
+                "left_leg_kg": 8.0,
+                "right_leg_kg": 9.0,
+            }
+        )
+    )
+
+    plan = recommend_exercises(
+        _user(fitness_goal="hypertrophy"),
+        inbody,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_arm_kg", "segmental_lean.right_arm_kg"},
+    )
+
+    assert plan.detected_imbalances == ["L/R arm lean-mass deviation 25.0%"]
+    assert plan.unconfirmed_imbalance_pairs == ["leg"]
+    names = [ex.name for ex in plan.exercises]
+    assert "Single-arm dumbbell row" in names
+    assert "Bulgarian split squat" not in names
+
+
+def test_0_9_percent_is_ignored_while_61_percent_is_reported():
+    inbody = _inbody(
+        segmental_lean=_inbody().segmental_lean.model_copy(
+            update={
+                "left_arm_kg": 10.0,
+                "right_arm_kg": 9.91,
+                "left_leg_kg": 8.0,
+                "right_leg_kg": 3.12,
+            }
+        )
+    )
+    confirmed_fields = {
+        "segmental_lean.left_arm_kg",
+        "segmental_lean.right_arm_kg",
+        "segmental_lean.left_leg_kg",
+        "segmental_lean.right_leg_kg",
+    }
+
+    plan = recommend_exercises(_user(), inbody, _pool(), confirmed_fields)
+
+    assert plan.detected_imbalances == ["L/R leg lean-mass deviation 61.0%"]
 
 
 def test_fat_loss_with_absent_visceral_fat_uses_base_cardio_count():

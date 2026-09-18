@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Exercise(BaseModel):
@@ -22,3 +22,4 @@ class ExercisePlan(BaseModel):
     # Human-readable, e.g. "L/R leg lean-mass deviation 7%" — surfaced directly in
     # Module 4's narrative and echoed back for dual-validation (issue #15).
     detected_imbalances: list[str]
+    unconfirmed_imbalance_pairs: list[Literal["arm", "leg"]] = Field(default_factory=list)

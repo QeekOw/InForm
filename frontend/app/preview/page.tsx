@@ -30,6 +30,7 @@ function Row({
   isUnread = false,
   isCorrected = false,
   isConfirmed = false,
+  requiresConfirmation = false,
   onConfirm,
 }: {
   label: string;
@@ -39,6 +40,7 @@ function Row({
   isUnread?: boolean;
   isCorrected?: boolean;
   isConfirmed?: boolean;
+  requiresConfirmation?: boolean;
   onConfirm?: () => void;
 }) {
   let containerBg = "";
@@ -56,15 +58,16 @@ function Row({
             Unread
           </span>
         )}
-        {isFlagged && !isCorrected && !isConfirmed && (
+        {(isFlagged || requiresConfirmation) && !isCorrected && !isConfirmed && (
           <span className="inline-flex items-center gap-1">
             <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
-              Flagged Check
+              {isFlagged ? "Flagged Check" : "Check sheet"}
             </span>
             {onConfirm && (
               <button
                 type="button"
                 onClick={onConfirm}
+                aria-label={`Confirm ${label} matches your InBody sheet`}
                 className="rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
               >
                 Confirm
@@ -429,6 +432,9 @@ export default function Preview() {
               <div className="my-4 h-px bg-black/10" />
 
               <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
+              <p className="mt-1 text-[10px] text-zinc-600">
+                Check both arm and leg readings against your sheet. Unconfirmed pairs won’t be assessed for imbalance.
+              </p>
               <div className="mt-3 grid grid-cols-2 gap-x-6">
                 {SEGMENTAL_LEAN_COLUMNS.map((column) => (
                   <div key={column[0].key}>
@@ -449,6 +455,7 @@ export default function Preview() {
                           isFlagged={flaggedFields.has(dottedKey)}
                           isCorrected={isCorrected}
                           isConfirmed={isConfirmed}
+                          requiresConfirmation={field.key !== "trunk_kg"}
                           onConfirm={() => handleToggleConfirm(dottedKey)}
                         />
                       );

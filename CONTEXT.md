@@ -48,7 +48,12 @@ only — it must never mutate a deterministic number (enforced by validation).
   [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
 - **Segmental Lean Analysis** — per-segment lean mass for the five body segments: left arm,
   right arm, left leg, right leg, trunk. Basis for bilateral-asymmetry detection.
-- **Bilateral asymmetry** — a lean-mass deviation between a left/right limb pair. A deviation
+- **Confirmed measurement** — a measured value the person has reviewed and accepted as shown,
+  or corrected. A correction counts as confirmation, with a reminder to check it against the
+  source sheet. Confirmation records the person's review; it is not an independent validation
+  of the measurement.
+- **Bilateral asymmetry** — a lean-mass deviation between confirmed readings for a left/right
+  limb pair. Each pair is assessed independently once both readings are confirmed. A deviation
   **> 5%** triggers targeted unilateral corrective exercises (Module 3).
 - **InBody 270 / InBody 570** — the two device layouts in scope. Both report Visceral Fat Level
   (ADR-0004 correction, issue #13); the 570 reports more, and BMR / Visceral Fat are

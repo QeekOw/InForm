@@ -481,6 +481,11 @@ export default function PreviewEdit() {
               triggered physiological cross-checks. Confirm unchanged values or edit them.
             </div>
           )}
+          {Object.keys(corrections).some((key) => key.startsWith("segmental_lean.") && key !== "segmental_lean.trunk_kg") && (
+            <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-[11px] text-sky-900">
+              Check edited segmental readings against your sheet. Corrected values will be used for the left/right balance check.
+            </div>
+          )}
 
           <h2 className="text-[14px] font-bold">Body Composition</h2>
           <div className="mt-3">

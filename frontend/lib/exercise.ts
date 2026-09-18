@@ -17,4 +17,5 @@ export type Exercise = {
 export type ExercisePlan = {
   exercises: Exercise[];
   detected_imbalances: string[];
+  unconfirmed_imbalance_pairs: ("arm" | "leg")[];
 };
