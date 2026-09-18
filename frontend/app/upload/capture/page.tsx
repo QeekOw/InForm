@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
-import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { API_URL } from "@/lib/config";
+import { type ReadJob } from "@/lib/inbody";
 import { captureFromVideo } from "@/lib/photo";
+import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgShutterOuter = "/icons/camera/shutter-outer.svg";
 const imgShutterInner = "/icons/camera/shutter-inner.svg";
@@ -20,6 +22,7 @@ export default function Capture() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [state, setState] = useState<CameraState>("requesting");
+  const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,13 +53,34 @@ export default function Capture() {
     };
   }, []);
 
-  const handleCapture = () => {
-    if (state !== "ready" || !videoRef.current) return;
+  const handleCapture = async () => {
+    if (state !== "ready" || !videoRef.current || capturing) return;
+    setCapturing(true);
+
     const dataUrl = captureFromVideo(videoRef.current);
     clearSheet();
     saveJSON(SESSION_KEYS.photo, dataUrl);
     streamRef.current?.getTracks().forEach((t) => t.stop());
-    router.push("/upload/analyzing");
+
+    try {
+      const res = await fetch(`${API_URL}/reads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_data: dataUrl, live: true }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to start reading: ${res.statusText}`);
+      }
+
+      const job: ReadJob = await res.json();
+      saveJSON(SESSION_KEYS.readId, job.read_id);
+      router.push(`/upload/analyzing?read_id=${job.read_id}&upload=1`);
+    } catch (err) {
+      console.error("Error initiating read for captured sheet:", err);
+      // Fall back to analyzing page which can retry
+      router.push("/upload/analyzing?upload=1");
+    }
   };
 
   return (

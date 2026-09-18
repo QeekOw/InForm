@@ -37,7 +37,10 @@ def load_engine(checkpoint_source: str | Path):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    def extract(image_path: Path) -> PartialInBody:
+    def extract(image_path: Path | Any) -> PartialInBody:
+        import io
+        if isinstance(image_path, bytes):
+            image_path = io.BytesIO(image_path)
         image = Image.open(image_path).convert("RGB")
         pixel_values = processor(image, return_tensors="pt").pixel_values.to(device)
         outputs = model.generate(

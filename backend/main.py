@@ -12,20 +12,23 @@ from typing import Any, Literal
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from inform.corrections import (
     CrossCheckFlaggedError,
     UnreadFieldsError,
+    UnresolvedFlaggedFieldsError,
     apply_corrections,
 )
 from inform.exercise import ExercisePlan
 from inform.exercise_filter import recommend_exercises
 from inform.exercise_pool import DEFAULT_EXERCISE_POOL
+from inform.extract import Engine
 from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
+from inform.reads import read_manager
 from inform.samples import (
     ExtractionItem,
     load_extractions,
@@ -117,22 +120,99 @@ def get_sample_image(sample_id: str):
     return FileResponse(img_path, media_type="image/png")
 
 
+def get_engine() -> Engine | None:
+    """Module 1's runtime engine; None lets extract_sheet_for_sample use default_engine().
+
+    A FastAPI dependency so tests can inject a stub engine.
+    """
+    return None
+
+
+class CreateReadRequest(BaseModel):
+    sample_id: str | None = None
+    image_data: str | None = None
+    live: bool = False
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "CreateReadRequest":
+        has_sample = self.sample_id is not None
+        has_image = self.image_data is not None
+        if has_sample == has_image:
+            raise ValueError("Provide either sample_id or image_data, not both or neither")
+        return self
+
+
+class ReadJobResponse(BaseModel):
+    read_id: str
+    sample_id: str | None
+    live: bool
+    status: Literal["pending", "complete", "refused"]
+    progress: float
+    message: str
+    extraction: ExtractionItem | None = None
+
+
+@app.post("/reads", response_model=ReadJobResponse)
+@app.post("/api/reads", response_model=ReadJobResponse)
+def create_read(
+    request: CreateReadRequest,
+    engine: Engine | None = Depends(get_engine),
+) -> ReadJobResponse:
+    """Start reading a sheet, returning immediately with a read job identifier."""
+    try:
+        job = read_manager.create_read(
+            sample_id=request.sample_id,
+            image_data=request.image_data,
+            live=request.live,
+            engine_factory=lambda: engine,
+        )
+        return ReadJobResponse(**job.to_dict())
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.get("/reads/{read_id}", response_model=ReadJobResponse)
+@app.get("/api/reads/{read_id}", response_model=ReadJobResponse)
+async def poll_read(
+    read_id: str,
+    timeout: float = 10.0,
+) -> ReadJobResponse:
+    """Long poll a read job with a timeout surviving host network limits."""
+    clamped_timeout = max(0.0, min(timeout, 25.0))
+    try:
+        job = await read_manager.poll(read_id, timeout=clamped_timeout)
+        return ReadJobResponse(**job.to_dict())
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 class PlanRequest(BaseModel):
     user: UserProfile
     # A Sample sheet whose stored read the server plans from, with optional human corrections
     sample_id: str | None = None
+    # A Read job identifier (stored or live read)
+    read_id: str | None = None
     # An explicit measured read with optional human corrections
     measured: PartialInBody | None = None
     # Corrections typed by a person (recorded alongside measured fields, never merged into them)
     corrections: dict[str, Any] | None = None
+    # Flagged fields confirmed unchanged by a person
+    confirmations: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("confirmations", "confirmed_fields"),
+    )
+    # Stored or extracted flagged fields for measured/inbody reads
+    initial_flagged: list[str] | None = None
     # Direct InBody reading (retained for backward compatibility)
     inbody: InBodyPayload | None = None
 
     @model_validator(mode="after")
     def _validate_source(self) -> "PlanRequest":
-        sources = [s is not None for s in (self.sample_id, self.measured, self.inbody)]
+        sources = [s is not None for s in (self.sample_id, self.read_id, self.measured, self.inbody)]
         if sum(sources) != 1:
-            raise ValueError("Provide exactly one reading source (sample_id, measured, or inbody)")
+            raise ValueError("Provide exactly one reading source (sample_id, read_id, measured, or inbody)")
         return self
 
 
@@ -146,14 +226,18 @@ def get_llm_client() -> OpenAIClientProtocol | None:
 def _apply_plan_corrections(
     base: PartialInBody,
     corrections: dict[str, Any] | None,
+    confirmations: list[str] | None = None,
     source_device: Literal["inbody_270", "inbody_570"] | None = None,
-) -> tuple[InBodyPayload, list[str]]:
-    """Deduplicated helper to validate and apply corrections, mapping domain exceptions to HTTP responses."""
+    initial_flagged: list[str] | None = None,
+) -> tuple[InBodyPayload, list[str], list[str]]:
+    """Deduplicated helper to validate and apply corrections and confirmations, mapping domain exceptions to HTTP responses."""
     try:
         return apply_corrections(
             base,
             corrections or {},
             source_device=source_device,
+            confirmations=confirmations,
+            initial_flagged=initial_flagged,
         )
     except UnreadFieldsError as exc:
         raise HTTPException(
@@ -167,7 +251,7 @@ def _apply_plan_corrections(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
+                "message": "Building a plan is impossible while a flagged field is unresolved.",
                 "unread": [],
                 "flagged": exc.flagged_fields,
             },
@@ -176,66 +260,71 @@ def _apply_plan_corrections(
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody, list[str]]:
-    """Resolve reading source into (effective_payload, base_measured, corrected_field_keys)."""
+def _require_usable_extraction(extraction: ExtractionItem | None) -> tuple[PartialInBody, str | None, list[str]]:
+    """Validate extraction is not refused and has data, returning (measured, source_device, initial_flagged)."""
+    if extraction is None or extraction.data is None or extraction.status == "refused":
+        message = (
+            extraction.message
+            if extraction and extraction.message
+            else (
+                "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet."
+                if extraction and extraction.error == "not_an_inbody_sheet"
+                else "This sheet was refused (not an InBody sheet or nothing readable came back)."
+            )
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": message,
+                "unread": extraction.unread if extraction else [],
+                "flagged": extraction.flagged if extraction else [],
+                "error": extraction.error if extraction else None,
+            },
+        )
+    return extraction.data, extraction.data.source_device, extraction.flagged
+
+
+def _inbody_for_plan(request: PlanRequest) -> tuple[InBodyPayload, PartialInBody, list[str], list[str]]:
+    """Resolve reading source into (effective_payload, base_measured, corrected_field_keys, confirmed_field_keys)."""
     if request.sample_id is not None:
         extraction = load_extractions().extractions.get(request.sample_id)
         if extraction is None:
             raise HTTPException(status_code=404, detail=f"Sample '{request.sample_id}' not found")
+        base_measured, source_device, initial_flagged = _require_usable_extraction(extraction)
 
-        # ADR-0008 Amendment §3: The zero-read floor case (data is None) or non-sheet is a hard refusal.
-        # Partial extraction only applies once some real data is read.
-        if extraction.data is None or extraction.status == "refused":
+    elif request.read_id is not None:
+        job = read_manager.get(request.read_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"Read '{request.read_id}' not found")
+
+        if job.status == "pending":
             raise HTTPException(
                 status_code=409,
-                detail={
-                    "message": "This sheet was refused (not an InBody sheet or nothing readable came back).",
-                    "unread": extraction.unread,
-                    "flagged": extraction.flagged,
-                },
+                detail="Building a plan is impossible while the read is still in progress.",
             )
+        base_measured, source_device, initial_flagged = _require_usable_extraction(job.extraction)
 
-        base_measured = extraction.data
-        if request.corrections:
-            payload, corrected = _apply_plan_corrections(
-                base_measured, request.corrections, source_device=base_measured.source_device
-            )
-            return payload, base_measured, corrected
-
-        # A complete read with no flags
-        inbody = (
-            InBodyExtraction(
-                data=extraction.data, unread=extraction.unread, flagged=extraction.flagged
-            ).as_payload()
-        )
-        if inbody is None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": "This read needs a person to fill in or confirm fields before a plan can be built.",
-                    "unread": extraction.unread,
-                    "flagged": extraction.flagged,
-                },
-            )
-        return inbody, base_measured, []
-
-    if request.measured is not None:
+    elif request.measured is not None:
         base_measured = request.measured
-        payload, corrected = _apply_plan_corrections(
-            base_measured, request.corrections, source_device=base_measured.source_device
-        )
-        return payload, base_measured, corrected
+        source_device = base_measured.source_device
+        initial_flagged = request.initial_flagged
 
-    if request.inbody is not None:
+    elif request.inbody is not None:
         base_measured = PartialInBody(**request.inbody.model_dump())
-        if request.corrections:
-            payload, corrected = _apply_plan_corrections(
-                base_measured, request.corrections, source_device=request.inbody.source_device
-            )
-            return payload, base_measured, corrected
-        return request.inbody, base_measured, []
+        source_device = request.inbody.source_device
+        initial_flagged = request.initial_flagged
 
-    raise HTTPException(status_code=422, detail="No reading source provided")
+    else:
+        raise HTTPException(status_code=422, detail="No reading source provided")
+
+    payload, corrected, confirmed = _apply_plan_corrections(
+        base_measured,
+        request.corrections,
+        confirmations=request.confirmations,
+        source_device=source_device,
+        initial_flagged=initial_flagged,
+    )
+    return payload, base_measured, corrected, confirmed
 
 
 class PlanResponse(BaseModel):
@@ -252,6 +341,7 @@ class PlanResponse(BaseModel):
     # Recorded alongside measured fields, never merged into them
     measured: PartialInBody | None = None
     corrected_fields: list[str] = Field(default_factory=list)
+    confirmed_fields: list[str] = Field(default_factory=list)
 
 
 @app.post("/plan")
@@ -270,7 +360,7 @@ def plan(
     synthesis is used for POC / development testing with consented or synthetic
     data only. Real patient health data must never be sent to external cloud APIs.
     """
-    inbody, base_measured, corrected_fields = _inbody_for_plan(request)
+    inbody, base_measured, corrected_fields, confirmed_fields = _inbody_for_plan(request)
     nutrition = compute_targets(request.user, inbody)
     exercises = recommend_exercises(request.user, inbody, DEFAULT_EXERCISE_POOL)
     master = MasterPayload(
@@ -287,4 +377,5 @@ def plan(
         narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
         measured=base_measured,
         corrected_fields=corrected_fields,
+        confirmed_fields=confirmed_fields,
     )

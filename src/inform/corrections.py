@@ -131,8 +131,13 @@ class CrossCheckFlaggedError(ValueError):
     def __init__(self, flagged_fields: list[str]):
         self.flagged_fields = flagged_fields
         super().__init__(
-            f"Cross-check failed for fields: {', '.join(flagged_fields)}. Please verify or correct these values."
+            f"Building a plan is impossible while flagged fields remain unresolved: {', '.join(flagged_fields)}"
         )
+
+
+class UnresolvedFlaggedFieldsError(CrossCheckFlaggedError):
+    """Raised when building a plan while one or more flagged fields remain unresolved."""
+    pass
 
 
 def coerce_correction(val: float | int | CorrectionValue | dict[str, Any]) -> CorrectionValue:
@@ -190,18 +195,21 @@ def flatten_corrections(
 
 def apply_corrections(
     measured: PartialInBody,
-    corrections: dict[str, float | int | CorrectionValue | dict[str, Any]],
+    corrections: dict[str, float | int | CorrectionValue | dict[str, Any]] | None = None,
     source_device: Literal["inbody_270", "inbody_570"] | None = None,
-) -> tuple[InBodyPayload, list[str]]:
-    """Validate and apply human corrections over a measured PartialInBody.
+    confirmations: list[str] | set[str] | None = None,
+    initial_flagged: list[str] | None = None,
+) -> tuple[InBodyPayload, list[str], list[str]]:
+    """Validate and apply human corrections and confirmations over a measured PartialInBody.
 
-    Returns (InBodyPayload, corrected_field_names).
+    Returns (InBodyPayload, corrected_field_names, confirmed_field_names).
     Does NOT mutate the original measured object.
+    Confirmed fields stay measured fields and do not become corrected fields.
     Raises ValueError if any correction is out-of-range or wrong-unit.
-    Raises CrossCheckFlaggedError if ADR-0008 §2 cross-check gate fails.
+    Raises CrossCheckFlaggedError if any flagged field is unresolved.
     Raises UnreadFieldsError if any required field is still unread (None).
     """
-    flat = flatten_corrections(corrections)
+    flat = flatten_corrections(corrections or {})
 
     # Validate each correction individually
     for field, corr in flat.items():
@@ -254,10 +262,26 @@ def apply_corrections(
 
     # ADR-0008 §2: Re-run cross-check gate on the effective reading
     effective_partial = PartialInBody.model_validate(data)
-    remaining_flags = _cross_check(effective_partial)
-    if remaining_flags:
-        raise CrossCheckFlaggedError(remaining_flags)
+    all_flags = set(_cross_check(effective_partial))
+
+    if initial_flagged:
+        for f in initial_flagged:
+            if f not in corrected_keys:
+                all_flags.add(f)
+
+    confirmed_set = set(confirmations or [])
+
+    # Any flagged field not corrected and not confirmed is unresolved
+    unresolved_flags = sorted(
+        f for f in all_flags if f not in corrected_keys and f not in confirmed_set
+    )
+    if unresolved_flags:
+        raise UnresolvedFlaggedFieldsError(unresolved_flags)
+
+    # Confirmed fields: fields confirmed by the user that are NOT corrected
+    # AC: "A confirmed value stays a measured field and does not become a corrected field"
+    confirmed_keys = sorted(f for f in confirmed_set if f not in corrected_keys)
 
     # Build validated InBodyPayload
     payload = InBodyPayload.model_validate(data)
-    return payload, sorted(corrected_keys)
+    return payload, sorted(corrected_keys), confirmed_keys

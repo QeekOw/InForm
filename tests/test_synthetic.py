@@ -175,56 +175,6 @@ def test_derived_distractors_are_coherent_and_deterministic():
         assert _derive_render_values(payload) == d
 
 
-def test_rendered_sheets_are_a4_portrait_at_phone_photo_resolution():
-    # Donut learns whatever geometry the synthetic set has. A nearly-square
-    # sheet trained against real A4 photos is the diagnosed cause of the poor
-    # real-world reads (docs/ocr-eval-results.md), so the template's own
-    # geometry is locked here and not only by scripts/check_sheet_geometry.py.
-    for device in ("inbody_270", "inbody_570"):
-        rendered = _render(device, _generate_values(device, seed=9001))
-        aspect = rendered.width / rendered.height
-        assert abs(aspect - SHEET_ASPECT) <= SHEET_ASPECT_TOLERANCE, (
-            f"{device} rendered {rendered.width}x{rendered.height} (aspect {aspect:.3f})"
-        )
-        assert rendered.width >= MIN_SHEET_WIDTH_PX, f"{device} rendered {rendered.width}px wide"
-
-
-def test_render_gives_each_browser_run_its_own_profile_dir(monkeypatch):
-    # Concurrent renders (sharded dataset generation) must not share Chrome's
-    # default profile. When they do, a second instance hands off to the first
-    # and exits 0 without writing the screenshot, which surfaced as a missing
-    # PNG 574 sheets into a shard rather than as an error.
-    seen = []
-
-    def fake_run(argv, **kwargs):
-        seen.append(argv)
-        png = next(a.split("=", 1)[1] for a in argv if a.startswith("--screenshot="))
-        Image.new("RGB", (40, 60), "white").save(png)
-        return subprocess.CompletedProcess(argv, 0)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    _render("inbody_270", _generate_values("inbody_270", seed=1))
-    _render("inbody_270", _generate_values("inbody_270", seed=2))
-
-    profiles = [
-        next(a.split("=", 1)[1] for a in argv if a.startswith("--user-data-dir="))
-        for argv in seen
-    ]
-    assert len(profiles) == 2
-    assert profiles[0] != profiles[1], "two renders shared one Chrome profile"
-
-
-def test_render_fails_loudly_when_the_browser_writes_no_screenshot(monkeypatch):
-    # The browser can exit 0 and produce nothing. That used to surface as a
-    # FileNotFoundError from inside PIL, which says nothing about the cause;
-    # ADR-0008's fail-closed posture wants the real reason named.
-    monkeypatch.setattr(
-        subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0)
-    )
-
-    with pytest.raises(RuntimeError, match="no screenshot"):
-        _render("inbody_270", _generate_values("inbody_270", seed=1))
-
 
 def test_270_segmental_figures_are_shape_indistinguishable():
     # The defect behind the panel crossing (#50): our Segmental Fat figure

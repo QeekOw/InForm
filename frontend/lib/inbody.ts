@@ -130,6 +130,16 @@ export type SampleExtraction = {
   message?: string | null;
 };
 
+export type ReadJob = {
+  read_id: string;
+  sample_id: string | null;
+  live: boolean;
+  status: "pending" | "complete" | "refused";
+  progress: number;
+  message: string;
+  extraction?: SampleExtraction | null;
+};
+
 // A read the plan can be built from with no human input: nothing unread,
 // nothing flagged, not refused (ADR-0008).
 export function isCleanRead(extraction: SampleExtraction): boolean {

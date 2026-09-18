@@ -227,3 +227,38 @@ export function validateFieldValue(
 
   return null;
 }
+
+/**
+ * Returns the list of flagged fields that have neither been corrected nor confirmed.
+ *
+ * Spec: "A flagged field blocks the plan until the person acts on it, either way."
+ */
+export function getUnresolvedFlagged(
+  flagged?: string[] | Set<string> | null,
+  corrected?: string[] | Set<string> | Record<string, unknown> | null,
+  confirmed?: string[] | Set<string> | null,
+): string[] {
+  if (!flagged) return [];
+  const flaggedArr = flagged instanceof Set ? Array.from(flagged) : flagged;
+  if (flaggedArr.length === 0) return [];
+
+  const correctedKeys = new Set<string>();
+  if (corrected instanceof Set) {
+    corrected.forEach((k) => correctedKeys.add(normalizeFieldKey(k)));
+  } else if (Array.isArray(corrected)) {
+    corrected.forEach((k) => correctedKeys.add(normalizeFieldKey(k)));
+  } else if (corrected && typeof corrected === "object") {
+    Object.keys(corrected).forEach((k) => correctedKeys.add(normalizeFieldKey(k)));
+  }
+
+  const confirmedSet = new Set<string>();
+  if (confirmed instanceof Set) {
+    confirmed.forEach((k) => confirmedSet.add(normalizeFieldKey(k)));
+  } else if (Array.isArray(confirmed)) {
+    confirmed.forEach((k) => confirmedSet.add(normalizeFieldKey(k)));
+  }
+
+  return flaggedArr
+    .map(normalizeFieldKey)
+    .filter((f) => !correctedKeys.has(f) && !confirmedSet.has(f));
+}
