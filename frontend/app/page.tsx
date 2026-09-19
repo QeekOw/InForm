@@ -44,13 +44,13 @@ function IllustrationLayer({
 export default function Home() {
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      {/* Live backend status — proves the deployed frontend is talking to the deployed API */}
-      <div className="mt-4 flex justify-center">
+      {/* Live backend status — positioned below the iPhone status bar / Dynamic Island */}
+      <div className="pt-4 sm:pt-14 flex justify-center">
         <ApiStatus />
       </div>
 
       {/* Logo: docs/assets/InForm.png with the black "In" recoloured for this dark background */}
-      <div className="mt-8 flex justify-center">
+      <div className="mt-6 flex justify-center">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt="InForm" className="h-[29px] w-auto" src={imgLogo} width={174} height={29} />
       </div>
