@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://in-form.vercel.app"><img src="https://img.shields.io/badge/Live_demo-Vercel-000000?logo=vercel&logoColor=white" alt="Open the InForm demo"></a>
+  <a href="https://in-form-chi.vercel.app"><img src="https://img.shields.io/badge/Live_demo-Vercel-000000?logo=vercel&logoColor=white" alt="Open the InForm demo"></a>
+  <img src="https://img.shields.io/badge/Device-InBody_270_Only-emerald?logo=apple" alt="Supported: InBody 270 Only">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js 16">
@@ -11,23 +12,27 @@
 </p>
 
 <p align="center">
-  Turn body-composition data into an explainable nutrition and training plan.
+  Turn InBody 270 body-composition data into an explainable nutrition and training plan.
 </p>
 
 ## Try it
 
 **[Open the live demo →](https://in-form-chi.vercel.app)**
 
-InForm is a web prototype for turning reviewed body-composition readings, a fitness goal, and an activity profile into daily calorie and macro targets plus a corrective exercise plan.
+InForm is a web prototype for turning reviewed body-composition readings from **InBody 270** result sheets, a fitness goal, and an activity profile into daily calorie and macro targets plus a corrective exercise plan.
 
 All actionable plan facts come from deterministic, auditable code. AI may provide an optional coaching note, but it cannot alter measurements, targets, exercises, or imbalance findings.
+
+> [!IMPORTANT]
+> **Device Compatibility: InBody 270 Only**  
+> InForm is calibrated for and currently **only accepts InBody 270** result sheets. Other models (such as InBody 570, InBody 770, or consumer smart scales) are **not supported**.
 
 > InForm supports fitness planning. It is not a medical diagnosis or a substitute for professional advice.
 
 ## What you can do today
 
 - Enter as a guest or complete a profile.
-- Choose a sample scan, review its measurements, and correct or confirm values before a plan is created.
+- Choose an **InBody 270** sample scan, review its measurements, and correct or confirm values before a plan is created.
 - Get daily nutrition targets and a training plan that flags meaningful left/right lean-mass asymmetry.
 - Use the deployed frontend on Vercel, backed by the InForm API on Render.
 
@@ -35,9 +40,9 @@ All actionable plan facts come from deterministic, auditable code. AI may provid
 
 The app is intentionally transparent about what is and is not live yet:
 
+- **Supported device:** InForm strictly accepts and parses **InBody 270** result sheets only.
 - The web flow currently uses sample readings or clearly labelled demo values. Upload, camera, and PDF screens are part of the user experience, but uploaded files are **not yet processed by OCR**.
 - Accounts, sign-in, saved history, and persistence are not implemented. The browser keeps the in-progress plan only for the current session.
-- The app does not make device-specific compatibility promises in its public experience.
 
 ## How it works
 

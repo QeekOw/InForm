@@ -50,6 +50,7 @@ levels with how often each one trains.
 
 ## Known gaps
 
+- Device compatibility: exclusively accepts and parses **InBody 270** result sheets only (other models like InBody 570 or 770 are not supported).
 - No OCR on uploads: every reading starts from the demo values.
 - No accounts, sign-in or saved history ([issues #41–44](https://github.com/QeekOw/InForm/issues/41)).
 - "Forgot Password?" is design copy only.

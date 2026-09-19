@@ -155,7 +155,7 @@ export default function Preview() {
 
   const nonSheetMessage =
     extraction?.message ??
-    "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet.";
+    "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 sheet.";
   const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
   const unreadFromExtraction = new Set((extraction?.unread ?? []).map(normalizeFieldKey));
   const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
@@ -270,7 +270,7 @@ export default function Preview() {
             <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
               <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
               <p className="mt-1">
-                InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 or 570 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
+                InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
               </p>
             </div>
             {sampleId ? (
