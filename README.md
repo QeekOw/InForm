@@ -16,7 +16,7 @@
 
 ## Try it
 
-**[Open the live demo →](https://in-form.vercel.app)**
+**[Open the live demo →](https://in-form-chi.vercel.app)**
 
 InForm is a web prototype for turning reviewed body-composition readings, a fitness goal, and an activity profile into daily calorie and macro targets plus a corrective exercise plan.
 
