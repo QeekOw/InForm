@@ -16,8 +16,17 @@ imbalance findings, or medical or diagnostic claims. The backend renders every
 actionable fact separately from deterministic data.
 """
 
-_FORBIDDEN_COACHING_CONTENT = re.compile(
-    r"\d|\b(?:kcal|kilocalories?|calories?|grams?|g)\b",
+_UNSAFE_COACHING_CONTENT = re.compile(
+    r"\d|%|\b(?:"
+    r"kcal|kilocalories?|calories?|grams?|g|mg|milligrams?|mcg|micrograms?|"
+    r"kg|kilograms?|lbs?|pounds?|oz|ounces?|ml|milliliters?|liters?|percent|"
+    r"protein|carbohydrates?|carbs?|fiber|macros?|macronutrients?|nutrition|diet|meals?|"
+    r"food|snacks?|fasting|workouts?|exercises?|training|sets?|reps?|repetitions?|"
+    r"aim|avoid|skip|eat|consume|drink|limit|reduce|increase|decrease|perform|target|"
+    r"complete|replace|substitute|prescribe|recommend|should|must|try|ensure|"
+    r"do|run|walk|lift|stretch|rest|sleep|fast|choose|diagnos\w*|injur\w*|"
+    r"pain|disease|symptoms?|treat\w*|cure|imbalance|asymmetr\w*|weaker|stronger"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -32,10 +41,32 @@ def _build_user_prompt(master: MasterPayload) -> str:
     return f"Write a coaching note for someone pursuing {master.user.fitness_goal}."
 
 
-def _validated_coaching_text(draft: CoachingDraft) -> str:
+def _normalized_words(value: str) -> str:
+    return " " + re.sub(r"\W+", " ", value.casefold()).strip() + " "
+
+
+def _validated_coaching_text(draft: CoachingDraft, master: MasterPayload) -> str:
     text = draft.coaching_text.strip()
-    if not text or _FORBIDDEN_COACHING_CONTENT.search(text):
-        raise ValueError("Coaching notes must be qualitative and contain no quantities or units.")
+    normalized = _normalized_words(text)
+    plan_terms = [
+        value
+        for exercise in master.exercises.exercises
+        for value in (
+            exercise.name,
+            exercise.target,
+            exercise.body_part,
+            exercise.equipment,
+            *exercise.secondary_muscles,
+        )
+    ]
+    plan_terms.extend(master.exercises.detected_imbalances)
+    plan_terms.extend(master.exercises.unconfirmed_imbalance_pairs)
+    if (
+        not text
+        or _UNSAFE_COACHING_CONTENT.search(text)
+        or any(_normalized_words(term) in normalized for term in plan_terms if term)
+    ):
+        raise ValueError("Coaching notes must be qualitative and non-actionable.")
     return text
 
 
@@ -70,7 +101,7 @@ def synthesize_plan(
         draft = completion.choices[0].message.parsed
         if draft is None:
             return generate_fallback_plan(master)
-        coaching_text = _validated_coaching_text(draft)
+        coaching_text = _validated_coaching_text(draft, master)
         base_plan = generate_fallback_plan(master)
         plan = base_plan.model_copy(
             update={

@@ -111,6 +111,28 @@ def test_synthesize_plan_rejects_numeric_coaching_draft_and_falls_back():
     mock_client.beta.chat.completions.parse.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "coaching_text",
+    [
+        "Skip Dumbbell Lunge today.",
+        "Avoid carbohydrates today.",
+        "Aim for plenty of mg.",
+        "Perform squats every day and treat your weak left arm.",
+    ],
+)
+def test_synthesize_plan_rejects_actionable_coaching_draft(coaching_text: str):
+    master = _create_test_master()
+    mock_client = MagicMock()
+    mock_client.beta.chat.completions.parse.return_value.choices = [
+        MagicMock(message=MagicMock(parsed=CoachingDraft(coaching_text=coaching_text)))
+    ]
+
+    result = synthesize_plan(master, client=mock_client)
+
+    assert result.narrative_source == "fallback"
+    assert coaching_text not in result.narrative_text
+
+
 def test_synthesize_plan_handles_api_exception_gracefully():
     master = _create_test_master()
 
