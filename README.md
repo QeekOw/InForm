@@ -3,114 +3,97 @@
 </p>
 
 <p align="center">
+  <a href="https://in-form.vercel.app"><img src="https://img.shields.io/badge/Live_demo-Vercel-000000?logo=vercel&logoColor=white" alt="Open the InForm demo"></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
-  <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js 16">
-  <img src="https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white" alt="React 19">
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4">
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
 </p>
 
 <p align="center">
-  Turn an InBody scan into an explainable nutrition and corrective-exercise plan.
+  Turn body-composition data into an explainable nutrition and training plan.
 </p>
 
-InForm is an InBody AI Fitness Assistant. It combines an InBody result sheet with a person's profile and goal to produce daily calorie and macro targets plus an exercise plan that accounts for left/right muscle imbalances.
+## Try it
 
-The important distinction: the plan's actionable facts are calculated by deterministic, auditable code. AI may add an optional coaching note, but it cannot change measurements, targets, or prescriptions.
+**[Open the live demo →](https://in-form.vercel.app)**
 
-> InForm supports fitness planning and is not a medical diagnosis or substitute for professional advice.
+InForm is a web prototype for turning reviewed body-composition readings, a fitness goal, and an activity profile into daily calorie and macro targets plus a corrective exercise plan.
 
-## What it does
+All actionable plan facts come from deterministic, auditable code. AI may provide an optional coaching note, but it cannot alter measurements, targets, exercises, or imbalance findings.
 
-- Reads supported InBody 270 and 570 result sheets through OCR, or accepts confirmed measurements directly.
-- Calculates BMR, TDEE, calorie targets, macros, and fibre from the profile and body-composition data.
-- Detects bilateral lean-mass asymmetries and selects corrective unilateral exercises when appropriate.
-- Returns a structured Daily plan; narrative coaching is optional and constrained to non-actionable text.
+> InForm supports fitness planning. It is not a medical diagnosis or a substitute for professional advice.
+
+## What you can do today
+
+- Enter as a guest or complete a profile.
+- Choose a sample scan, review its measurements, and correct or confirm values before a plan is created.
+- Get daily nutrition targets and a training plan that flags meaningful left/right lean-mass asymmetry.
+- Use the deployed frontend on Vercel, backed by the InForm API on Render.
+
+## Current prototype scope
+
+The app is intentionally transparent about what is and is not live yet:
+
+- The web flow currently uses sample readings or clearly labelled demo values. Upload, camera, and PDF screens are part of the user experience, but uploaded files are **not yet processed by OCR**.
+- Accounts, sign-in, saved history, and persistence are not implemented. The browser keeps the in-progress plan only for the current session.
+- The app does not make device-specific compatibility promises in its public experience.
 
 ## How it works
 
 ```
-InBody image ──► OCR ──────────────┐
-Profile + goal ────────────────────┼──► Nutrition engine ─┐
-                                  └──► Exercise filter ──┼──► Daily plan
-                                                          └──► Optional coaching note
+Reviewed measurements + profile
+            │
+            ├──► Nutrition engine ─┐
+            └──► Exercise filter ──┼──► Master payload ──► Daily plan
+                                   │                         └──► Optional coaching note
+                                   └── deterministic plan facts
 ```
 
-The nutrition engine and exercise filter are independent deterministic modules. The final synthesis layer renders their output and validates that generated prose has not changed any plan facts.
+![InForm pipeline: reviewed measurements and profile flow through deterministic nutrition and exercise stages into MasterPayload, then into a daily plan with an optional coaching note.](docs/assets/pipeline.png)
 
-![InForm pipeline diagram: an InBody scan and profile flow through OCR, nutrition, exercise selection, and synthesis to produce a daily plan.](docs/assets/pipeline.png)
+## Run it locally
 
-## Quick start: deterministic core
+Requirements: Python 3.11+, Node.js, and npm.
 
-Requirements: Python 3.11 or later.
+Start the API from one terminal:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1       # macOS/Linux: source .venv/bin/activate
-pip install -e ".[dev]"
-pytest -q
-```
-
-The deterministic core needs neither an API key nor an InBody image. You can construct an `InBodyPayload` directly, or generate a practice sheet with `inform.synthetic.generate_sheet(...)`.
-
-## Run the web app locally
-
-The repository has a Next.js frontend and a FastAPI backend. Start each from a separate terminal at the repository root.
-
-```powershell
-# Terminal 1: API
 pip install -r backend/requirements.txt
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+cd backend
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+Start the frontend from a second terminal at the repository root:
+
 ```powershell
-# Terminal 2: web app
 Copy-Item frontend/.env.local.example frontend/.env.local
 cd frontend
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The supplied environment file points the frontend to `http://localhost:8000`; change `NEXT_PUBLIC_API_URL` for a deployed API.
-
-## Run a scan-to-plan demo
-
-For an InBody image, install the optional OCR dependencies and provide an OpenAI key for AI-assisted plan wording:
-
-```powershell
-pip install -e ".[training]"
-$env:OPENAI_API_KEY = "sk-..."     # macOS/Linux: export OPENAI_API_KEY=sk-...
-python scripts/demo_pipeline.py path/to/inbody_sheet.jpg --age 30 --sex female --activity 1.55 --goal fat_loss
-```
-
-By default the image is read with the local Donut engine. Set `INFORM_DONUT_CKPT` when its checkpoint is not at `models/donut-both-v3`. Alternatively, pass `--engine vlm` to use a vision-language model. If plan synthesis is unavailable or violates the validation rules, InForm returns its deterministic fallback plan.
+Open [http://localhost:3000](http://localhost:3000). `frontend/.env.local` sets `NEXT_PUBLIC_API_URL`; keep its local default for development or point it at a deployed API.
 
 ## Project layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/inform/` | Deterministic domain logic, data contracts, OCR seam, and plan synthesis |
-| `backend/` | FastAPI service for plans, reads, and samples |
-| `frontend/` | Next.js user interface for onboarding, scan upload, profile input, and results |
+| `frontend/` | Next.js interface for onboarding, sample selection, review, profile input, and results |
+| `backend/` | FastAPI service for samples, reads, and plan generation |
+| `src/inform/` | Deterministic nutrition, exercise, validation, and plan-domain logic |
+| `docs/assets/` | Brand and architecture assets used by this README |
 | `tests/` | Unit and integration tests |
-| `docs/adr/` | Architectural decisions |
-| `CONTEXT.md` | Authoritative domain vocabulary and pipeline rules |
 
-## Design principles
+## Development
 
-1. **Deterministic plan facts.** Measurements, targets, exercises, and imbalance findings always come from code.
-2. **Generative AI is bounded.** It supplies an optional coaching voice, never new medical or training claims.
-3. **Fail closed.** When OCR data is incomplete or generated content fails validation, the system does not silently invent a result.
-4. **Explainability first.** Structured nutrition and exercise outputs are returned alongside any prose so the UI can render the audited values directly.
+Run the Python test suite from the repository root:
 
-## Learn more
+```powershell
+pip install -e ".[dev]"
+pytest -q
+```
 
-- [Domain context and terminology](CONTEXT.md)
-- [Architecture decisions](docs/adr/)
-- [Backend API guide](backend/README.md)
-- [OCR evaluation notes](docs/ocr-eval-results.md)
-
-## Contributing
-
-Run `pytest -q` before opening a pull request. Keep domain terminology consistent with [CONTEXT.md](CONTEXT.md), and record consequential architectural choices in `docs/adr/`.
+For implementation details, see the [frontend guide](frontend/README.md), [backend API guide](backend/README.md), [domain context](CONTEXT.md), and [architecture decisions](docs/adr/).
