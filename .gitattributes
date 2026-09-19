@@ -1,2 +1,4 @@
 # Normalize line endings so Windows/macOS/Linux collaborators don't churn diffs.
 * text=auto
+/notebooks/kaggle_v8_fingerprint_inputs/** -text
+/.kaggle-v8-kernel/fingerprint_inputs/** -text
