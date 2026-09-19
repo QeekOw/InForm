@@ -4,7 +4,7 @@ import pytest
 
 from inform.exercise import Exercise, ExercisePlan
 from inform.inbody import InBodyPayload, SegmentalLean
-from inform.master import DailyPlan, MasterPayload
+from inform.master import CoachingDraft, DailyPlan, MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.synthesis.generate import synthesize_plan
 from inform.user import UserProfile
@@ -69,54 +69,46 @@ def _create_test_master(
 def test_synthesize_plan_with_mock_client_success():
     master = _create_test_master()
 
-    mock_plan = DailyPlan(
-        narrative_text="Hello! Welcome to your personalized fitness journey. We've included single-leg lunges to correct your leg balance...",
-        target_calories_kcal=1796.9,
-        protein_g=135.0,
-        carbs_g=180.0,
-        fats_g=48.0,
-        fiber_g=28.0,
+    mock_draft = CoachingDraft(
+        coaching_text="Keep showing up with patience and consistency as you work toward your goal."
     )
 
     # Mock OpenAI completion response
     mock_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = mock_plan
+    mock_choice.message.parsed = mock_draft
     mock_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
     result = synthesize_plan(master, client=mock_client)
 
-    assert result.narrative_text == mock_plan.narrative_text
-    assert result.target_calories_kcal == 1796.9
-    assert result.protein_g == 135.0
-    mock_client.beta.chat.completions.parse.assert_called_once()
+    assert result.narrative_source == "generated"
+    assert mock_draft.coaching_text in result.narrative_text
+    assert "1797 kcal" in result.narrative_text
+    assert "Dumbbell Lunge" in result.narrative_text
+    assert result.target_calories_kcal == master.nutrition.target_calories_kcal
+    assert result.protein_g == master.nutrition.protein_g
+    assert mock_client.beta.chat.completions.parse.call_args.kwargs["response_format"] is CoachingDraft
 
 
-def test_synthesize_plan_drops_on_llm_mutation_and_falls_back():
+def test_synthesize_plan_rejects_numeric_coaching_draft_and_falls_back():
     master = _create_test_master()
 
-    # LLM hallucinates different calories/protein
-    mutated_plan = DailyPlan(
-        narrative_text="I decided to give you fewer calories!",
-        target_calories_kcal=1500.0,  # Mutated!
-        protein_g=110.0,  # Mutated!
-        carbs_g=180.0,
-        fats_g=48.0,
-        fiber_g=28.0,
-    )
+    invalid_draft = CoachingDraft(coaching_text="Stay consistent for 2 weeks.")
 
     mock_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = mutated_plan
+    mock_choice.message.parsed = invalid_draft
     mock_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
     result = synthesize_plan(master, client=mock_client)
 
-    # Should have dropped the LLM text and safely fallen back to exact numbers
+    assert result.narrative_source == "fallback"
+    assert invalid_draft.coaching_text not in result.narrative_text
     assert result.target_calories_kcal == master.nutrition.target_calories_kcal
     assert result.protein_g == master.nutrition.protein_g
     assert "Daily Fitness & Nutrition Plan (Fat Loss)" in result.narrative_text
     assert "Dumbbell Lunge" in result.narrative_text
+    mock_client.beta.chat.completions.parse.assert_called_once()
 
 
 def test_synthesize_plan_handles_api_exception_gracefully():
@@ -133,20 +125,14 @@ def test_synthesize_plan_handles_api_exception_gracefully():
     assert result.target_calories_kcal == master.nutrition.target_calories_kcal
     assert result.protein_g == master.nutrition.protein_g
     assert "Daily Fitness & Nutrition Plan" in result.narrative_text
+    assert result.narrative_source == "fallback"
 
 
 def test_synthesize_plan_inbody_270_no_visceral_fat():
     master = _create_test_master(device="inbody_270", visceral_fat=None)
     assert master.inbody.visceral_fat_level is None
 
-    mock_plan = DailyPlan(
-        narrative_text="InBody 270 scan personalized plan...",
-        target_calories_kcal=1796.9,
-        protein_g=135.0,
-        carbs_g=180.0,
-        fats_g=48.0,
-        fiber_g=28.0,
-    )
+    mock_plan = CoachingDraft(coaching_text="Keep building steady habits each day.")
 
     mock_client = MagicMock()
     mock_choice = MagicMock()
@@ -155,3 +141,4 @@ def test_synthesize_plan_inbody_270_no_visceral_fat():
 
     result = synthesize_plan(master, client=mock_client)
     assert result.target_calories_kcal == 1796.9
+    assert result.narrative_source == "generated"

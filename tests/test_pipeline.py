@@ -6,7 +6,7 @@ import pytest
 from inform.engines.vlm import _RawExtraction
 from inform.errors import IncompleteExtractionError
 from inform.inbody import SegmentalLean
-from inform.master import DailyPlan, MasterPayload
+from inform.master import CoachingDraft, DailyPlan, MasterPayload
 from inform.pipeline import (
     assemble_master_payload,
     build_master_payload,
@@ -60,13 +60,8 @@ def test_run_pipeline_end_to_end_synthesis(fake_openai, raw_segmental):
 
     mock_llm_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = DailyPlan(
-        narrative_text="Here is your personalized fat loss coaching plan...",
-        target_calories_kcal=2015.34,
-        protein_g=139.2,
-        carbs_g=238.68,
-        fats_g=55.98,
-        fiber_g=28.21,
+    mock_choice.message.parsed = CoachingDraft(
+        coaching_text="Keep building your fat loss habits with consistency."
     )
     mock_llm_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
@@ -75,7 +70,8 @@ def test_run_pipeline_end_to_end_synthesis(fake_openai, raw_segmental):
     assert isinstance(plan, DailyPlan)
     assert plan.target_calories_kcal == pytest.approx(2015.34)
     assert plan.protein_g == pytest.approx(139.2)
-    assert "personalized fat loss coaching plan" in plan.narrative_text
+    assert "Keep building your fat loss habits with consistency." in plan.narrative_text
+    assert plan.narrative_source == "generated"
 
 
 def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmental):
@@ -153,13 +149,8 @@ def test_build_plan_from_payload_with_mock_llm():
 
     mock_llm_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = DailyPlan(
-        narrative_text="Here is your coaching plan built directly from payload...",
-        target_calories_kcal=2015.34,
-        protein_g=139.2,
-        carbs_g=238.68,
-        fats_g=55.98,
-        fiber_g=28.21,
+    mock_choice.message.parsed = CoachingDraft(
+        coaching_text="Keep building healthy habits with consistency."
     )
     mock_llm_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
@@ -168,7 +159,8 @@ def test_build_plan_from_payload_with_mock_llm():
     assert isinstance(plan, DailyPlan)
     assert plan.target_calories_kcal == pytest.approx(2015.34)
     assert plan.protein_g == pytest.approx(139.2)
-    assert "built directly from payload" in plan.narrative_text
+    assert "Keep building healthy habits with consistency." in plan.narrative_text
+    assert plan.narrative_source == "generated"
 
 
 def test_build_plan_from_payload_fallback():

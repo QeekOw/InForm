@@ -42,8 +42,9 @@ those heavy imports out of this service entirely.
 `synthesize_plan(master, client=None)` is called with no OpenAI client. It tries
 to construct one internally, and if that fails (no `openai` package installed,
 no `OPENAI_API_KEY` set — both true here), it catches the failure and falls back
-to `generate_fallback_plan`, a deterministic template. So the narrative text is
-real prose, just not LLM-written, until an API key is wired up.
+to `generate_fallback_plan`, a deterministic template. With a configured client,
+the LLM may add a bounded coaching note; nutrition targets, exercises, and
+imbalance findings are always rendered deterministically by the backend.
 
 ## Deploying (Render)
 

@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app, get_llm_client
-from inform.master import DailyPlan
+from inform.master import CoachingDraft
 from inform.samples import load_extractions
 from tests.test_master import _inbody
 
@@ -22,9 +22,11 @@ def _post_clean_sample():
     return client.post("/plan", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
 
 
-def _llm_returning(plan: DailyPlan) -> MagicMock:
+def _llm_returning(draft: CoachingDraft) -> MagicMock:
     llm = MagicMock()
-    llm.beta.chat.completions.parse.return_value.choices = [MagicMock(message=MagicMock(parsed=plan))]
+    llm.beta.chat.completions.parse.return_value.choices = [
+        MagicMock(message=MagicMock(parsed=draft))
+    ]
     return llm
 
 
@@ -127,24 +129,16 @@ def test_plan_needs_exactly_one_reading_source(use_llm):
 
 
 def test_generated_narrative_is_returned_and_labelled_as_generated(use_llm):
-    use_llm(_llm_raising())
-    targets = _post_clean_sample().json()["nutrition"]
-
     use_llm(
         _llm_returning(
-            DailyPlan(
-                narrative_text="Keep your single-leg work steady this week.",
-                target_calories_kcal=targets["target_calories_kcal"],
-                protein_g=targets["protein_g"],
-                carbs_g=targets["carbs_g"],
-                fats_g=targets["fats_g"],
-                fiber_g=targets["fiber_g"],
-            )
+            CoachingDraft(coaching_text="Keep building consistency one day at a time.")
         )
     )
     plan = _post_clean_sample().json()
 
-    assert plan["narrative_text"] == "Keep your single-leg work steady this week."
+    assert "Keep building consistency one day at a time." in plan["narrative_text"]
+    assert f"{plan['nutrition']['target_calories_kcal']:.0f} kcal" in plan["narrative_text"]
+    assert plan["exercises"]["exercises"][0]["name"] in plan["narrative_text"]
     assert plan["narrative_source"] == "generated"
 
 
@@ -157,19 +151,10 @@ def test_narrative_failure_falls_back_to_plain_plan(use_llm):
     assert f"{plan['nutrition']['target_calories_kcal']:.0f} kcal" in plan["narrative_text"]
 
 
-def test_mutated_narrative_is_dropped_rather_than_shown(use_llm):
-    """AC: ...rather than a wrong number."""
+def test_invalid_coaching_draft_is_dropped_rather_than_shown(use_llm):
+    """AC: Invalid generated prose falls back rather than showing a wrong number."""
     use_llm(
-        _llm_returning(
-            DailyPlan(
-                narrative_text="Eat 1500 kcal a day.",
-                target_calories_kcal=1500.0,
-                protein_g=1.0,
-                carbs_g=1.0,
-                fats_g=1.0,
-                fiber_g=1.0,
-            )
-        )
+        _llm_returning(CoachingDraft(coaching_text="Eat 1500 kcal a day."))
     )
     plan = _post_clean_sample().json()
 

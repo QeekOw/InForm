@@ -35,7 +35,6 @@ from inform.samples import (
     load_manifest,
 )
 from inform.synthesis.generate import OpenAIClientProtocol, synthesize_plan
-from inform.synthesis.validate import generate_fallback_plan
 from inform.user import UserProfile
 
 app = FastAPI(title="InForm API")
@@ -379,7 +378,7 @@ def plan(
         nutrition=nutrition,
         exercises=exercises,
         narrative_text=daily_plan.narrative_text,
-        narrative_source="fallback" if daily_plan == generate_fallback_plan(master) else "generated",
+        narrative_source=daily_plan.narrative_source,
         measured=base_measured,
         corrected_fields=corrected_fields,
         confirmed_fields=confirmed_fields,

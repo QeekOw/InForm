@@ -75,7 +75,7 @@ def run_pipeline(
     """Orchestrator: Module 1 -> Modules 2 and 3 (independent) -> MasterPayload -> Module 4 -> DailyPlan.
 
     exercise_pool is passed through to Module 3 (see exercise_filter.py).
-    Module 4 synthesizes MasterPayload into an empathetic DailyPlan with dual-validation.
+    Module 4 adds optional coaching to a deterministic DailyPlan and validates final assembly.
     `engine` selects the Module 1 OCR engine; None uses the default Donut engine (ADR-0010).
     """
     master = assemble_master_payload(

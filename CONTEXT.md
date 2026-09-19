@@ -17,11 +17,12 @@ User form ───────────────────────�
                                        │                └─▶ [3] Exercise filter ──┤
                                        │                                          ▼
                                        │                                    Master JSON
-                                       └──────────────────────────▶ [4] LLM synthesis ─▶ Daily plan
+                                       └──────────────────────────▶ [4] Plan synthesis ─▶ Daily plan
 ```
 
-Modules 2 and 3 are independent and deterministic. Module 4 is a linguistic synthesizer
-only — it must never mutate a deterministic number (enforced by validation).
+Modules 2 and 3 are independent and deterministic. Module 4 assembles the Daily plan:
+deterministic code renders every actionable fact, while generative AI may add only a
+non-actionable Coaching note.
 
 ## Glossary
 
@@ -60,9 +61,14 @@ only — it must never mutate a deterministic number (enforced by validation).
   programmable outputs. See [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
 - **Master JSON (`MasterPayload`)** — the consolidated deterministic output of Modules 1–3;
   the sole input to Module 4.
-- **Deterministic / generative boundary** — the architectural rule that all numbers are
-  computed by deterministic code; the LLM only writes prose around them and may never change
-  them.
+- **Daily plan** — the user-facing nutrition and exercise plan. Its targets, prescribed
+  exercises, and imbalance findings are deterministic; it remains complete when no generated
+  coaching is available.
+- **Coaching note** — optional generated encouragement that gives the Daily plan a personal
+  voice without adding measurements, targets, prescriptions, or diagnostic claims.
+- **Deterministic / generative boundary** — the architectural rule that every actionable plan
+  fact comes from deterministic code; generative AI supplies voice only. See
+  [ADR-0013](docs/adr/0013-keep-actionable-plan-facts-deterministic.md).
 
 ## Module 1 (OCR) — the two engines
 
