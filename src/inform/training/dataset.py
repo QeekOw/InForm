@@ -9,14 +9,8 @@ from inform import synthetic
 from inform.synthetic import generate_sheet, label_json
 
 # Generation (generate_dataset / the CLI) is torch-free — it only renders sheets.
-# torch is needed solely by DonutInBodyDataset, so tolerate its absence and let
-# the light (torch-free) venv generate datasets without pulling in torch.
-try:
-    import torch
-    from torch.utils.data import Dataset
-except ModuleNotFoundError:  # pragma: no cover - exercised only in the torch-free venv
-    torch = None
-    Dataset = object
+# Import torch only when training actually asks for a sample; importing it here
+# made parallel render workers consume gigabytes before rendering one sheet.
 
 TASK_TOKEN = "<s_inbody>"
 
@@ -140,7 +134,7 @@ def generate_dataset(
     write_manifest(output_dir, devices, n_per_device, seed_start)
 
 
-class DonutInBodyDataset(Dataset):
+class DonutInBodyDataset:
     """Image -> target-JSON pairs for Donut fine-tuning, read from a
     generate_dataset() output directory.
 
@@ -162,6 +156,8 @@ class DonutInBodyDataset(Dataset):
         return len(self._samples)
 
     def __getitem__(self, index: int) -> dict:
+        import torch
+
         image_path = self._samples[index]
         image = Image.open(image_path).convert("RGB")
         pixel_values = self._processor(image, return_tensors="pt").pixel_values.squeeze(0)
