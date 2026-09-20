@@ -147,3 +147,20 @@ So there is a specific, testable expectation for the next retrain rather than a 
 - **This ADR has now been amended twice in one day in opposite directions.** That is the strongest
   available argument for #24's premise: an under-powered hold-out does not produce noisy answers,
   it produces confident wrong ones.
+
+## Amendment (2026-09-20) — V9 checkpoint 3750 becomes the default
+
+**`INFORM_DONUT_CKPT` now defaults to `models/donut-270-v9`.** The available real-photo corpus is
+the maximum obtainable set, so the owner explicitly accepted promotion without another independent
+confirmation set. V5 remains the rollback checkpoint, and the existing fail-closed flagged/unread
+handling remains unchanged.
+
+V9 checkpoint 3750 beat V5 on the five difficult photos (core 32/35 vs 28/35 and PBF 5/5 vs
+1/5), while matching its 23/30 critical and 18/25 segmental scores with zero refusals. It also
+scored 70/72 core and 72/72 critical on the fixed 12-sheet set, then 97.4% core and 98.3%
+critical with zero refusals on a disjoint 400-sheet synthetic holdout. Those five difficult photos
+influenced V9 development, so their result is not an independent estimate; the promotion accepts
+that limitation rather than disguising it.
+
+The frozen model is checkpoint 3750 with SHA-256
+`BB4C796E41BF02FD65DE406203DD3408ACCFD79634CB1724369E2D3B25A69183`.

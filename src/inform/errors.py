@@ -38,7 +38,7 @@ class DonutCheckpointError(Exception):
             if missing_training_extra
             else (
                 f"Download the checkpoint to {checkpoint} (e.g. "
-                "`kaggle kernels output qeekowen/inform-v5 -p ./models/donut-both-v5`), "
+                "download V9 checkpoint 3750 to `models/donut-270-v9`), "
                 "or point INFORM_DONUT_CKPT at the checkpoint dir."
             )
         )

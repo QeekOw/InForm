@@ -191,8 +191,8 @@ v5 leads every cut, and leads the two that matter most — segmental lean and
 critical fields — by 21 observations. It is also the safest by the headline
 measure: it leaves one sheet partly unread against v3's five, flags six sheets
 against v3's none, and carries a wrong value in 1 of 5 unverified reads against
-v3's 4 of 7. `models/donut-both-v5` is the default (ADR-0010, second 2026-09-12
-amendment).
+v3's 4 of 7. This table records the historical V5 promotion; the current default is
+`models/donut-270-v9` (ADR-0010, 2026-09-20 amendment).
 
 `percent_body_fat` is the single field v3 still wins, 12/12 against 6/12. It
 feeds the LBM cross-check, so a misread PBF is much of *why* v5 flags six sheets

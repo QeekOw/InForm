@@ -23,7 +23,7 @@ _BMR_TOLERANCE_KCAL = 100.0
 # A local checkpoint dir or a Hugging Face Hub id, defaulting to the Kaggle output
 # folder name so a local download works without extra config.
 _DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
-_DEFAULT_DONUT_CKPT = "models/donut-both-v5"
+_DEFAULT_DONUT_CKPT = "models/donut-270-v9"
 
 
 def _looks_like_hub_id(raw: str) -> bool:
@@ -42,7 +42,7 @@ def _looks_like_hub_id(raw: str) -> bool:
 def default_engine(checkpoint: str | Path | None = None) -> Engine:
     """Build the default runtime engine: self-hosted Donut (ADR-0010).
 
-    Points at INFORM_DONUT_CKPT (default `models/donut-both-v5`), which can be a
+    Points at INFORM_DONUT_CKPT (default `models/donut-270-v9`), which can be a
     local directory path or a Hugging Face Hub model ID (e.g. `org/model`). Fails
     loudly (DonutCheckpointError) when the checkpoint is absent or the training
     extra (torch/transformers) is not installed. It never silently falls back to
