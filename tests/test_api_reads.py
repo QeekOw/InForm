@@ -411,3 +411,198 @@ def test_plan_with_uploaded_sheet_read_id():
         app.dependency_overrides.clear()
 
 
+
+
+# --- Source-aware refusal copy (issue #83) ---------------------------------
+#
+# A PDF upload renders page 1 in the browser and submits it like any photo
+# (issue #81), so every refusal below used to tell PDF uploaders to retake a
+# photo in good lighting. `source` carries what the person actually picked.
+
+
+def _png_data_url() -> str:
+    import base64
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color=(200, 200, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+
+def _refused_message(payload: dict) -> str:
+    start_resp = client.post("/reads", json=payload)
+    assert start_resp.status_code == 200
+    read_id = start_resp.json()["read_id"]
+    poll_resp = client.get(f"/reads/{read_id}?timeout=1.0")
+    assert poll_resp.status_code == 200
+    poll_data = poll_resp.json()
+    assert poll_data["status"] == "refused"
+    return poll_data["extraction"]["message"].lower()
+
+
+def _blurry_engine():
+    from inform.errors import MissingRequiredFieldsError
+
+    def blurry_stub(img_input) -> PartialInBody:
+        raise MissingRequiredFieldsError(["weight_kg", "lean_body_mass_kg"])
+
+    return blurry_stub
+
+
+def test_pdf_read_missing_fields_does_not_ask_for_a_retake():
+    """AC1: a refused PDF read never mentions retaking a photo or lighting."""
+    app.dependency_overrides[get_engine] = _blurry_engine
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        assert "retake" not in msg
+        assert "lighting" not in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pdf_read_missing_fields_says_which_page_to_supply():
+    """AC2: a refused PDF read says what the person can actually do."""
+    app.dependency_overrides[get_engine] = _blurry_engine
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        assert "pdf" in msg
+        assert "page" in msg
+        assert "results" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pdf_read_unexpected_failure_does_not_ask_for_a_retake():
+    """AC1 on the catch-all path, which any engine error lands in."""
+
+    def exploding_stub(img_input) -> PartialInBody:
+        raise RuntimeError("decoder blew up")
+
+    app.dependency_overrides[get_engine] = lambda: exploding_stub
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        assert "retake" not in msg
+        assert "lighting" not in msg
+        assert "pdf" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pdf_read_with_undecodable_data_blames_the_pdf():
+    """AC1 on the branch that never reaches an engine at all."""
+    start_resp = client.post(
+        "/reads", json={"image_data": "not-a-valid-base64-image", "live": True, "source": "pdf"}
+    )
+    assert start_resp.status_code == 200
+    msg = start_resp.json()["extraction"]["message"].lower()
+    assert "retake" not in msg
+    assert "pdf" in msg
+
+
+def test_photo_source_keeps_the_retake_prompt():
+    """AC3: an explicit photo source still prompts a retake."""
+    app.dependency_overrides[get_engine] = _blurry_engine
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "photo"}
+        )
+        assert "retake" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_absent_source_keeps_the_photo_wording():
+    """The field is additive: an older client that omits it is unaffected."""
+    app.dependency_overrides[get_engine] = _blurry_engine
+    try:
+        msg = _refused_message({"image_data": _png_data_url(), "live": True})
+        assert "retake" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unknown_source_is_rejected():
+    """The contract is closed, so a typo fails loudly instead of silently."""
+    resp = client.post(
+        "/reads", json={"image_data": _png_data_url(), "live": True, "source": "fax"}
+    )
+    assert resp.status_code == 422
+
+
+def test_pdf_read_in_progress_is_not_called_a_photo():
+    """AC4 on the backend half: the job's own wording while it runs."""
+    from inform.reads import read_manager
+
+    def slow_stub(img_input) -> PartialInBody:
+        time.sleep(0.5)
+        return PartialInBody(weight_kg=60.0, lean_body_mass_kg=45.0, percent_body_fat=25.0)
+
+    app.dependency_overrides[get_engine] = lambda: slow_stub
+    try:
+        resp = client.post(
+            "/reads", json={"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        assert resp.status_code == 200
+        job = read_manager.get(resp.json()["read_id"])
+        assert job is not None
+        assert "photo" not in job.message.lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pdf_cover_page_is_not_blamed_on_a_photo():
+    """AC1/AC2 on the likely path: an emailed InBody PDF leading with a cover
+    page is not an InBody sheet, so it refuses here rather than as a blurry read."""
+    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        assert "retake" not in msg
+        assert "photo of your inbody" not in msg
+        assert "pdf" in msg
+        assert "results" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_photo_cover_page_keeps_the_sheet_upload_prompt():
+    """AC3: the photo wording on this path is the error's own and is unchanged."""
+    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
+    try:
+        msg = _refused_message(
+            {"image_data": _png_data_url(), "live": True, "source": "photo"}
+        )
+        assert "does not appear to be an inbody result sheet" in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _non_sheet_engine():
+    def non_sheet_stub(img_input) -> PartialInBody:
+        raise NotAnInBodySheetError()
+
+    return non_sheet_stub
+
+
+def test_pdf_cover_page_still_reports_the_not_an_inbody_sheet_code():
+    """The error code is untouched by this change, so Preview still routes the
+    refusal to its "Not an InBody sheet" panel."""
+    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
+    try:
+        start_resp = client.post(
+            "/reads", json={"image_data": _png_data_url(), "live": True, "source": "pdf"}
+        )
+        read_id = start_resp.json()["read_id"]
+        poll_data = client.get(f"/reads/{read_id}?timeout=1.0").json()
+        assert poll_data["extraction"]["error"] == "not_an_inbody_sheet"
+    finally:
+        app.dependency_overrides.clear()

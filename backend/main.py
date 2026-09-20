@@ -28,7 +28,7 @@ from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody
 from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.nutrition_engine import compute_targets
-from inform.reads import read_manager
+from inform.reads import SheetSource, read_manager
 from inform.samples import (
     ExtractionItem,
     load_extractions,
@@ -131,6 +131,10 @@ class CreateReadRequest(BaseModel):
     sample_id: str | None = None
     image_data: str | None = None
     live: bool = False
+    # What the person picked, so a refusal is worded for the photo or the PDF
+    # they actually have (issue #83). Additive: an older client that omits it
+    # keeps the photo wording.
+    source: SheetSource = "photo"
 
     @model_validator(mode="after")
     def _validate_source(self) -> "CreateReadRequest":
@@ -163,6 +167,7 @@ def create_read(
             sample_id=request.sample_id,
             image_data=request.image_data,
             live=request.live,
+            source=request.source,
             engine_factory=lambda: engine,
         )
         return ReadJobResponse(**job.to_dict())

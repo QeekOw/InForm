@@ -59,6 +59,11 @@ non-actionable Coaching note.
 - **InBody 270 / InBody 570** — the two device layouts in scope. Both report Visceral Fat Level
   (ADR-0004 correction, issue #13); the 570 reports more, and BMR / Visceral Fat are
   programmable outputs. See [ADR-0004](docs/adr/0004-device-scope-optional-fields.md).
+- **Sheet source** — what the person handed InForm: a **photo** they took, a **PDF** whose first
+  page is rendered in the browser (issue #81), or a **sample** picked from the gallery. The image
+  submitted to `/reads` looks the same either way, so the source rides along on the request and
+  decides how a refusal is worded — a PDF uploader is never told to retake a photo in good
+  lighting (issue #83). The refusal itself does not vary: ADR-0008 stays fail-closed.
 - **Master JSON (`MasterPayload`)** — the consolidated deterministic output of Modules 1–3;
   the sole input to Module 4.
 - **Daily plan** — the user-facing nutrition and exercise plan. Its targets, prescribed

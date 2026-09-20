@@ -6,6 +6,7 @@ import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import { API_URL } from "@/lib/config";
 import { isCleanRead, type ReadJob } from "@/lib/inbody";
+import type { SheetSource } from "@/lib/photo";
 import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgScanLine = "/icons/scan/scan-line.svg";
@@ -43,11 +44,12 @@ function AnalyzingContent() {
     if (!readId) {
       const photo = loadJSON<string>(SESSION_KEYS.photo);
       if (photo) {
-        // Automatically start reading the uploaded photo in session if read_id is missing
+        // Automatically start reading the uploaded sheet in session if read_id is missing
+        const source = loadJSON<SheetSource>(SESSION_KEYS.sheetSource) ?? "photo";
         fetch(`${API_URL}/reads`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_data: photo, live: true }),
+          body: JSON.stringify({ image_data: photo, live: true, source }),
         })
           .then((res) => {
             if (!res.ok) throw new Error("Failed to start reading");
@@ -60,7 +62,7 @@ function AnalyzingContent() {
             }
           })
           .catch((err) => {
-            console.error("Failed to start read from photo in session:", err);
+            console.error("Failed to start read from the sheet in session:", err);
             if (!cancelled) router.push("/preview");
           });
         return () => {
@@ -160,7 +162,7 @@ function AnalyzingContent() {
           </h1>
           <p className="mt-1 text-center text-[12px] text-white/70">
             {isUpload
-              ? "Extracting body composition parameters from your photo"
+              ? "Extracting body composition parameters from your sheet"
               : isLive
               ? "Self-hosted Donut model running on CPU (~45s expected)"
               : "Extracting body composition parameters"}

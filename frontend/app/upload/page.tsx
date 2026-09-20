@@ -147,12 +147,13 @@ export default function Upload() {
 
     saveJSON(SESSION_KEYS.photo, sheet.dataUrl);
     saveJSON(SESSION_KEYS.sheetPages, sheet.pageCount);
+    saveJSON(SESSION_KEYS.sheetSource, sheet.source);
 
     try {
       const res = await fetch(`${API_URL}/reads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_data: sheet.dataUrl, live: true }),
+        body: JSON.stringify({ image_data: sheet.dataUrl, live: true, source: sheet.source }),
       });
 
       if (!res.ok) {
@@ -164,7 +165,11 @@ export default function Upload() {
       router.push(`/upload/analyzing?read_id=${job.read_id}&upload=1`);
     } catch (err) {
       console.error("Error initiating read for uploaded sheet:", err);
-      setUploadError("Could not start analyzing this photo. Check your connection and try again.");
+      setUploadError(
+        sheet.source === "pdf"
+          ? "Could not start analyzing this PDF. Check your connection and try again."
+          : "Could not start analyzing this photo. Check your connection and try again.",
+      );
       setUploadingPhoto(false);
     }
   };
