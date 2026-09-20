@@ -20,6 +20,9 @@ export const SESSION_KEYS = {
   confirmations: "inform:confirmations",
   // Live or stored read job identifier (issue #40)
   readId: "inform:readId",
+  // How many pages the uploaded PDF had, so the screens showing the sheet can
+  // say which one was read (issue #81). Absent for a photo.
+  sheetPages: "inform:sheetPages",
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
@@ -63,6 +66,7 @@ export function clearSheet(): void {
     SESSION_KEYS.corrections,
     SESSION_KEYS.confirmations,
     SESSION_KEYS.readId,
+    SESSION_KEYS.sheetPages,
   ]) {
     removeSessionItem(key);
   }

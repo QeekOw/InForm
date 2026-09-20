@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { pagesReadNotice } from "@/lib/photo";
 import { loadJSON, SESSION_KEYS } from "@/lib/session";
 
 /** Shows the photo from the Upload flow. Confirming the reading drops the
@@ -14,21 +15,28 @@ export default function ReportPhoto({
   emptyLabel?: string;
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
+  const [pagesNotice, setPagesNotice] = useState<string | null>(null);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPhoto(loadJSON<string>(SESSION_KEYS.photo));
+    setPagesNotice(pagesReadNotice(loadJSON<number>(SESSION_KEYS.sheetPages) ?? 1));
   }, []);
 
   if (photo) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        alt="Your uploaded report"
-        className={`size-full object-cover ${className}`}
-        src={photo}
-      />
+      <div className={`relative size-full ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt="Your uploaded report" className="size-full object-cover" src={photo} />
+        {/* A multi-page PDF only ever has page 1 read, so say so next to the
+            page the numbers were taken from (issue #81). */}
+        {pagesNotice && (
+          <span className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-center text-[9px] font-medium text-white/90">
+            {pagesNotice}
+          </span>
+        )}
+      </div>
     );
   }
 

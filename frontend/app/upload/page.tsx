@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import PhoneFrame from "@/components/PhoneFrame";
 import { API_URL } from "@/lib/config";
 import { isCleanRead, type ReadJob, type SampleExtraction, type SampleSheetMeta } from "@/lib/inbody";
-import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
+import { fileToSheetImage, type SheetImage, SheetPickError } from "@/lib/photo";
 import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgCamera = "/upload/camera-icon.svg";
@@ -118,31 +118,41 @@ export default function Upload() {
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
+
+    // Cleared so picking the same file again after a refusal still fires
+    // `change` and gets another go.
+    input.value = "";
 
     clearSheet();
     setUploadingPhoto(true);
     setUploadError(null);
 
-    let photoDataUrl = "";
-    if (file.type.startsWith("image/")) {
-      try {
-        photoDataUrl = await fileToDataUrl(file);
-        saveJSON(SESSION_KEYS.photo, photoDataUrl);
-      } catch (err) {
-        console.error("Error converting file to data URL:", err);
-      }
-    } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-      photoDataUrl = createPdfDataUrl(file.name);
-      saveJSON(SESSION_KEYS.photo, photoDataUrl);
+    let sheet: SheetImage;
+    try {
+      sheet = await fileToSheetImage(file);
+    } catch (err) {
+      // The file never became image data, so say why rather than letting the
+      // backend call it an unreadable photo.
+      setUploadError(
+        err instanceof SheetPickError
+          ? err.message
+          : "Could not read that file. Try a photo of the sheet instead.",
+      );
+      setUploadingPhoto(false);
+      return;
     }
+
+    saveJSON(SESSION_KEYS.photo, sheet.dataUrl);
+    saveJSON(SESSION_KEYS.sheetPages, sheet.pageCount);
 
     try {
       const res = await fetch(`${API_URL}/reads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_data: photoDataUrl, live: true }),
+        body: JSON.stringify({ image_data: sheet.dataUrl, live: true }),
       });
 
       if (!res.ok) {
