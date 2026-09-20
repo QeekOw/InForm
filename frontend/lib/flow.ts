@@ -28,6 +28,7 @@ export function confirmReading(
     removeSessionItem(SESSION_KEYS.confirmations);
   }
   removeSessionItem(SESSION_KEYS.photo);
+  removeSessionItem(SESSION_KEYS.sheetPages);
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";
   saveJSON(SESSION_KEYS.nextAfterProfile, "/result");
   return "/profile";
