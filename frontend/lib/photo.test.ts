@@ -5,8 +5,11 @@ import {
   pdfRenderScale,
   fileToSheetImage,
   pagesReadNotice,
+  refusedSheetCopy,
   SheetPickError,
   sheetPickMessage,
+  sheetSwapAction,
+  unrecognizedSheetCopy,
 } from "./photo";
 
 function pick(name: string, type: string): File {
@@ -111,7 +114,7 @@ describe("fileToSheetImage", () => {
       readImage: vi.fn(),
     });
 
-    expect(sheet).toEqual({ dataUrl: RENDERED, pageCount: 1 });
+    expect(sheet).toEqual({ dataUrl: RENDERED, pageCount: 1, source: "pdf" });
     expect(readPdf).toHaveBeenCalledOnce();
   });
 
@@ -145,7 +148,7 @@ describe("fileToSheetImage", () => {
       readImage,
     });
 
-    expect(sheet).toEqual({ dataUrl: RENDERED, pageCount: 1 });
+    expect(sheet).toEqual({ dataUrl: RENDERED, pageCount: 1, source: "photo" });
     expect(readImage).toHaveBeenCalledOnce();
   });
 
@@ -169,6 +172,26 @@ describe("fileToSheetImage", () => {
     await expect(failure).rejects.toMatchObject({ code: "unreadable-image" });
   });
 
+  // Issue #83: the submitted raster looks identical either way, so what the
+  // person picked has to ride along or every refusal downstream guesses "photo".
+  it("marks a rendered PDF page as coming from a PDF", async () => {
+    const sheet = await fileToSheetImage(pick("sheet.pdf", "application/pdf"), {
+      readPdf: vi.fn().mockResolvedValue({ dataUrl: RENDERED, pageCount: 4 }),
+      readImage: vi.fn(),
+    });
+
+    expect(sheet.source).toBe("pdf");
+  });
+
+  it("marks a picked image as coming from a photo", async () => {
+    const sheet = await fileToSheetImage(pick("sheet.jpg", "image/jpeg"), {
+      readPdf: vi.fn(),
+      readImage: vi.fn().mockResolvedValue(RENDERED),
+    });
+
+    expect(sheet.source).toBe("photo");
+  });
+
   // Acceptance criterion 4.
   it("refuses an unsupported file without trying to read it", async () => {
     const readPdf = vi.fn();
@@ -178,5 +201,79 @@ describe("fileToSheetImage", () => {
     await expect(failure).rejects.toMatchObject({ code: "unsupported-type" });
     expect(readPdf).not.toHaveBeenCalled();
     expect(readImage).not.toHaveBeenCalled();
+  });
+});
+
+describe("refusedSheetCopy", () => {
+  // Acceptance criterion 3 (issue #83): the photo case is the common one and
+  // keeps the genuinely useful advice.
+  it("still asks a photo uploader to retake in good lighting", () => {
+    const copy = refusedSheetCopy("photo");
+    expect(copy.primary.label).toMatch(/retake/i);
+    expect(copy.aside).toMatch(/lighting/i);
+    expect(copy.primary.href).toBe("/upload/capture");
+  });
+
+  // Acceptance criterion 1.
+  it("never tells a PDF uploader to retake a photo or fix the lighting", () => {
+    const copy = refusedSheetCopy("pdf");
+    const everything = [copy.badge, copy.heading, copy.body, copy.asideHeading, copy.aside,
+      copy.primary.label, copy.secondary.label].join(" ");
+    expect(everything).not.toMatch(/retake/i);
+    expect(everything).not.toMatch(/lighting/i);
+    expect(everything).not.toMatch(/blurry/i);
+  });
+
+  // Acceptance criterion 2: an emailed InBody PDF commonly leads with a cover
+  // page, so say which page to send instead.
+  it("tells a PDF uploader to supply the page holding the results", () => {
+    const copy = refusedSheetCopy("pdf");
+    expect(copy.heading).toMatch(/PDF/);
+    expect(`${copy.body} ${copy.aside}`).toMatch(/results/i);
+    expect(copy.aside).toMatch(/page/i);
+    expect(copy.primary.href).toBe("/upload");
+  });
+
+  it("keeps the sample-gallery wording for a refused sample sheet", () => {
+    const copy = refusedSheetCopy("sample");
+    expect(copy.heading).toMatch(/sheet/i);
+    expect(copy.primary.href).toBe("/upload");
+  });
+});
+
+describe("sheetSwapAction", () => {
+  it("offers a retake for a photo and a new file for a PDF", () => {
+    expect(sheetSwapAction("photo")).toEqual({ label: "Retake", href: "/upload/capture" });
+    expect(sheetSwapAction("pdf").label).not.toMatch(/retake/i);
+    expect(sheetSwapAction("pdf").href).toBe("/upload");
+  });
+
+  it("swaps the sheet for a sample pick", () => {
+    expect(sheetSwapAction("sample")).toEqual({ label: "Change Sheet", href: "/upload" });
+  });
+});
+
+describe("unrecognizedSheetCopy", () => {
+  // Acceptance criteria 1 and 2 on the path issue #83 calls the likely one: an
+  // emailed InBody PDF that leads with a cover page opens fine, but page 1 is
+  // not a results sheet.
+  it("sends a PDF uploader back for the right page, not for a photo", () => {
+    const copy = unrecognizedSheetCopy("pdf");
+    const everything = [copy.badge, copy.heading, copy.aside, copy.primary.label,
+      copy.secondary.label].join(" ");
+    expect(everything).not.toMatch(/retake/i);
+    expect(everything).not.toMatch(/lighting/i);
+    expect(copy.primary.href).toBe("/upload");
+    expect(copy.aside).toMatch(/page/i);
+  });
+
+  it("keeps offering a photo uploader the camera", () => {
+    const copy = unrecognizedSheetCopy("photo");
+    expect(copy.primary.href).toBe("/upload/capture");
+    expect(copy.primary.label).toMatch(/photo|sheet/i);
+  });
+
+  it("sends a sample picker back to the gallery", () => {
+    expect(unrecognizedSheetCopy("sample").primary.href).toBe("/upload");
   });
 });

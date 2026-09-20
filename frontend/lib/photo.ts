@@ -89,9 +89,131 @@ export class SheetPickError extends Error {
   }
 }
 
-/** A sheet ready to submit to /reads: raster image data, plus how many pages
- * the source had. A photo, and a one-page PDF, are both 1. */
-export type SheetImage = { dataUrl: string; pageCount: number };
+/** What the person picked. The raster submitted to /reads looks identical
+ * either way, so this rides along to keep a refusal from telling a PDF
+ * uploader to retake a photo in good lighting (issue #83). */
+export type SheetSource = "photo" | "pdf";
+
+/** Rendered image data, plus how many pages it came from. A photo, and a
+ * one-page PDF, are both 1. */
+export type RenderedSheet = { dataUrl: string; pageCount: number };
+
+/** A sheet ready to submit to /reads. */
+export type SheetImage = RenderedSheet & { source: SheetSource };
+
+/** Which of the three things the person gave us a screen is talking about.
+ * The raster submitted to /reads is identical for a photo and a PDF page, so
+ * without this the refusal screens guess "photo" and tell someone who uploaded
+ * a PDF to retake it in good lighting (issue #83). */
+export type SheetVariant = "sample" | "photo" | "pdf";
+
+export type SheetAction = { label: string; href: string };
+
+/** The Preview refusal panel. The refusal itself is the same either way —
+ * ADR-0008 stays fail-closed and no number is invented — only its attribution
+ * and the way out differ. */
+export type RefusedSheetCopy = {
+  badge: string;
+  heading: string;
+  body: string;
+  asideHeading: string;
+  aside: string;
+  primary: SheetAction;
+  secondary: SheetAction;
+};
+
+const REFUSED_SHEET_COPY: Record<SheetVariant, RefusedSheetCopy> = {
+  sample: {
+    badge: "Careful verification",
+    heading: "Unable to read this sheet",
+    body: "We couldn't read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence.",
+    asideHeading: "Why was this sheet declined?",
+    aside: "Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan.",
+    primary: { label: "← Choose another sample sheet", href: "/upload" },
+    secondary: { label: "Retake with clearer lighting", href: "/upload/capture" },
+  },
+  photo: {
+    badge: "Photo unreadable",
+    heading: "Photo too blurry to read",
+    body: "The numbers on this photo couldn't be read clearly enough to build your plan. Rather than guess or fabricate missing numbers, InForm asks for a retake so you know the fix is on your side.",
+    asideHeading: "Tips for a clear scan",
+    aside: "Lay your sheet flat, ensure good overhead lighting without glare or dark shadows, and hold your camera steady so all table rows and numbers are sharp and in focus.",
+    primary: { label: "Retake Photo", href: "/upload/capture" },
+    secondary: { label: "Upload another file or try a sample sheet", href: "/upload" },
+  },
+  pdf: {
+    // No camera was involved, so nothing here is about focus or light. The
+    // likely cause is that page 1 was a cover sheet rather than the results.
+    badge: "PDF page unreadable",
+    heading: "Couldn't read this PDF page",
+    body: "InForm reads the first page of a PDF, and your measurements weren't on it. Rather than guess or fabricate missing numbers, InForm asks for the page that actually holds your results.",
+    asideHeading: "Which page to send",
+    aside: "Emailed InBody PDFs often lead with a cover or summary page. Open yours, find the page with the results table on it, and upload a PDF starting from that page — or send a photo of the printed sheet instead.",
+    primary: { label: "Upload another file", href: "/upload" },
+    secondary: { label: "Take a photo of the sheet instead", href: "/upload/capture" },
+  },
+};
+
+export function refusedSheetCopy(variant: SheetVariant): RefusedSheetCopy {
+  return REFUSED_SHEET_COPY[variant];
+}
+
+/** The Preview panel for a document that is not an InBody sheet at all. The
+ * explanation itself comes from the API's `message`, which names the real
+ * cause; what varies here is the badge, the aside, and the way out. */
+export type UnrecognizedSheetCopy = {
+  badge: string;
+  heading: string;
+  asideHeading: string;
+  aside: string;
+  primary: SheetAction;
+  secondary: SheetAction;
+};
+
+const UNRECOGNIZED_SHEET_COPY: Record<SheetVariant, UnrecognizedSheetCopy> = {
+  sample: {
+    badge: "Unrecognized document",
+    heading: "Not an InBody sheet",
+    asideHeading: "Why was this sheet declined?",
+    aside: "InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 sheet. This document wasn't recognized as one, so no clinical metrics could be read.",
+    primary: { label: "← Choose another sample sheet", href: "/upload" },
+    secondary: { label: "Take or upload another photo", href: "/upload/capture" },
+  },
+  photo: {
+    badge: "Unrecognized document",
+    heading: "Not an InBody sheet",
+    asideHeading: "Why was this sheet declined?",
+    aside: "InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 sheet. This document wasn't recognized as one, so no clinical metrics could be read.",
+    primary: { label: "Take or upload an InBody sheet", href: "/upload/capture" },
+    secondary: { label: "← Or try a sample sheet from the gallery", href: "/upload" },
+  },
+  pdf: {
+    // The likely path (issue #83): an emailed InBody PDF that leads with a
+    // cover or summary page. The PDF opened, page 1 just wasn't the results.
+    badge: "Unrecognized page",
+    heading: "That page isn't the results sheet",
+    asideHeading: "Which page to send",
+    aside: "Emailed InBody PDFs often lead with a cover or summary page, and InForm reads the first page. Open yours, find the page with the results table on it, and upload a PDF starting from that page.",
+    primary: { label: "Upload another file", href: "/upload" },
+    secondary: { label: "Take a photo of the sheet instead", href: "/upload/capture" },
+  },
+};
+
+export function unrecognizedSheetCopy(variant: SheetVariant): UnrecognizedSheetCopy {
+  return UNRECOGNIZED_SHEET_COPY[variant];
+}
+
+/** The control on Preview that swaps the sheet being reviewed. A sample is
+ * repicked from the gallery, a photo is retaken, a PDF is replaced. */
+const SHEET_SWAP_ACTION: Record<SheetVariant, SheetAction> = {
+  sample: { label: "Change Sheet", href: "/upload" },
+  photo: { label: "Retake", href: "/upload/capture" },
+  pdf: { label: "Change file", href: "/upload" },
+};
+
+export function sheetSwapAction(variant: SheetVariant): SheetAction {
+  return SHEET_SWAP_ACTION[variant];
+}
 
 /** What to tell the person about which page was read, or null when there was
  * only ever one. */
@@ -109,7 +231,7 @@ export function pdfRenderScale(pageWidth: number, pageHeight: number): number {
 
 /** Renders page 1 of a PDF to image data. Everything happens in the browser:
  * the PDF's own bytes never reach the server (ADR-0011 §3). */
-export async function pdfToDataUrl(file: File): Promise<SheetImage> {
+export async function pdfToDataUrl(file: File): Promise<RenderedSheet> {
   // The legacy build, not the default one: pdf.js 6's modern build calls
   // `Promise.try`, which needs Chrome 128 / Safari 18.2 / Firefox 134. On an
   // older phone that throws, and this flow would then blame the PDF for a
@@ -155,7 +277,7 @@ export async function fileToSheetImage(
   file: File,
   deps: {
     readImage: (file: File) => Promise<string>;
-    readPdf: (file: File) => Promise<SheetImage>;
+    readPdf: (file: File) => Promise<RenderedSheet>;
   } = { readImage: fileToDataUrl, readPdf: pdfToDataUrl },
 ): Promise<SheetImage> {
   const kind = classifyPickedFile(file);
@@ -166,7 +288,7 @@ export async function fileToSheetImage(
 
   if (kind === "pdf") {
     try {
-      return await deps.readPdf(file);
+      return { ...(await deps.readPdf(file)), source: "pdf" };
     } catch (err) {
       console.error("Could not render the picked PDF:", err);
       throw new SheetPickError("unreadable-pdf");
@@ -174,7 +296,7 @@ export async function fileToSheetImage(
   }
 
   try {
-    return { dataUrl: await deps.readImage(file), pageCount: 1 };
+    return { dataUrl: await deps.readImage(file), pageCount: 1, source: "photo" };
   } catch (err) {
     console.error("Could not read the picked image:", err);
     throw new SheetPickError("unreadable-image");

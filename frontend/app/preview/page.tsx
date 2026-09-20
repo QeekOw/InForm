@@ -16,6 +16,13 @@ import {
   type InBodyPayload,
   type SampleExtraction,
 } from "@/lib/inbody";
+import {
+  refusedSheetCopy,
+  sheetSwapAction,
+  unrecognizedSheetCopy,
+  type SheetSource,
+  type SheetVariant,
+} from "@/lib/photo";
 import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgBack = "/icons/preview/back-arrow.svg";
@@ -111,6 +118,7 @@ export default function Preview() {
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
+  const [sheetSource, setSheetSource] = useState<SheetSource>("photo");
   const [corrections, setCorrections] = useState<Record<string, unknown>>({});
   const [confirmedFields, setConfirmedFields] = useState<Set<string>>(new Set());
 
@@ -125,6 +133,7 @@ export default function Preview() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExtraction(loadedExtraction);
     setSampleId(loadedSampleId);
+    setSheetSource(loadJSON<SheetSource>(SESSION_KEYS.sheetSource) ?? "photo");
     setCorrections(storedCorrections);
     setConfirmedFields(new Set(storedConfirmations.map(normalizeFieldKey)));
 
@@ -147,6 +156,13 @@ export default function Preview() {
   const isNotAnInBodySheet =
     extraction?.error === "not_an_inbody_sheet" ||
     (extraction?.message?.toLowerCase().includes("not appear to be an inbody") ?? false);
+
+  // A sample sheet is talked about as a sample; otherwise the person's own
+  // upload is named for what they actually picked (issue #83).
+  const sheetVariant: SheetVariant = sampleId ? "sample" : sheetSource;
+  const refusalCopy = refusedSheetCopy(sheetVariant);
+  const unrecognizedCopy = unrecognizedSheetCopy(sheetVariant);
+  const swapAction = sheetSwapAction(sheetVariant);
 
   const isRefusedSheet =
     !isNotAnInBodySheet &&
@@ -244,124 +260,79 @@ export default function Preview() {
             <ReportPhoto />
           )}
 
-          {/* A picked Sample sheet is swapped from the gallery; your own photo is retaken. */}
+          {/* A picked Sample sheet is swapped from the gallery, your own photo
+              is retaken, and a PDF is replaced with another file. */}
           <Link
-            href={sampleId ? "/upload" : "/upload/capture"}
+            href={swapAction.href}
             className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white shadow"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="size-[14px]" src={imgCamera} />
-            {sampleId ? "Change Sheet" : "Retake"}
+            {swapAction.label}
           </Link>
         </div>
 
-        {/* State 1: Not an InBody Sheet State */}
+        {/* State 1: Not an InBody Sheet State. Where a PDF whose page 1 is a
+            cover sheet lands, so the way out is worded for what was uploaded
+            (issue #83). */}
         {isNotAnInBodySheet ? (
           <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
-                Unrecognized document
+                {unrecognizedCopy.badge}
               </span>
             </div>
-            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">Not an InBody sheet</h2>
+            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">
+              {unrecognizedCopy.heading}
+            </h2>
             <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
               {nonSheetMessage}
             </p>
             <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
-              <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
-              <p className="mt-1">
-                InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
-              </p>
+              <p className="font-bold text-zinc-800">{unrecognizedCopy.asideHeading}</p>
+              <p className="mt-1">{unrecognizedCopy.aside}</p>
             </div>
-            {sampleId ? (
-              <>
-                <Link
-                  href="/upload"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  ← Choose another sample sheet
-                </Link>
-                <Link
-                  href="/upload/capture"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Take or upload another photo
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/upload/capture"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  Take or upload an InBody sheet
-                </Link>
-                <Link
-                  href="/upload"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  ← Or try a sample sheet from the gallery
-                </Link>
-              </>
-            )}
+            <Link
+              href={unrecognizedCopy.primary.href}
+              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+            >
+              {unrecognizedCopy.primary.label}
+            </Link>
+            <Link
+              href={unrecognizedCopy.secondary.href}
+              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              {unrecognizedCopy.secondary.label}
+            </Link>
           </div>
         ) : isRefusedSheet ? (
-          /* State 2: Whole-sheet refusal / engine refuses entirely */
+          /* State 2: Whole-sheet refusal / engine refuses entirely. The wording
+             follows what the person gave us — a sample, a photo, or a PDF page
+             (issue #83) — while the refusal itself is the same either way. */
           <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
             <div className="flex items-center gap-2">
               <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
-                {sampleId ? "Careful verification" : "Photo unreadable"}
+                {refusalCopy.badge}
               </span>
             </div>
-            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">
-              {sampleId ? "Unable to read this sheet" : "Photo too blurry to read"}
-            </h2>
-            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
-              {sampleId
-                ? "We couldn't read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence."
-                : "The numbers on this photo couldn't be read clearly enough to build your plan. Rather than guess or fabricate missing numbers, InForm asks for a retake so you know the fix is on your side."}
-            </p>
+            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">{refusalCopy.heading}</h2>
+            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">{refusalCopy.body}</p>
             <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
-              <p className="font-bold text-zinc-800">
-                {sampleId ? "Why was this sheet declined?" : "Tips for a clear scan"}
-              </p>
-              <p className="mt-1">
-                {sampleId
-                  ? "Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan."
-                  : "Lay your sheet flat, ensure good overhead lighting without glare or dark shadows, and hold your camera steady so all table rows and numbers are sharp and in focus."}
-              </p>
+              <p className="font-bold text-zinc-800">{refusalCopy.asideHeading}</p>
+              <p className="mt-1">{refusalCopy.aside}</p>
             </div>
-            {sampleId ? (
-              <>
-                <Link
-                  href="/upload"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  ← Choose another sample sheet
-                </Link>
-                <Link
-                  href="/upload/capture"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Retake with clearer lighting
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/upload/capture"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  Retake Photo
-                </Link>
-                <Link
-                  href="/upload"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Upload another file or try a sample sheet
-                </Link>
-              </>
-            )}
+            <Link
+              href={refusalCopy.primary.href}
+              className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
+            >
+              {refusalCopy.primary.label}
+            </Link>
+            <Link
+              href={refusalCopy.secondary.href}
+              className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              {refusalCopy.secondary.label}
+            </Link>
           </div>
         ) : reading && reading.segmental_lean ? (
           /* Normal / Partial / Flagged Extraction View */

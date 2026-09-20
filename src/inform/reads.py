@@ -44,6 +44,37 @@ _STAGES: list[tuple[float, float, str]] = [
     (0.90, 0.96, "Evaluating Katch–McArdle and LBM cross-checks..."),
 ]
 
+# What the person actually picked. A PDF is rendered to page 1 in the browser
+# and submitted like any photo (issue #81), so without this every refusal below
+# told PDF uploaders to retake a photo in good lighting — advice about a camera
+# they never used. Absent from an older client's request, which still means
+# "photo".
+SheetSource = Literal["photo", "pdf"]
+
+# What an uploaded sheet is called, per source. Same refusal either way
+# (ADR-0008 stays fail-closed and no number is invented); only the attribution
+# and the suggested next step differ. This is the wording the API hands a
+# client in `message`; the Preview screen adds its own explanation beside it.
+_UPLOAD_COPY: dict[SheetSource, dict[str, str]] = {
+    "photo": {
+        "pending": "Analyzing uploaded photo...",
+        "undecodable": "Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
+        "missing_fields": "The photo is too blurry or unclear to read your measurements. Please retake the photo in good lighting.",
+        "unreadable": "The photo could not be read clearly. Please retake the photo with steady focus and good lighting.",
+        # The error's own wording is already written for a photo.
+        "not_a_sheet": str(NotAnInBodySheetError()),
+    },
+    "pdf": {
+        "pending": "Analyzing uploaded PDF page...",
+        "undecodable": "That PDF page could not be read. Upload a PDF whose first page is the results sheet, or a photo of the sheet instead.",
+        "missing_fields": "That PDF page does not show your measurements. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
+        "unreadable": "That PDF page could not be read clearly. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
+        # The likely path: an emailed InBody PDF that leads with a cover or
+        # summary page. Page 1 opened fine, it just is not the results sheet.
+        "not_a_sheet": "That PDF page does not look like an InBody result sheet. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
+    },
+}
+
 
 @dataclass
 class ReadJob:
@@ -106,6 +137,7 @@ class ReadManager:
         sample_id: str | None = None,
         image_data: str | None = None,
         live: bool = False,
+        source: SheetSource = "photo",
         engine_factory: Callable[[], Engine | None] | None = None,
     ) -> ReadJob:
         """Create a new read job for either a Sample sheet or an uploaded photo (Issue #45).
@@ -113,6 +145,7 @@ class ReadManager:
         If sample_id is given and live=False, completes immediately from the pre-computed extractions.
         If live=True (or image_data is provided), launches background inference with honest progress updates.
         Uploaded images are processed transiently in memory and never written to disk or logs (ADR-0011).
+        `source` names what the person picked, so a refusal is worded for the photo or the PDF they actually have.
         """
         if (sample_id is None and image_data is None) or (sample_id is not None and image_data is not None):
             raise ValueError("Provide either sample_id or image_data, not both or neither")
@@ -199,6 +232,7 @@ class ReadManager:
             return job
 
         # Uploaded image branch (Issue #45 / ADR-0011 zero persistence)
+        wording = _UPLOAD_COPY[source]
         b64_str = image_data
         if "," in b64_str:
             b64_str = b64_str.split(",", 1)[1]
@@ -216,11 +250,11 @@ class ReadManager:
                 live=True,
                 status="refused",
                 progress=1.0,
-                message="Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
+                message=wording["undecodable"],
                 extraction=ExtractionItem(
                     status="refused",
                     error="unreadable_photo",
-                    message="Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
+                    message=wording["undecodable"],
                 ),
                 completed_at=datetime.now(timezone.utc),
             )
@@ -235,7 +269,7 @@ class ReadManager:
             live=True,
             status="pending",
             progress=0.0,
-            message="Analyzing uploaded photo...",
+            message=wording["pending"],
         )
         with self._lock:
             self._jobs[read_id] = job
@@ -259,28 +293,30 @@ class ReadManager:
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "unreadable_photo"
-                job.message = "The photo is too blurry or unclear to read your measurements. Please retake the photo in good lighting."
+                job.message = wording["missing_fields"]
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="unreadable_photo",
                     unread=list(exc.fields),
                     message=job.message,
                 )
-            except NotAnInBodySheetError as exc:
+            except NotAnInBodySheetError:
+                # The error code is unchanged, so Preview still routes this to
+                # its "Not an InBody sheet" panel; only the wording varies.
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "not_an_inbody_sheet"
-                job.message = str(exc)
+                job.message = wording["not_a_sheet"]
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="not_an_inbody_sheet",
-                    message=str(exc),
+                    message=job.message,
                 )
             except Exception as exc:
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "unreadable_photo"
-                job.message = "The photo could not be read clearly. Please retake the photo with steady focus and good lighting."
+                job.message = wording["unreadable"]
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="unreadable_photo",

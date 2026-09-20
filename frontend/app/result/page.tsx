@@ -150,6 +150,7 @@ export default function Result() {
     // ADR-0011: The photo is never persisted anywhere after the scan is saved/planned
     removeSessionItem(SESSION_KEYS.photo);
     removeSessionItem(SESSION_KEYS.sheetPages);
+    removeSessionItem(SESSION_KEYS.sheetSource);
 
     const hasCorrections = Object.keys(loadedCorrections).length > 0;
     const hasConfirmations = loadedConfirmations.length > 0;
