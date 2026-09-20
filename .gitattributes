@@ -2,3 +2,5 @@
 * text=auto
 /notebooks/kaggle_v8_fingerprint_inputs/** -text
 /.kaggle-v8-kernel/fingerprint_inputs/** -text
+/notebooks/kaggle_v9_fingerprint_inputs/** -text
+/.kaggle-v9-kernel/fingerprint_inputs/** -text
