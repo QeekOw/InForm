@@ -2,6 +2,7 @@
 # run fast across many seeds. Only a couple of tests exercise the full
 # generate_sheet() render path, which shells out to a headless browser.
 import io
+import random
 import subprocess
 
 import pytest
@@ -11,6 +12,7 @@ from inform.synthetic import (
     MIN_SHEET_WIDTH_PX,
     SHEET_ASPECT,
     SHEET_ASPECT_TOLERANCE,
+    _augment,
     _derive_render_values,
     _fill_template,
     _generate_values,
@@ -201,6 +203,20 @@ def test_generate_dataset_writes_the_label_spelling(tmp_path, monkeypatch):
     dataset.generate_dataset(tmp_path, n_per_device=1, devices=("inbody_270",))
 
     assert (tmp_path / "inbody_270_000000.json").read_text(encoding="utf-8") == label_json(payload)
+
+
+def test_training_label_puts_device_identity_first():
+    label = label_json(_generate_values("inbody_270", seed=3))
+
+    assert label.index('"source_device"') < label.index('"weight_kg"')
+
+
+def test_augment_keeps_high_resolution_and_adds_low_resolution_phone_photos():
+    image = Image.new("RGB", (1600, 2260), "white")
+    widths = [_augment(image, random.Random(seed)).width for seed in range(30)]
+
+    assert any(576 <= width <= 1200 for width in widths)
+    assert any(width > 1200 for width in widths)
 
 
 def test_derived_distractors_are_coherent_and_deterministic():
