@@ -22,11 +22,12 @@ User form ───────────────────────�
                                        │                └─▶ [3] Exercise filter ──┤
                                        │                                          ▼
                                        │                                    Master JSON
-                                       └──────────────────────────▶ [4] LLM synthesis ─▶ Daily plan
+                                       └──────────────────────────▶ [4] Plan synthesis ─▶ Daily plan
 ```
 
-Modules 2 and 3 are independent and deterministic. Module 4 is a linguistic synthesizer
-only — it must never mutate a deterministic number (enforced by validation).
+Modules 2 and 3 are independent and deterministic. Module 4 assembles the Daily plan:
+deterministic code renders every actionable fact, while generative AI may add only a
+non-actionable Coaching note.
 
 ## Glossary
 
@@ -62,7 +63,12 @@ only — it must never mutate a deterministic number (enforced by validation).
   sheet_05 panel crossing. A synthetic sheet must therefore render it the way the device does,
   even though no value is scored, or the model learns to tell the two panels apart by a cue that
   exists only in training ([ADR-0007](docs/adr/0007-synthetic-data-generation.md), issue #50).
-- **Bilateral asymmetry** — a lean-mass deviation between a left/right limb pair. A deviation
+- **Confirmed measurement** — a measured value the person has reviewed and accepted as shown,
+  or corrected. A correction counts as confirmation, with a reminder to check it against the
+  source sheet. Confirmation records the person's review; it is not an independent validation
+  of the measurement.
+- **Bilateral asymmetry** — a lean-mass deviation between confirmed readings for a left/right
+  limb pair. Each pair is assessed independently once both readings are confirmed. A deviation
   **> 5%** triggers targeted unilateral corrective exercises (Module 3).
 - **Core fields** — the scalar values on a sheet (weight, LBM, PBF, SMM, BMR, Visceral Fat
   Level), as against the five **Segmental Lean** values. Scored and reported separately,
@@ -80,11 +86,21 @@ only — it must never mutate a deterministic number (enforced by validation).
 - **Promotion gate** — the evidence required to replace the default OCR checkpoint: on the
   development regression set, PBF is at least 10/12, both arms are 12/12, and the flagged/unread
   split is no worse than v5; the frozen candidate must then pass independent confirmation.
+- **Sheet source** — what the person handed InForm: a **photo** they took, a **PDF** whose first
+  page is rendered in the browser (issue #81), or a **sample** picked from the gallery. The image
+  submitted to `/reads` looks the same either way, so the source rides along on the request and
+  decides how a refusal is worded — a PDF uploader is never told to retake a photo in good
+  lighting (issue #83). The refusal itself does not vary: ADR-0008 stays fail-closed.
 - **Master JSON (`MasterPayload`)** — the consolidated deterministic output of Modules 1–3;
   the sole input to Module 4.
-- **Deterministic / generative boundary** — the architectural rule that all numbers are
-  computed by deterministic code; the LLM only writes prose around them and may never change
-  them.
+- **Daily plan** — the user-facing nutrition and exercise plan. Its targets, prescribed
+  exercises, and imbalance findings are deterministic; it remains complete when no generated
+  coaching is available.
+- **Coaching note** — optional generated encouragement that gives the Daily plan a personal
+  voice without adding measurements, targets, prescriptions, or diagnostic claims.
+- **Deterministic / generative boundary** — the architectural rule that every actionable plan
+  fact comes from deterministic code; generative AI supplies voice only. See
+  [ADR-0013](docs/adr/0013-keep-actionable-plan-facts-deterministic.md).
 
 ## Module 1 (OCR) — the two engines
 

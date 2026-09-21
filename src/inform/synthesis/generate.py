@@ -1,28 +1,34 @@
-"""Module 4 — Natural Language Generation interface (LLM Synthesis).
+"""Module 4 — bounded coaching-note generation and deterministic plan assembly."""
 
-Injects the consolidated Master JSON into a zero-shot LLM (OpenAI Structured Outputs)
-that acts strictly as a linguistic synthesizer, producing an empathetic daily plan
-without altering any deterministic number.
-"""
-
+import re
 from typing import Protocol
 
-from inform.master import DailyPlan, MasterPayload
+from inform.master import CoachingDraft, DailyPlan, MasterPayload
 from inform.synthesis.validate import (
     generate_fallback_plan,
     validate_no_mutation,
 )
 
-_SYSTEM_PROMPT = """You are an empathetic, supportive, and knowledgeable AI personal fitness and nutrition coach.
-Your role is to write a personalized, motivating daily fitness and nutrition guide for the user based strictly on their assessment data.
-
-Guidelines:
-1. Address the user's specific fitness goal (hypertrophy or fat loss) encouragingly.
-2. If muscle asymmetries or imbalances were detected, explain in plain English which limbs need attention and how the prescribed unilateral exercises will help correct the balance.
-3. Outline the prescribed workout routine clearly and offer brief, helpful form cues.
-4. Highlight their daily nutrition targets and provide practical, balanced meal suggestions that fit their exact macronutrient requirements.
-5. CRITICAL INVARIANT: The caloric and macronutrient targets (target_calories_kcal, protein_g, carbs_g, fats_g, fiber_g) are clinically pre-computed and DETERMINISTIC. You MUST restate these numbers EXACTLY as provided in the input. DO NOT modify, round, or alter them under any circumstance. The only calorie figures (kcal) you may write anywhere in the narrative are the provided target_calories_kcal, bmr_kcal, and tdee_kcal — never invent or estimate any other calorie number.
+_SYSTEM_PROMPT = """Write one short, encouraging coaching note.
+It may discuss motivation, consistency, and the person's confirmed fitness goal.
+Do not include numbers, quantities, nutrition units, exercise names or prescriptions,
+imbalance findings, or medical or diagnostic claims. The backend renders every
+actionable fact separately from deterministic data.
 """
+
+_UNSAFE_COACHING_CONTENT = re.compile(
+    r"\d|%|\b(?:"
+    r"kcal|kilocalories?|calories?|grams?|g|mg|milligrams?|mcg|micrograms?|"
+    r"kg|kilograms?|lbs?|pounds?|oz|ounces?|ml|milliliters?|liters?|percent|"
+    r"protein|carbohydrates?|carbs?|fiber|macros?|macronutrients?|nutrition|diet|meals?|"
+    r"food|snacks?|fasting|workouts?|exercises?|training|sets?|reps?|repetitions?|"
+    r"aim|avoid|skip|eat|consume|drink|limit|reduce|increase|decrease|perform|target|"
+    r"complete|replace|substitute|prescribe|recommend|should|must|try|ensure|"
+    r"do|run|walk|lift|stretch|rest|sleep|fast|choose|diagnos\w*|injur\w*|"
+    r"pain|disease|symptoms?|treat\w*|cure|imbalance|asymmetr\w*|weaker|stronger"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 class OpenAIClientProtocol(Protocol):
@@ -32,10 +38,36 @@ class OpenAIClientProtocol(Protocol):
 
 
 def _build_user_prompt(master: MasterPayload) -> str:
-    return (
-        f"Please synthesize a comprehensive daily fitness and nutrition plan for this user based on their assessment data:\n\n"
-        f"{master.model_dump_json(indent=2)}"
-    )
+    return f"Write a coaching note for someone pursuing {master.user.fitness_goal}."
+
+
+def _normalized_words(value: str) -> str:
+    return " " + re.sub(r"\W+", " ", value.casefold()).strip() + " "
+
+
+def _validated_coaching_text(draft: CoachingDraft, master: MasterPayload) -> str:
+    text = draft.coaching_text.strip()
+    normalized = _normalized_words(text)
+    plan_terms = [
+        value
+        for exercise in master.exercises.exercises
+        for value in (
+            exercise.name,
+            exercise.target,
+            exercise.body_part,
+            exercise.equipment,
+            *exercise.secondary_muscles,
+        )
+    ]
+    plan_terms.extend(master.exercises.detected_imbalances)
+    plan_terms.extend(master.exercises.unconfirmed_imbalance_pairs)
+    if (
+        not text
+        or _UNSAFE_COACHING_CONTENT.search(text)
+        or any(_normalized_words(term) in normalized for term in plan_terms if term)
+    ):
+        raise ValueError("Coaching notes must be qualitative and non-actionable.")
+    return text
 
 
 def synthesize_plan(
@@ -45,10 +77,9 @@ def synthesize_plan(
 ) -> DailyPlan:
     """Synthesize the human-readable daily plan from deterministic outputs.
 
-    Uses OpenAI Structured Outputs to enforce JSON Schema adherence, then
-    hands the result to ``validate_no_mutation`` before returning.
-    If the LLM call fails or mutates any number, it safely falls back
-    to ``generate_fallback_plan``.
+    Uses OpenAI Structured Outputs for a qualitative coaching draft, appends
+    backend-rendered facts, and runs ``validate_no_mutation`` before returning.
+    Invalid output or an API failure falls back to ``generate_fallback_plan``.
     """
     if client is None:
         try:
@@ -65,13 +96,21 @@ def synthesize_plan(
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": _build_user_prompt(master)},
             ],
-            response_format=DailyPlan,
+            response_format=CoachingDraft,
         )
-        plan = completion.choices[0].message.parsed
-        if plan is None:
+        draft = completion.choices[0].message.parsed
+        if draft is None:
             return generate_fallback_plan(master)
+        coaching_text = _validated_coaching_text(draft, master)
+        base_plan = generate_fallback_plan(master)
+        plan = base_plan.model_copy(
+            update={
+                "narrative_text": f"# Coaching Note\n\n{coaching_text}\n\n"
+                + base_plan.narrative_text,
+                "narrative_source": "generated",
+            }
+        )
         return validate_no_mutation(master, plan)
     except Exception:
-        # Drop-on-mutation (NumericalMutationError) or any API failure: fail closed
-        # to the deterministic fallback.
+        # Invalid generated content, integrity failure, or API failure: fail closed.
         return generate_fallback_plan(master)

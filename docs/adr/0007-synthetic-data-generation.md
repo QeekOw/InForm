@@ -188,7 +188,6 @@ gutter is wrong".
 
 Ground-truth invariants and the `InBodyPayload` contract remain untouched, as in every amendment
 above.
-
 ## Amendment (2026-09-18) — quoted PBF target and paired promotion gate
 
 The v7 limb-label correction fixed the arm reads but caused a real-photo PBF cross-field

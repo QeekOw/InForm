@@ -56,9 +56,10 @@ _SMM_FRACTION_OF_LBM_RANGE = (0.55, 0.65)
 _VISCERAL_FAT_RANGE = (1, 20)
 _SEGMENT_FRACTIONS_OF_LBM = {"left_arm_kg": 0.08, "right_arm_kg": 0.08, "left_leg_kg": 0.17, "right_leg_kg": 0.17}
 
-# A real 270 prints limb lean mass to two decimals; trained only on one-decimal
-# limbs, the model cut real arms short (#59).
-_LIMB_DECIMALS = 2
+# Decimals a device prints limb lean mass to. A real 270 prints two; trained only
+# on one-decimal limbs, the model cut real arms short (#59). No real 570 has been
+# seen, so it keeps the one decimal it always had.
+_LIMB_DECIMALS = {"inbody_270": 2, "inbody_570": 1}
 
 # The fat analogue of the table above: each limb's share of total body fat, and
 # the reference physique its sufficiency is scored against. Segmental fat is
@@ -133,7 +134,7 @@ def _generate_values(device: Literal["inbody_270"], seed: int) -> InBodyPayload:
         percent_body_fat=percent_body_fat,
         skeletal_muscle_mass_kg=skeletal_muscle_mass_kg,
         basal_metabolic_rate_kcal=basal_metabolic_rate_kcal,
-        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS),
+        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS[device]),
         visceral_fat_level=visceral_fat_level,
         source_device=device,
     )
@@ -354,7 +355,7 @@ def _graded_fields(payload: InBodyPayload) -> dict:
     Limbs are printed to the device's decimals, so a 270 arm of 3.4 prints 3.40.
     """
     seg = payload.segmental_lean
-    decimals = _LIMB_DECIMALS
+    decimals = _LIMB_DECIMALS[payload.source_device]
     return {
         "weight_kg": payload.weight_kg,
         "lean_body_mass_kg": payload.lean_body_mass_kg,  # 270 renders this as "Fat Free Mass"
@@ -374,13 +375,14 @@ def label_json(payload: InBodyPayload) -> str:
     model to stop a digit early (#59). JSON still parses 3.40 as 3.4, so this
     changes the training target and nothing that reads the label back.
     """
+    decimals = _LIMB_DECIMALS[payload.source_device]
     fields = payload.model_dump(mode="json")
     label = json.dumps(
         {"source_device": fields.pop("source_device"), **fields},
         separators=(",", ":"),
     )
     label = _LIMB_IN_JSON.sub(
-        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{_LIMB_DECIMALS}f}', label
+        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{decimals}f}', label
     )
     return re.sub(
         r'"percent_body_fat":(-?\d+(?:\.\d+)?)',
@@ -389,7 +391,10 @@ def label_json(payload: InBodyPayload) -> str:
     )
 
 
-def _fill_template(device: Literal["inbody_270"], payload: InBodyPayload) -> str:
+def _fill_template(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> str:
+    # Both devices are now full realistic clones (270 in #13, adult 570 follow-up):
+    # graded target fields sit amid the coherent distractor surround. Each template
+    # pulls the keys it needs from this shared dict; unused keys are ignored.
     template = Template((_TEMPLATE_DIR / f"{device}.html").read_text(encoding="utf-8"))
     values = _graded_fields(payload) | _derive_render_values(payload)
     return template.substitute(values)

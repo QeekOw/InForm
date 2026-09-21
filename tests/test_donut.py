@@ -122,6 +122,14 @@ def test_lone_one_written_as_unk_reads_as_one():
     assert partial.percent_body_fat == 13.8
 
 
+def test_generation_ending_at_unk_is_left_unread():
+    # Without the rest of the JSON object, the decoded digit is incomplete and
+    # must not be accepted as a completed measurement.
+    partial = _to_partial('{"weight_kg":5<unk>')
+
+    assert partial.weight_kg == None
+
+
 def test_end_token_kept_by_decode_does_not_cost_the_last_field():
     # The engine decodes with special tokens kept so <unk> survives to be read as
     # "1" (#58). The end-of-sequence token comes through with it.

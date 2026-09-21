@@ -2,10 +2,11 @@ import pytest
 
 from inform.exercise import Exercise, ExercisePlan
 from inform.inbody import InBodyPayload, SegmentalLean
-from inform.master import DailyPlan, MasterPayload
+from inform.master import MasterPayload
 from inform.nutrition import NutritionTargets
 from inform.synthesis.validate import (
     NumericalMutationError,
+    PlanIntegrityError,
     generate_fallback_plan,
     validate_no_mutation,
 )
@@ -68,116 +69,41 @@ def _sample_master() -> MasterPayload:
 
 def test_validate_no_mutation_passes_on_matching_numbers():
     master = _sample_master()
-    valid_plan = DailyPlan(
-        narrative_text="Great work today! Here is your custom plan...",
-        target_calories_kcal=2784.5,
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
+    valid_plan = generate_fallback_plan(master)
     result = validate_no_mutation(master, valid_plan)
     assert result == valid_plan
 
 
-def test_validate_no_mutation_raises_on_tweaked_protein():
+def test_validate_no_mutation_requires_exact_structured_values():
     master = _sample_master()
-    mutated_plan = DailyPlan(
-        narrative_text="AI tweaked protein...",
-        target_calories_kcal=2784.5,
-        protein_g=160.0,  # Expected 175.0!
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
+    mutated_plan = generate_fallback_plan(master).model_copy(update={"protein_g": 175.1})
+
     with pytest.raises(NumericalMutationError) as exc_info:
         validate_no_mutation(master, mutated_plan)
+
     assert exc_info.value.field_name == "protein_g"
     assert exc_info.value.expected == 175.0
-    assert exc_info.value.actual == 160.0
+    assert exc_info.value.actual == 175.1
+
+
+def test_validate_no_mutation_requires_deterministic_plan_section():
+    master = _sample_master()
+    incomplete_plan = generate_fallback_plan(master).model_copy(
+        update={"narrative_text": "Keep showing up with consistency."}
+    )
+
+    with pytest.raises(PlanIntegrityError):
+        validate_no_mutation(master, incomplete_plan)
 
 
 def test_validate_no_mutation_raises_on_tweaked_calories():
     master = _sample_master()
-    mutated_plan = DailyPlan(
-        narrative_text="AI tweaked calories...",
-        target_calories_kcal=2500.0,  # Expected 2784.5!
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
+    mutated_plan = generate_fallback_plan(master).model_copy(
+        update={"target_calories_kcal": 2500.0}
     )
     with pytest.raises(NumericalMutationError) as exc_info:
         validate_no_mutation(master, mutated_plan)
     assert exc_info.value.field_name == "target_calories_kcal"
-
-
-def test_validate_no_mutation_raises_on_mutated_calories_in_prose():
-    # Structured echo is correct, but the narrative a human reads states a
-    # different calorie figure — the exploit the structured-only guard missed.
-    master = _sample_master()
-    plan = DailyPlan(
-        narrative_text="To hit your goal, aim for about 1,800 kcal per day.",
-        target_calories_kcal=2784.5,
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
-    with pytest.raises(NumericalMutationError) as exc_info:
-        validate_no_mutation(master, plan)
-    assert exc_info.value.field_name == "narrative_text:kcal"
-    assert exc_info.value.actual == 1800.0
-
-
-def test_validate_no_mutation_raises_on_unit_first_calorie_mutation():
-    # Same exploit, phrased unit-first ("calories: 1800") to dodge a number-first scan.
-    master = _sample_master()
-    plan = DailyPlan(
-        narrative_text="Your plan sets calories: 1800 to stay in a deficit.",
-        target_calories_kcal=2784.5,
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
-    with pytest.raises(NumericalMutationError) as exc_info:
-        validate_no_mutation(master, plan)
-    assert exc_info.value.actual == 1800.0
-
-
-def test_validate_no_mutation_allows_unrelated_calorie_figures_in_prose():
-    # A deficit magnitude and a per-gram fact are not restatements of any
-    # deterministic value (target 2784.5 / BMR 1687.6 / TDEE 2531.4), so the
-    # guard must leave them alone rather than nuke the whole narrative.
-    master = _sample_master()
-    plan = DailyPlan(
-        narrative_text="Run a 500 kcal deficit; remember carbs are 4 kcal per gram.",
-        target_calories_kcal=2784.5,
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
-    assert validate_no_mutation(master, plan) == plan
-
-
-def test_validate_no_mutation_allows_bmr_tdee_target_in_prose():
-    # BMR 1687.6, TDEE 2531.4, target 2784.5 — all three restated (rounded for
-    # display) are legitimate and must not trip the narrative guard.
-    master = _sample_master()
-    plan = DailyPlan(
-        narrative_text=(
-            "Your BMR is 1688 kcal and TDEE 2531 kcal, so your target is "
-            "2784 kcal today."
-        ),
-        target_calories_kcal=2784.5,
-        protein_g=175.0,
-        carbs_g=330.0,
-        fats_g=77.0,
-        fiber_g=38.0,
-    )
-    assert validate_no_mutation(master, plan) == plan
 
 
 def test_generate_fallback_plan_preserves_all_deterministic_numbers():

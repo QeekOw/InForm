@@ -6,7 +6,7 @@ import pytest
 from inform.engines.vlm import _RawExtraction
 from inform.errors import IncompleteExtractionError
 from inform.inbody import SegmentalLean
-from inform.master import DailyPlan, MasterPayload
+from inform.master import CoachingDraft, DailyPlan, MasterPayload
 from inform.pipeline import (
     assemble_master_payload,
     build_master_payload,
@@ -39,7 +39,12 @@ def test_assemble_master_payload(fake_openai, raw_segmental):
     fake_openai(_raw(raw_segmental, visceral_fat_level=7))
     user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
 
-    master = assemble_master_payload(FIXTURE, user, _pool())
+    master = assemble_master_payload(
+        FIXTURE,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert isinstance(master, MasterPayload)
     assert master.inbody.lean_body_mass_kg == 58.0
@@ -55,13 +60,8 @@ def test_run_pipeline_end_to_end_synthesis(fake_openai, raw_segmental):
 
     mock_llm_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = DailyPlan(
-        narrative_text="Here is your personalized fat loss coaching plan...",
-        target_calories_kcal=2015.34,
-        protein_g=139.2,
-        carbs_g=238.68,
-        fats_g=55.98,
-        fiber_g=28.21,
+    mock_choice.message.parsed = CoachingDraft(
+        coaching_text="Keep building your fat loss habits with consistency."
     )
     mock_llm_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
@@ -70,7 +70,8 @@ def test_run_pipeline_end_to_end_synthesis(fake_openai, raw_segmental):
     assert isinstance(plan, DailyPlan)
     assert plan.target_calories_kcal == pytest.approx(2015.34)
     assert plan.protein_g == pytest.approx(139.2)
-    assert "personalized fat loss coaching plan" in plan.narrative_text
+    assert "Keep building your fat loss habits with consistency." in plan.narrative_text
+    assert plan.narrative_source == "generated"
 
 
 def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmental):
@@ -79,7 +80,12 @@ def test_run_pipeline_wires_asymmetry_into_exercise_plan(fake_openai, raw_segmen
     )
     user = _user(fitness_goal="hypertrophy")
 
-    master = assemble_master_payload(FIXTURE, user, _pool())
+    master = assemble_master_payload(
+        FIXTURE,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert master.exercises.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"
@@ -122,7 +128,12 @@ def test_build_master_payload_from_payload():
     inbody = _inbody(visceral_fat_level=7)
     user = _user(fitness_goal="fat_loss", activity_multiplier=1.55)
 
-    master = build_master_payload(inbody, user, _pool())
+    master = build_master_payload(
+        inbody,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert isinstance(master, MasterPayload)
     assert master.inbody.lean_body_mass_kg == 58.0
@@ -138,13 +149,8 @@ def test_build_plan_from_payload_with_mock_llm():
 
     mock_llm_client = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.parsed = DailyPlan(
-        narrative_text="Here is your coaching plan built directly from payload...",
-        target_calories_kcal=2015.34,
-        protein_g=139.2,
-        carbs_g=238.68,
-        fats_g=55.98,
-        fiber_g=28.21,
+    mock_choice.message.parsed = CoachingDraft(
+        coaching_text="Keep building healthy habits with consistency."
     )
     mock_llm_client.beta.chat.completions.parse.return_value.choices = [mock_choice]
 
@@ -153,7 +159,8 @@ def test_build_plan_from_payload_with_mock_llm():
     assert isinstance(plan, DailyPlan)
     assert plan.target_calories_kcal == pytest.approx(2015.34)
     assert plan.protein_g == pytest.approx(139.2)
-    assert "built directly from payload" in plan.narrative_text
+    assert "Keep building healthy habits with consistency." in plan.narrative_text
+    assert plan.narrative_source == "generated"
 
 
 def test_build_plan_from_payload_fallback():
@@ -179,7 +186,12 @@ def test_build_master_payload_wires_asymmetry_from_payload():
     )
     user = _user(fitness_goal="hypertrophy")
 
-    master = build_master_payload(inbody, user, _pool())
+    master = build_master_payload(
+        inbody,
+        user,
+        _pool(),
+        confirmed_fields={"segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg"},
+    )
 
     assert master.exercises.detected_imbalances == ["L/R leg lean-mass deviation 11.1%"]
     assert master.exercises.exercises[0].name == "Bulgarian split squat"

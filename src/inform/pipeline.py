@@ -15,10 +15,11 @@ def build_master_payload(
     inbody: InBodyPayload,
     user: UserProfile,
     exercise_pool: list[Exercise],
+    confirmed_fields: set[str] | None = None,
 ) -> MasterPayload:
     """Run Modules 2 & 3 to assemble the intermediate MasterPayload from an InBodyPayload."""
     nutrition = compute_targets(user, inbody)
-    exercises = recommend_exercises(user, inbody, exercise_pool)
+    exercises = recommend_exercises(user, inbody, exercise_pool, confirmed_fields)
 
     return MasterPayload(user=user, inbody=inbody, nutrition=nutrition, exercises=exercises)
 
@@ -29,6 +30,7 @@ def build_plan(
     exercise_pool: list[Exercise],
     llm_client: OpenAIClientProtocol | None = None,
     model: str = "gpt-4o-mini",
+    confirmed_fields: set[str] | None = None,
 ) -> DailyPlan:
     """Run Modules 2 to 4 to build a DailyPlan from an already-complete InBody payload.
 
@@ -36,7 +38,7 @@ def build_plan(
     nutrition targets (Module 2), exercise recommendations (Module 3), and synthesizes
     the final empathetic DailyPlan with dual-validation (Module 4).
     """
-    master = build_master_payload(inbody, user, exercise_pool)
+    master = build_master_payload(inbody, user, exercise_pool, confirmed_fields)
     return synthesize_plan(master, client=llm_client, model=model)
 
 
@@ -45,6 +47,7 @@ def assemble_master_payload(
     user: UserProfile,
     exercise_pool: list[Exercise],
     engine: Engine | None = None,
+    confirmed_fields: set[str] | None = None,
 ) -> MasterPayload:
     """Run Modules 1 -> 2 & 3 to assemble the intermediate MasterPayload.
 
@@ -57,7 +60,7 @@ def assemble_master_payload(
     if inbody is None:
         raise IncompleteExtractionError(extraction.unread, extraction.flagged)
 
-    return build_master_payload(inbody, user, exercise_pool)
+    return build_master_payload(inbody, user, exercise_pool, confirmed_fields)
 
 
 def run_pipeline(
@@ -67,12 +70,15 @@ def run_pipeline(
     llm_client: OpenAIClientProtocol | None = None,
     model: str = "gpt-4o-mini",
     engine: Engine | None = None,
+    confirmed_fields: set[str] | None = None,
 ) -> DailyPlan:
     """Orchestrator: Module 1 -> Modules 2 and 3 (independent) -> MasterPayload -> Module 4 -> DailyPlan.
 
     exercise_pool is passed through to Module 3 (see exercise_filter.py).
-    Module 4 synthesizes MasterPayload into an empathetic DailyPlan with dual-validation.
+    Module 4 adds optional coaching to a deterministic DailyPlan and validates final assembly.
     `engine` selects the Module 1 OCR engine; None uses the default Donut engine (ADR-0010).
     """
-    master = assemble_master_payload(image_path, user, exercise_pool, engine=engine)
+    master = assemble_master_payload(
+        image_path, user, exercise_pool, engine=engine, confirmed_fields=confirmed_fields
+    )
     return synthesize_plan(master, client=llm_client, model=model)

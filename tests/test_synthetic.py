@@ -217,8 +217,6 @@ def test_augment_keeps_high_resolution_and_adds_low_resolution_phone_photos():
 
     assert any(576 <= width <= 1200 for width in widths)
     assert any(width > 1200 for width in widths)
-
-
 def test_derived_distractors_are_coherent_and_deterministic():
     # Q3: distractor values derive coherently from the ground truth so a
     # rendered sheet cross-adds like a real one and is human-verifiable.

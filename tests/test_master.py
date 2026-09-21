@@ -60,6 +60,7 @@ def test_master_payload_round_trips_through_json():
 def test_valid_daily_plan():
     plan = DailyPlan(
         narrative_text="Here is your coaching plan for today...",
+        narrative_source="generated",
         target_calories_kcal=2015.3,
         protein_g=145.0,
         carbs_g=210.0,
@@ -74,6 +75,7 @@ def test_daily_plan_rejects_negative_calories():
     with pytest.raises(ValidationError):
         DailyPlan(
             narrative_text="Negative calories invalid",
+            narrative_source="fallback",
             target_calories_kcal=-100.0,
             protein_g=145.0,
             carbs_g=210.0,

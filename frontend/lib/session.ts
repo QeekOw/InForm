@@ -12,6 +12,20 @@ export const SESSION_KEYS = {
   // The picked Sample sheet and its stored read (issue #35).
   sampleId: "inform:sampleId",
   extraction: "inform:extraction",
+  // Machine-measured values from OCR / sample sheet (stored alongside corrections, never merged)
+  measured: "inform:measured",
+  // Human corrections typed off the sheet or edited (recorded alongside measured fields)
+  corrections: "inform:corrections",
+  // Confirmations of unchanged flagged fields (issue #39)
+  confirmations: "inform:confirmations",
+  // Live or stored read job identifier (issue #40)
+  readId: "inform:readId",
+  // How many pages the uploaded PDF had, so the screens showing the sheet can
+  // say which one was read (issue #81). Absent for a photo.
+  sheetPages: "inform:sheetPages",
+  // Whether the sheet came from a photo or a PDF, so a refusal is worded for
+  // what the person actually picked (issue #83).
+  sheetSource: "inform:sheetSource",
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
@@ -50,7 +64,13 @@ export function clearSheet(): void {
     SESSION_KEYS.photo,
     SESSION_KEYS.sampleId,
     SESSION_KEYS.extraction,
+    SESSION_KEYS.measured,
     SESSION_KEYS.reading,
+    SESSION_KEYS.corrections,
+    SESSION_KEYS.confirmations,
+    SESSION_KEYS.readId,
+    SESSION_KEYS.sheetPages,
+    SESSION_KEYS.sheetSource,
   ]) {
     removeSessionItem(key);
   }

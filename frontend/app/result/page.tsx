@@ -12,9 +12,10 @@ import {
   isCleanRead,
   READING_ROWS,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
-import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 import { ACTIVITY_LABELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
 const imgBack = "/icons/result/back-arrow.svg";
@@ -44,6 +45,9 @@ type PlanResponse = {
   exercises: ExercisePlan;
   narrative_text: string;
   narrative_source: "generated" | "fallback";
+  corrected_fields?: string[];
+  confirmed_fields?: string[];
+  measured?: PartialInBody | null;
 };
 
 const NARRATIVE_SOURCES: Record<PlanResponse["narrative_source"], { label: string; note: string }> = {
@@ -107,6 +111,8 @@ export default function Result() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<Record<string, unknown>>({});
+  const [confirmations, setConfirmations] = useState<string[]>([]);
   const [fromSample, setFromSample] = useState(true);
   const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
@@ -126,31 +132,74 @@ export default function Result() {
       return;
     }
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
+    const loadedReadId = loadJSON<string>(SESSION_KEYS.readId);
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
+    const loadedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
+    const loadedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
+    const loadedMeasured =
+      loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProfile(loadedProfile);
     setReading(loadedReading);
     setSampleId(loadedSampleId);
+    setCorrections(loadedCorrections);
+    setConfirmations(loadedConfirmations);
     setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
 
+    // ADR-0011: The photo is never persisted anywhere after the scan is saved/planned
+    removeSessionItem(SESSION_KEYS.photo);
+    removeSessionItem(SESSION_KEYS.sheetPages);
+    removeSessionItem(SESSION_KEYS.sheetSource);
+
+    const hasCorrections = Object.keys(loadedCorrections).length > 0;
+    const hasConfirmations = loadedConfirmations.length > 0;
+
     // A clean stored read is planned server-side from the Sample sheet
-    // itself; a reading someone edited is sent as they typed it.
+    // itself; a reading someone edited or confirmed is sent as they verified/typed it.
     const plannedFromSample =
       loadedSampleId !== null &&
       loadedExtraction !== null &&
       isCleanRead(loadedExtraction) &&
+      !hasCorrections &&
+      !hasConfirmations &&
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
+
+    const requestBody = loadedReadId
+      ? {
+          user: loadedProfile,
+          read_id: loadedReadId,
+          ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+          ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+        }
+      : loadedSampleId
+        ? {
+            user: loadedProfile,
+            sample_id: loadedSampleId,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+          }
+      : loadedMeasured
+        ? {
+            user: loadedProfile,
+            measured: loadedMeasured,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
+          }
+        : {
+            user: loadedProfile,
+            inbody: loadedReading,
+            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
+          };
 
     fetch(`${API_URL}/plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        plannedFromSample
-          ? { user: loadedProfile, sample_id: loadedSampleId }
-          : { user: loadedProfile, inbody: loadedReading },
-      ),
+      body: JSON.stringify(requestBody),
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -246,18 +295,53 @@ export default function Result() {
               </div>
             )}
             <dl className="text-[10px]">
-              {READING_ROWS.map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0"
-                >
-                  <dt className="opacity-70">{row.label}</dt>
-                  <dd className="whitespace-nowrap font-bold">
-                    {row.value(reading) ?? "—"}{" "}
-                    <span className="text-[8px] font-medium opacity-60">{row.unit}</span>
-                  </dd>
-                </div>
-              ))}
+              {(() => {
+                const correctedSet = new Set<string>([
+                  ...(state.status === "ready" && state.plan.corrected_fields
+                    ? state.plan.corrected_fields
+                    : []),
+                  ...Object.keys(corrections),
+                ]);
+                const confirmedSet = new Set<string>([
+                  ...(state.status === "ready" && state.plan.confirmed_fields
+                    ? state.plan.confirmed_fields
+                    : []),
+                  ...confirmations,
+                ]);
+                return READING_ROWS.map((row) => {
+                  const isHumanSupplied =
+                    correctedSet.has(row.key) ||
+                    correctedSet.has(row.key.replace("segmental_lean.", ""));
+                  const isConfirmed =
+                    !isHumanSupplied &&
+                    (confirmedSet.has(row.key) ||
+                      confirmedSet.has(row.key.replace("segmental_lean.", "")));
+                  return (
+                    <div
+                      key={row.label}
+                      className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0"
+                    >
+                      <dt className="flex items-center gap-1.5">
+                        <span className="opacity-70">{row.label}</span>
+                        {isHumanSupplied && (
+                          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
+                            Human-supplied
+                          </span>
+                        )}
+                        {isConfirmed && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-bold text-emerald-800">
+                            Verified
+                          </span>
+                        )}
+                      </dt>
+                      <dd className="whitespace-nowrap font-bold">
+                        {row.value(reading) ?? "—"}{" "}
+                        <span className="text-[8px] font-medium opacity-60">{row.unit}</span>
+                      </dd>
+                    </div>
+                  );
+                });
+              })()}
             </dl>
           </div>
         </section>
@@ -324,16 +408,24 @@ export default function Result() {
           {/* Screen 6: imbalances */}
           <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
             <p className="text-[13px] font-bold">Left/right balance</p>
-            {state.plan.exercises.detected_imbalances.length === 0 ? (
+            {state.plan.exercises.detected_imbalances.length === 0 &&
+            state.plan.exercises.unconfirmed_imbalance_pairs.length === 0 ? (
               <p className="mt-1 text-[11px] text-[#117d69]">
                 Your left and right sides are within 5% of each other. No imbalance to correct.
               </p>
-            ) : (
+            ) : state.plan.exercises.detected_imbalances.length > 0 ? (
               state.plan.exercises.detected_imbalances.map((imbalance) => (
                 <p key={imbalance} className="mt-1 text-[11px]">
                   {imbalance}
                 </p>
               ))
+            ) : null}
+            {state.plan.exercises.unconfirmed_imbalance_pairs.length > 0 && (
+              <p className="mt-2 text-[11px] text-amber-800">
+                Balance wasn’t assessed for the {state.plan.exercises.unconfirmed_imbalance_pairs.join(" and ")} because those readings weren’t confirmed. {" "}
+                <Link className="font-bold underline" href="/preview">Review readings</Link>
+                {" "}to check them against your sheet and see recommendations.
+              </p>
             )}
           </div>
 

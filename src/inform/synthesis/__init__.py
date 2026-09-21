@@ -3,6 +3,7 @@
 from inform.synthesis.generate import synthesize_plan
 from inform.synthesis.validate import (
     NumericalMutationError,
+    PlanIntegrityError,
     generate_fallback_plan,
     validate_no_mutation,
 )
@@ -12,4 +13,5 @@ __all__ = [
     "validate_no_mutation",
     "generate_fallback_plan",
     "NumericalMutationError",
+    "PlanIntegrityError",
 ]
