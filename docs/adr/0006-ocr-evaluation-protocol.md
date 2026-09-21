@@ -18,7 +18,8 @@ near-misses are inappropriate.
 
 ## Decision
 
-**Metrics** (numeric, exact within tolerance — default ±0.1 unit per field):
+**Metrics** (numeric, exact within tolerance — default ±0.1 unit per field; segmental limbs
+also carry a 1% relative bound, see the 2026-09-09 amendment):
 
 - **Per-field exact-match rate** — identifies which fields fail most.
 - **Whole-sheet accuracy** — % of sheets with *every* required field correct. This is the
@@ -45,3 +46,87 @@ honestly*, not targeted.
 - The synthetic ground-truth generator (ADR-0007) must emit exact values alongside each image.
 - Becomes the `tests/` fixture strategy for Module 1.
 - Requires collecting a small set of real, consented InBody photos for the hold-out.
+
+## Amendment (2026-09-11): the headline is the silent-error rate, and `usable` is `unverified`
+
+Two changes to what this ADR measures. Neither touches the match semantics above.
+
+**`usable` is renamed `unverified`.** The outcome meant "complete, and no cross-check
+objected", but the name read as a verdict on the read. Operationally it says only that nothing
+compels a person to look at the sheet, so the name now states the risk rather than the hope.
+The outcome split is `unverified / flagged / unread / refused`; every mention of `usable` in
+the body above and in results recorded before this date means `unverified`. Recorded results
+are **not** rewritten — they reported what was measured under the name in use at the time.
+
+**Whole-sheet accuracy is no longer this ADR's headline; the silent-error rate is.** The body
+above treats whole-sheet accuracy as the headline and then explains at length why the real
+hold-out cannot report it. That explanation stands, but the conclusion is now moot: the measure
+of an engine is the **silent error**, a wrong value inside an `unverified` read (CONTEXT.md,
+"Read outcomes"). Every other failure announces itself and costs a person a correction; a
+silent error is the only one that arrives looking like a success. Per-field accuracy is
+demoted to a diagnostic — it counts a thirty-second correction and a wrong number in someone's
+plan the same.
+
+Implemented as `inform.holdout.SilentErrors`, reported per sheet (the headline: a sheet is what
+reaches a person, and one wrong limb ruins it as surely as five) and per field (the diagnostic
+underneath). It is computable only where hand labels exist, so the report also carries
+`unmeasurable` — `unverified` reads of sheets nobody has labelled, which leave the denominator
+rather than counting clean. **The denominator is the constraint, not the metric.** Six of
+twelve sheets are labelled (issue #24), so the figure supports no comparison between engines
+yet; it is a floor on one checkpoint, and saying otherwise would be the dishonesty this ADR
+exists to prevent.
+
+The 20-30 sheet hold-out this ADR asks for is an ambition, not a gate. The concept paper it
+came from was written by one of the team's own developers and is a starting point rather than
+a specification.
+
+## Amendment (2026-09-09): segmental limbs need a relative bound too
+
+The original decision set one tolerance for every field, exact within +/-0.1 unit. That is
+right for the scalars and wrong for the limbs, because the segmental values on a single
+sheet span an order of magnitude: +/-0.1 kg is about 0.1% of an 80 kg weight and 2.9% of a
+3.5 kg arm.
+
+2.9% is not a small error at that magnitude. Module 3 treats a bilateral asymmetry above
+5% as a finding worth acting on (CONTEXT.md), and computes it from values around 3.5 kg.
+Two arm reads that each pass a 2.9% check can therefore differ by enough to invent an
+asymmetry that is not on the printout. This is not hypothetical. On sheet_02 of the real
+hold-out, two printed arms under 1% apart were read as one-decimal values that compute to an
+asymmetry over 5%, which clears the trigger. That read passed the accuracy protocol and still
+produced a plan telling the subject to correct an imbalance they do not have.
+
+**A segmental limb field now counts as correct only within both bounds: +/-0.1 unit
+absolute AND 1% relative.** Whichever is tighter at that magnitude binds, so the relative
+bound governs an arm (+/-0.035 kg) and the absolute one governs a trunk (+/-0.1 kg is 0.4%
+of 25 kg). Scalar fields are unchanged.
+
+The 1% figure comes from the threshold it protects: at 1% per limb the induced error in a
+computed asymmetry stays near 2 points, inside the 5-point trigger with margin. It was
+chosen against that threshold, not fitted to a score.
+
+**Considered and rejected:**
+
+- *Exact equality on limbs.* The printout carries two decimals, so a correct read should
+  reproduce them, and this is defensible. Rejected because it makes every accuracy figure
+  hostage to a rounding difference and carries no argument about how much error is
+  tolerable.
+- *A relative bound alone.* Looser than the status quo on the trunk (1% of 25 kg is
+  +/-0.25), which would weaken scoring on a field that currently reads correctly.
+
+**What the real hold-out can and cannot report.** The hand-labelled set carries the
+critical-field cut (`lean_body_mass_kg` plus the five limbs) and per-field accuracy, but
+**not whole-sheet accuracy**, this ADR's stated headline number. Whole-sheet is defined as
+"every required field correct", and `source_device` is unlabelled on every sheet in the
+set: nobody read the device off the page, and inventing the label would both fabricate
+ground truth and move the per-field denominator. A whole-sheet figure computed over only
+the labelled fields would carry the same name as the synthetic one with a different
+denominator, and would invite exactly the comparison this ADR exists to keep honest. The
+outcome split (usable / flagged / unread / refused) covers all sheets and needs no labels,
+so it carries the whole-set signal instead.
+
+**Consequences.** Implemented as `inform.evaluate.segmental_matches` and used by both
+ground-truth sources, `evaluate()` for the synthetic set and `inform.holdout.score()` for
+the real hand-labelled hold-out, so "correct" still means one thing across the
+synthetic-to-real gap this ADR exists to measure. **Pre-amendment segmental figures are not
+directly comparable**: `donut-both-v3` scores 23/30 on the real hold-out's segmental lean
+under the amended rule, against 25/30 under +/-0.1 alone.

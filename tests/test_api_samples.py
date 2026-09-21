@@ -11,10 +11,10 @@ def test_list_samples_returns_all_manifest_sheets_with_provenance():
     assert response.status_code == 200
     samples = response.json()
 
-    assert len(samples) >= 5
+    assert len(samples) >= 4
     sample_ids = {s["id"] for s in samples}
     assert "synthetic_270_clean" in sample_ids
-    assert "synthetic_570_clean" in sample_ids
+    assert "synthetic_570_clean" not in sample_ids
     assert "real_270_clean" in sample_ids
     assert "real_270_flagged" in sample_ids
     assert "refused_non_sheet" in sample_ids
@@ -71,8 +71,7 @@ def test_get_flagged_sample_returns_stored_flags():
     result = response.json()
 
     assert result["status"] == "complete"
-    assert "weight_kg" in result["flagged"]
-    assert "lean_body_mass_kg" in result["flagged"]
+    assert "segmental_lean.right_arm_kg" in result["flagged"]
 
 
 def test_get_refused_sample_returns_refusal():
@@ -86,7 +85,7 @@ def test_get_refused_sample_returns_refusal():
     assert result["error"] == "not_an_inbody_sheet"
     assert result["unread"] == []
     assert "This image does not appear to be an InBody result sheet" in result["message"]
-    assert "Please upload a clear photo of your InBody 270 or 570 sheet" in result["message"]
+    assert "Please upload a clear photo of your InBody 270 sheet" in result["message"]
 
 
 def test_get_unknown_sample_returns_404():

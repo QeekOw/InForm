@@ -15,6 +15,7 @@ from inform.inbody import PartialInBody, PartialSegmentalLean
 from inform.samples import (
     ExtractionItem,
     SampleExtractionsArtifact,
+    current_checkpoint_id,
     SampleManifest,
     SampleSheet,
     default_extractions_path,
@@ -43,7 +44,7 @@ def test_manifest_schema_and_provenance():
         assert sample.name, f"Sample {sample.id} name must not be empty"
         assert sample.provenance in ("synthetic", "real")
         if sample.source_device is not None:
-            assert sample.source_device in ("inbody_270", "inbody_570")
+            assert sample.source_device == "inbody_270"
 
         img_path = _REPO_ROOT / sample.image_path
         assert img_path.exists(), f"Sample image file does not exist: {img_path}"
@@ -262,9 +263,13 @@ def test_generate_extractions_wires_checkpoint_to_engine(monkeypatch):
 
 def test_committed_extractions_match_live_checkpoint():
     """A check fails when the committed extractions differ from what the script produces."""
-    ckpt_path = Path("models/donut-both-v3")
+    pytest.importorskip("torch", reason='needs the training extra: pip install -e ".[training]"')
+    ckpt_id = current_checkpoint_id()
+    ckpt_path = Path(ckpt_id)
+    if not ckpt_path.is_absolute():
+        ckpt_path = _REPO_ROOT / ckpt_path
     if not ckpt_path.exists() and "INFORM_DONUT_CKPT" not in os.environ:
-        pytest.skip("Checkpoint models/donut-both-v3 not found locally; skipping live inference check")
+        pytest.skip(f"Checkpoint {ckpt_id} not found locally; skipping live inference check")
 
     committed = load_extractions()
     manifest = load_manifest()

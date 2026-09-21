@@ -1,0 +1,37 @@
+# ADR-0013: Retire InBody 570; support InBody 270 only
+
+**Status:** Accepted
+**Date:** 2026-09-18
+**Module:** 1 (OCR)
+**Supersedes:** ADR-0004's multi-device scope and ADR-0007's two-device generation scope
+
+## Context
+
+The project has real InBody 270 photos for development and confirmation, but no real InBody 570
+photos. Continuing to generate, train on, evaluate, or claim runtime support for the 570 would
+make its quality unmeasurable and dilute the controlled v8 experiment.
+
+## Decision
+
+- InBody 270 is the sole supported Module 1 layout.
+- Future generation, training, development scoring, and independent confirmation use only the
+  270.
+- Runtime refuses an image that is not established as a supported 270 layout, using the existing
+  fail-closed `InBodyExtraction` outcome; the `extract_inbody(image_path) -> InBodyExtraction`
+  seam remains unchanged.
+- Remove active 570 generation paths, tests, documentation, and source-device validation as part
+  of implementation.
+- Retain existing 570 datasets and checkpoints on `D:` as archives. They are not active training
+  or evaluation inputs and are not deleted by this decision.
+
+## Consequences
+
+The `source_device` field keeps `inbody_570` as a *parseable* value even though nothing
+generates or accepts it any more. `holdout.replay_engine` validates the archived read files in
+`data/real_holdout/` back into `PartialInBody`, and some of those pre-v8 checkpoints did emit
+`inbody_570`; narrowing the literal would make those archives unreplayable and so unable to be
+compared against a new checkpoint. Runtime still refuses a non-270 sheet, so this is a parsing
+allowance for archives, not a supported device.
+
+The supported-device claim now matches the available real-photo evidence. Reintroducing 570
+requires new real-photo evidence and a fresh ADR; it is not a configuration switch.

@@ -18,13 +18,20 @@ _GOOD = InBodyPayload(
     segmental_lean=dict(
         left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
     ),
-    source_device="inbody_570",
+    source_device="inbody_270",
 )
 _GOOD_PARTIAL = PartialInBody.model_validate(_GOOD.model_dump())
 
 
 def test_parses_clean_generation():
     assert _to_partial(_GOOD.model_dump_json()) == _GOOD_PARTIAL
+
+
+def test_parses_quoted_pbf_target_as_a_number():
+    data = _GOOD.model_dump()
+    data["percent_body_fat"] = f"{_GOOD.percent_body_fat:.1f}"
+
+    assert _to_partial(json.dumps(data)).percent_body_fat == _GOOD.percent_body_fat
 
 
 def test_tolerates_residual_task_token():
@@ -59,6 +66,49 @@ def test_bad_typed_field_is_dropped_but_others_kept():
     assert partial.weight_kg is None  # the bad field is dropped -> unread
     assert partial.lean_body_mass_kg == 58.0  # the rest survives
     assert partial.segmental_lean.trunk_kg == 24.5
+
+
+def test_unclosed_generation_keeps_every_field_that_parsed():
+    # The model stops before the closing brace (observed on real photos: every
+    # field emitted correctly, generation ends at ~160 of 512 tokens). Closing
+    # the object recovers a complete read; dropping it discarded twelve correct
+    # fields over a missing character.
+    truncated = _GOOD.model_dump_json().rstrip("}")
+
+    assert _to_partial(truncated) == _GOOD_PARTIAL
+
+
+def test_corruption_midway_keeps_the_fields_before_it():
+    # Corruption partway through (observed after percent_body_fat) must not cost
+    # the fields the model already committed to. Everything from the breakage on
+    # reads unread; nothing is fabricated.
+    corrupted = '{"weight_kg":70.0,"lean_body_mass_kg":58.0,"percent_body_fat":skeletal_muscle'
+
+    partial = _to_partial(corrupted)
+
+    assert partial.weight_kg == 70.0
+    assert partial.lean_body_mass_kg == 58.0
+    assert partial.percent_body_fat is None
+    assert partial.skeletal_muscle_mass_kg is None
+
+
+def test_number_cut_in_half_is_unread_not_a_smaller_number():
+    # Every prefix of a number is a number, so a generation that stops inside
+    # 58.0 must not hand back 5. ADR-0008: never fabricate a number to fill a
+    # gap — a wrong lean_body_mass_kg poisons every downstream calculation.
+    partial = _to_partial('{"weight_kg":70.0,"lean_body_mass_kg":5')
+
+    assert partial.weight_kg == 70.0
+    assert partial.lean_body_mass_kg is None
+
+
+def test_nested_number_cut_in_half_is_unread():
+    partial = _to_partial('{"weight_kg":70.0,"segmental_lean":{"trunk_kg":2')
+
+    assert partial.weight_kg == 70.0
+    assert partial.segmental_lean is None
+
+
 def test_lone_one_written_as_unk_reads_as_one():
     # The tokenizer has no token for a lone "1"; its id is <unk>'s, so the model
     # writes 57.1 as 57.<unk>. Deleting <unk> left "57.", invalid JSON that cost
@@ -77,7 +127,7 @@ def test_generation_ending_at_unk_is_left_unread():
     # must not be accepted as a completed measurement.
     partial = _to_partial('{"weight_kg":5<unk>')
 
-    assert partial.weight_kg is None
+    assert partial.weight_kg == None
 
 
 def test_end_token_kept_by_decode_does_not_cost_the_last_field():
@@ -98,3 +148,12 @@ def test_other_special_tokens_the_decode_keeps_are_not_part_of_the_read():
 
     assert partial.weight_kg == 66.2
     assert partial.percent_body_fat == 13.8
+
+
+def test_unk_in_a_number_cut_in_half_is_unread_not_a_value():
+    # Reading <unk> as "1" must not make a cut-off number look whole. A generation
+    # ending on 5<unk> could be 51 or the start of 51.3, so it stays unread.
+    partial = _to_partial('{"weight_kg":70.0,"lean_body_mass_kg":5<unk>')
+
+    assert partial.weight_kg == 70.0
+    assert partial.lean_body_mass_kg is None

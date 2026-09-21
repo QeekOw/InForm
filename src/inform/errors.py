@@ -9,7 +9,7 @@ class NotAnInBodySheetError(InBodyExtractionError):
     def __init__(self) -> None:
         super().__init__(
             "This image does not appear to be an InBody result sheet. "
-            "Please upload a clear photo of your InBody 270 or 570 sheet."
+            "Please upload a clear photo of your InBody 270 sheet."
         )
 
 
@@ -38,7 +38,7 @@ class DonutCheckpointError(Exception):
             if missing_training_extra
             else (
                 f"Download the checkpoint to {checkpoint} (e.g. "
-                "`kaggle kernels output qeekowen/cera-combined-test -p ./models/donut-both-v3`), "
+                "download V9 checkpoint 3750 to `models/donut-270-v9`), "
                 "or point INFORM_DONUT_CKPT at the checkpoint dir."
             )
         )

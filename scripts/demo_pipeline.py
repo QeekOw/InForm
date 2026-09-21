@@ -5,7 +5,7 @@ Reads the sheet with the default self-hosted Donut engine (ADR-0010); pass
 `--engine vlm` to use the cloud VLM instead. LLM synthesis always needs
 OPENAI_API_KEY (it falls back to the deterministic plan if the key is missing
 or synthesis fails). Donut needs a checkpoint (INFORM_DONUT_CKPT, default
-models/donut-both-v3) and the training extra.
+models/donut-270-v9) and the training extra.
 
 Usage:
     python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
@@ -26,7 +26,7 @@ from inform.user import UserProfile  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("image", type=Path, help="Path to an InBody 270/570 sheet photo")
+    parser.add_argument("image", type=Path, help="Path to an InBody 270 sheet photo")
     parser.add_argument("--age", type=int, default=30)
     parser.add_argument("--sex", choices=["male", "female"], default="female")
     parser.add_argument("--activity", type=float, default=1.55, help="Activity multiplier")

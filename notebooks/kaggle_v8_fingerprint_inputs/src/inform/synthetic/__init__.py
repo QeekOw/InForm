@@ -1,0 +1,528 @@
+import io
+import random
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from string import Template
+from typing import Literal
+
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+
+from inform.formulas import katch_mcardle_bmr
+from inform.inbody import InBodyPayload, SegmentalLean
+
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
+_WINDOW_SIZE = "1060,1680"
+_SHEET_JPEG_QUALITY = 92
+
+# Target geometry of a rendered sheet, shared by tests and
+# scripts/check_sheet_geometry.py so there is one definition of "done".
+# A real InBody printout is A4 portrait; the render is measured before
+# augmentation because that is what the template controls.
+#
+# ponytail: SHEET_ASPECT is a fact about A4 paper, but the tolerance and the
+# width floor are fixed judgement calls, not measurements. The floor is one
+# observed phone photo (2296 px, docs/ocr-eval-results.md); widen the sample
+# before trusting it as a distribution.
+SHEET_ASPECT = 210 / 297  # 0.707
+SHEET_ASPECT_TOLERANCE = 0.03
+MIN_SHEET_WIDTH_PX = 2300
+
+# Render at higher pixel density than the CSS layout so a synthetic sheet lands
+# at roughly the pixel width of a real phone photo (~2300 px). Donut resizes
+# every input onto its fixed 2560x1920 canvas, so this decides the *direction*
+# of that resize: at 1x the synthetic sheet was upscaled onto the canvas while
+# real photos are downscaled onto it, and the model learned to read soft,
+# interpolated text it then never sees at inference. Layout is unchanged --
+# this multiplies device pixels only.
+_DEVICE_SCALE_FACTOR = 2.5
+
+# Sheets are emitted as JPEG, not PNG. _augment's last step (_jpeg_noise) has
+# already JPEG-compressed the image, so PNG was storing those artifacts
+# losslessly at ~3x the cost (1.73 MB vs 0.58 MB per sheet; 8.4 GB vs 2.8 GB for
+# a 5,000-sheet run, which is the difference between fitting on a Kaggle disk and
+# not). It is also the format a real phone upload arrives in. subsampling=0
+# (4:4:4) keeps the coloured section headings crisp -- this is a document the
+# model has to read, so chroma detail on text edges is worth the few percent.
+
+# ponytail: fixed physiological ranges/proportions, not learned from data.
+# Tune against real InBody sheets if the synthetic distribution drifts.
+_WEIGHT_RANGE_KG = (50.0, 100.0)
+_PBF_RANGE_PCT = (10.0, 35.0)
+_SMM_FRACTION_OF_LBM_RANGE = (0.55, 0.65)
+_VISCERAL_FAT_RANGE = (1, 20)
+_SEGMENT_FRACTIONS_OF_LBM = {"left_arm_kg": 0.08, "right_arm_kg": 0.08, "left_leg_kg": 0.17, "right_leg_kg": 0.17}
+
+# A real 270 prints limb lean mass to two decimals; trained only on one-decimal
+# limbs, the model cut real arms short (#59).
+_LIMB_DECIMALS = 2
+
+# The fat analogue of the table above: each limb's share of total body fat, and
+# the reference physique its sufficiency is scored against. Segmental fat is
+# scored against a lean reference rather than against the person's own fat,
+# which is why a real sheet prints fat percentages well above 100% ("Over")
+# beside lean percentages near it ("Normal"). Trunk reads highest and legs
+# lowest, as on the hand-checked real 270.
+# ponytail: chosen to reproduce that ordering and rough magnitude (issue #50),
+# not measured off a calibration standard.
+_FAT_FRACTIONS_OF_BODY_FAT = {"arm": 0.04, "leg": 0.14, "trunk": 0.44}
+_FAT_SKEW = {"arm": 1.0, "leg": 0.80, "trunk": 1.27}
+_REFERENCE_PBF = 12.0
+_ASYMMETRY_PROBABILITY = 0.3
+_ASYMMETRY_DEVIATION_PCT = 8.0  # comfortably past the >5% bilateral-asymmetry threshold
+
+# Body Composition Analysis components as fractions of LBM. These sum to ~1.0,
+# so Total Body Water + Protein + Minerals + (weight - LBM) ≈ Weight — the block
+# cross-adds like a real InBody sheet (Q3, verified in test_synthetic).
+_TBW_FRACTION_OF_LBM = 0.73
+_PROTEIN_FRACTION_OF_LBM = 0.198
+_MINERALS_FRACTION_OF_LBM = 0.0727
+
+_EXERCISES_KCAL = (  # static distractor: the Calorie Expenditure table, verbatim from a real 270
+    ("Golf", 144), ("Gateball", 156), ("Walking", 164), ("Yoga", 164),
+    ("Badminton", 185), ("Table Tennis", 185), ("Tennis", 246), ("Bicycling", 246),
+    ("Boxing", 246), ("Basketball", 246), ("Mountain Climbing", 267), ("Jumping Rope", 287),
+    ("Aerobics", 287), ("Jogging", 287), ("Soccer", 287), ("Swimming", 287),
+    ("Japanese Fencing", 410), ("Racketball", 410), ("Squash", 410), ("Taekwondo", 410),
+)
+
+_BROWSER_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    "google-chrome",
+    "chromium-browser",
+    "chromium",
+    "msedge",
+)
+
+
+def generate_sheet(device: Literal["inbody_270"], seed: int) -> tuple[bytes, InBodyPayload]:
+    """Render one synthetic InBody sheet + its exact ground-truth payload (ADR-0007)."""
+    payload = _generate_values(device, seed)
+    image = _render(device, payload)
+    image = _augment(image, random.Random(seed))
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=_SHEET_JPEG_QUALITY, subsampling=0)
+    return buffer.getvalue(), payload
+
+
+def _generate_values(device: Literal["inbody_270"], seed: int) -> InBodyPayload:
+    if device != "inbody_270":
+        raise ValueError("InBody 270 is the only supported synthetic device")
+    rng = random.Random(seed)
+
+    weight_kg = round(rng.uniform(*_WEIGHT_RANGE_KG), 1)
+    percent_body_fat = round(rng.uniform(*_PBF_RANGE_PCT), 1)
+    lean_body_mass_kg = round(weight_kg * (1 - percent_body_fat / 100), 1)
+    skeletal_muscle_mass_kg = round(lean_body_mass_kg * rng.uniform(*_SMM_FRACTION_OF_LBM_RANGE), 1)
+    basal_metabolic_rate_kcal = round(katch_mcardle_bmr(lean_body_mass_kg), 1)
+    # Both devices print a Visceral Fat Level (ADR-0004 corrected in issue #13 —
+    # confirmed on two real InBody 270 sheets). Schema keeps it optional for
+    # real-world absence, but synthetic sheets always render it.
+    visceral_fat_level = rng.randint(*_VISCERAL_FAT_RANGE)
+
+    return InBodyPayload(
+        weight_kg=weight_kg,
+        lean_body_mass_kg=lean_body_mass_kg,
+        percent_body_fat=percent_body_fat,
+        skeletal_muscle_mass_kg=skeletal_muscle_mass_kg,
+        basal_metabolic_rate_kcal=basal_metabolic_rate_kcal,
+        segmental_lean=_generate_segmental(lean_body_mass_kg, rng, _LIMB_DECIMALS),
+        visceral_fat_level=visceral_fat_level,
+        source_device=device,
+    )
+
+
+def _generate_segmental(lean_body_mass_kg: float, rng: random.Random, limb_decimals: int) -> SegmentalLean:
+    skewed_pair = rng.choice(["arm", "leg"]) if rng.random() < _ASYMMETRY_PROBABILITY else None
+
+    def _pair(name: str, fraction: float) -> tuple[float, float]:
+        base = lean_body_mass_kg * fraction
+        if name != skewed_pair:
+            return base, base
+        deviation = base * (_ASYMMETRY_DEVIATION_PCT / 100)
+        return base + deviation / 2, base - deviation / 2
+
+    left_arm, right_arm = _pair("arm", _SEGMENT_FRACTIONS_OF_LBM["left_arm_kg"])
+    left_leg, right_leg = _pair("leg", _SEGMENT_FRACTIONS_OF_LBM["left_leg_kg"])
+    left_arm, right_arm, left_leg, right_leg = (
+        round(v, limb_decimals) for v in (left_arm, right_arm, left_leg, right_leg)
+    )
+
+    # Trunk absorbs the rounding remainder so the five segments sum to
+    # lean_body_mass_kg (ADR-0007): exactly on the 570, within 0.05 kg on the
+    # 270, whose two-decimal limbs a one-decimal trunk cannot fully absorb.
+    trunk_kg = round(lean_body_mass_kg - (left_arm + right_arm + left_leg + right_leg), 1)
+
+    return SegmentalLean(
+        left_arm_kg=left_arm, right_arm_kg=right_arm, left_leg_kg=left_leg, right_leg_kg=right_leg, trunk_kg=trunk_kg
+    )
+
+
+# Both segmental figures label a percentage the same way; only what the
+# percentage is measured against differs between them.
+_NORMAL_BAND_PCT = (95.0, 105.0)
+
+
+def _rate_band(pct: float) -> str:
+    low, high = _NORMAL_BAND_PCT
+    return "Normal" if low <= pct <= high else ("Under" if pct < low else "Over")
+
+
+def _bar_pct(value: float, lo: float, hi: float) -> float:
+    """Bar fill as a % of the plot width, clamped so the tip stays on-scale.
+
+    ponytail: an indicative width, not InBody's exact %-of-standard normalisation
+    — Donut is graded on the numeric label at the bar tip, not the bar length.
+    """
+    return round(min(max((value - lo) / (hi - lo), 0.05), 0.95) * 100, 1)
+
+
+def _history_cells(end: float, drift_frac: float, rng: random.Random, decimals: int, n: int = 8) -> str:
+    """A row of n dated `<td>` values drifting toward `end` (the current value).
+
+    Positive drift → the metric was higher in the past (weight/PBF trending down);
+    negative drift → it was lower (SMM trending up). The last cell equals `end`.
+    """
+    values = []
+    v = float(end)
+    for _ in range(n):
+        values.append(round(v, decimals))
+        v = v * (1 + drift_frac / n) + rng.uniform(-0.1, 0.1)
+    values.reverse()
+    return "".join(f"<td>{x}</td>" for x in values)
+
+
+def _derive_render_values(payload: InBodyPayload) -> dict:
+    """Physiologically-coherent distractor values for the realistic 270 clone.
+
+    Pure and deterministic in the payload (seeded from its own JSON), so the same
+    ground truth always renders the same surrounding clutter. Everything here is
+    ungraded — the graded target fields come straight off `payload` (Q3, ADR-0007).
+    """
+    rng = random.Random(payload.model_dump_json())
+    lbm = payload.lean_body_mass_kg
+    weight = payload.weight_kg
+    pbf = payload.percent_body_fat
+    smm = payload.skeletal_muscle_mass_kg
+    seg = payload.segmental_lean
+
+    height_cm = round(rng.uniform(150.0, 190.0), 1)
+    height_m = height_cm / 100
+    body_fat_mass_kg = round(weight - lbm, 1)
+    total_body_water_l = round(_TBW_FRACTION_OF_LBM * lbm, 1)
+    protein_kg = round(_PROTEIN_FRACTION_OF_LBM * lbm, 1)
+    minerals_kg = round(_MINERALS_FRACTION_OF_LBM * lbm, 2)
+    bmi = round(weight / (height_m**2), 1)
+    ideal_weight = 22.0 * height_m**2
+    appendicular = seg.left_arm_kg + seg.right_arm_kg + seg.left_leg_kg + seg.right_leg_kg
+
+    def _seg(value: float, fraction: float) -> tuple[float, str]:
+        expected = lbm * fraction
+        pct = round(value / expected * 100, 1) if expected else 100.0
+        return pct, _rate_band(pct)
+
+    la_pct, la_rate = _seg(seg.left_arm_kg, _SEGMENT_FRACTIONS_OF_LBM["left_arm_kg"])
+    ra_pct, ra_rate = _seg(seg.right_arm_kg, _SEGMENT_FRACTIONS_OF_LBM["right_arm_kg"])
+    ll_pct, ll_rate = _seg(seg.left_leg_kg, _SEGMENT_FRACTIONS_OF_LBM["left_leg_kg"])
+    rl_pct, rl_rate = _seg(seg.right_leg_kg, _SEGMENT_FRACTIONS_OF_LBM["right_leg_kg"])
+    trunk_pct, trunk_rate = _seg(seg.trunk_kg, 0.5)
+
+    # Segmental fat is scored against a reference lean physique, not against the
+    # person's own fat, which is why a real sheet shows fat percentages well
+    # above 100% ("Over") beside lean percentages near it ("Normal"). Trunk
+    # carries proportionally more than the limbs and legs proportionally less,
+    # so the five percentages differ the way a measured sheet's do rather than
+    # all landing on one number.
+    # The percentage is derived from the kilograms the sheet prints, not computed
+    # alongside them, so the two can never contradict each other on the page --
+    # ADR-0007 requires the distractors stay human-verifiable.
+    def _seg_fat(value: float, part: str) -> tuple[float, str]:
+        expected = reference_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT[part] / _FAT_SKEW[part]
+        pct = round(value / expected * 100, 1) if expected else 100.0
+        return pct, _rate_band(pct)
+
+    # Fat mirrors the seeded lean asymmetry inversely: the arm carrying more lean
+    # carries proportionally less fat. Keeps left and right distinguishable
+    # without consuming another random draw.
+    reference_fat_mass_kg = weight * _REFERENCE_PBF / 100
+    arm_mean = (seg.left_arm_kg + seg.right_arm_kg) / 2 or 1.0
+    leg_mean = (seg.left_leg_kg + seg.right_leg_kg) / 2 or 1.0
+    fat_la = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["arm"] * (seg.right_arm_kg / arm_mean), 1)
+    fat_ra = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["arm"] * (seg.left_arm_kg / arm_mean), 1)
+    fat_ll = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["leg"] * (seg.right_leg_kg / leg_mean), 1)
+    fat_rl = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["leg"] * (seg.left_leg_kg / leg_mean), 1)
+    fat_trunk = round(body_fat_mass_kg * _FAT_FRACTIONS_OF_BODY_FAT["trunk"], 1)
+    fat_la_pct, fat_la_rate = _seg_fat(fat_la, "arm")
+    fat_ra_pct, fat_ra_rate = _seg_fat(fat_ra, "arm")
+    fat_ll_pct, fat_ll_rate = _seg_fat(fat_ll, "leg")
+    fat_rl_pct, fat_rl_rate = _seg_fat(fat_rl, "leg")
+    fat_trunk_pct, fat_trunk_rate = _seg_fat(fat_trunk, "trunk")
+
+    target_weight = round(ideal_weight, 1)
+    fat_control = round(min(0.0, ideal_weight - weight), 1)
+    waist_hip = round(rng.uniform(0.78, 0.95), 2)
+
+    # 570-only body-water split (coherent: ICW + ECW = TBW; TBW + Dry Lean = LBM;
+    # LBM + Body Fat = Weight — the whole Body Composition block cross-adds).
+    ecw_tbw = round(rng.uniform(0.36, 0.39), 3)
+    extracellular_water_l = round(total_body_water_l * ecw_tbw, 1)
+    intracellular_water_l = round(total_body_water_l - extracellular_water_l, 1)
+    dry_lean_mass_kg = round(lbm - total_body_water_l, 1)
+
+    return {
+        "id": f"{rng.choice('ABCDEFGH')}{rng.randint(1000, 9999)}",
+        "height_cm": height_cm,
+        "age": rng.randint(18, 65),
+        "gender": rng.choice(["Male", "Female"]),
+        "test_date": f"2026.{rng.randint(1, 12):02d}.{rng.randint(1, 28):02d}. {rng.randint(8, 19):02d}:{rng.randint(0, 59):02d}",
+        "total_body_water_l": total_body_water_l,
+        "protein_kg": protein_kg,
+        "minerals_kg": minerals_kg,
+        "body_fat_mass_kg": body_fat_mass_kg,
+        "bmi": bmi,
+        # bar widths (indicative)
+        "weight_bar": _bar_pct(weight, 40, 140),
+        "smm_bar": _bar_pct(smm, 20, 60),
+        "bfm_bar": _bar_pct(body_fat_mass_kg, 5, 45),
+        "bmi_bar": _bar_pct(bmi, 10, 55),
+        "pbf_bar": _bar_pct(pbf, 5, 55),
+        "waist_hip": waist_hip,
+        "waist_hip_bar": _bar_pct(waist_hip, 0.70, 1.00),
+        "visceral_bar": _bar_pct(payload.visceral_fat_level, 1, 20),
+        "inbody_score": max(55, min(95, round(90 - (pbf - 15) * 1.2))),
+        # weight control
+        "target_weight": target_weight,
+        "weight_control": round(ideal_weight - weight, 1),
+        "fat_control": fat_control,
+        "muscle_control": round(max(0.0, (ideal_weight - weight) - fat_control), 1),
+        # research parameters (FFM = LBM target rendered in _fill_template)
+        "obesity_degree": round(weight / ideal_weight * 100),
+        "smi": round(appendicular / (height_m**2), 1),
+        # recommended daily intake ≈ BMR × a light activity multiplier (distractor only)
+        "recommended_calories": round(payload.basal_metabolic_rate_kcal * 1.4),
+        # segmental lean percentages / ratings
+        "la_pct": la_pct, "ra_pct": ra_pct, "ll_pct": ll_pct, "rl_pct": rl_pct, "trunk_pct": trunk_pct,
+        "la_rate": la_rate, "ra_rate": ra_rate, "ll_rate": ll_rate, "rl_rate": rl_rate, "trunk_rate": trunk_rate,
+        # segmental-lean bar widths (570 renders these as bar rows, not a figure)
+        "la_bar": _bar_pct(la_pct, 40, 160), "ra_bar": _bar_pct(ra_pct, 40, 160),
+        "ll_bar": _bar_pct(ll_pct, 40, 160), "rl_bar": _bar_pct(rl_pct, 40, 160),
+        "trunk_bar": _bar_pct(trunk_pct, 40, 160),
+        # 570-only body-water split + ECW/TBW (total_body_water_l already above)
+        "intracellular_water_l": intracellular_water_l,
+        "extracellular_water_l": extracellular_water_l,
+        "dry_lean_mass_kg": dry_lean_mass_kg,
+        "ecw_tbw": ecw_tbw,
+        "ecw_tbw_bar": _bar_pct(ecw_tbw, 0.32, 0.45),
+        "ecw_tbw_history": _history_cells(ecw_tbw, 0.0, rng, 3),
+        # segmental fat (estimated distractor); bars are fractions of total body fat
+        "fat_la": fat_la, "fat_ra": fat_ra, "fat_ll": fat_ll, "fat_rl": fat_rl,
+        "fat_trunk": fat_trunk,
+        "fat_la_pct": fat_la_pct, "fat_ra_pct": fat_ra_pct, "fat_ll_pct": fat_ll_pct,
+        "fat_rl_pct": fat_rl_pct, "fat_trunk_pct": fat_trunk_pct,
+        "fat_la_rate": fat_la_rate, "fat_ra_rate": fat_ra_rate, "fat_ll_rate": fat_ll_rate,
+        "fat_rl_rate": fat_rl_rate, "fat_trunk_rate": fat_trunk_rate,
+        "fat_la_bar": _bar_pct(0.04, 0, 0.5), "fat_ra_bar": _bar_pct(0.04, 0, 0.5),
+        "fat_ll_bar": _bar_pct(0.14, 0, 0.5), "fat_rl_bar": _bar_pct(0.14, 0, 0.5),
+        "fat_trunk_bar": _bar_pct(0.44, 0, 0.5),
+        # history rows
+        "weight_history": _history_cells(weight, 0.06, rng, 1),
+        "smm_history": _history_cells(smm, -0.05, rng, 1),
+        "pbf_history": _history_cells(pbf, 0.10, rng, 1),
+        "date_history": "".join(f"<td>{rng.randint(1, 12):02d}.{rng.randint(1, 28):02d}</td>" for _ in range(8)),
+        "exercise_rows": "".join(
+            f'<div class="c"><span>{name}</span><span>{kcal}</span></div>' for name, kcal in _EXERCISES_KCAL
+        ),
+    }
+
+
+_LIMB_KEYS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg")
+_LIMB_IN_JSON = re.compile(rf'"({"|".join(_LIMB_KEYS)})":(-?\d+(?:\.\d+)?)')
+
+
+def _graded_fields(payload: InBodyPayload) -> dict:
+    """The graded target fields, verbatim off the payload (ADR-0007).
+
+    Both device templates render exactly these; the 270 additionally spreads in
+    `_derive_render_values`. Kept in one place so a field rename touches one spot.
+    Limbs are printed to the device's decimals, so a 270 arm of 3.4 prints 3.40.
+    """
+    seg = payload.segmental_lean
+    decimals = _LIMB_DECIMALS
+    return {
+        "weight_kg": payload.weight_kg,
+        "lean_body_mass_kg": payload.lean_body_mass_kg,  # 270 renders this as "Fat Free Mass"
+        "percent_body_fat": payload.percent_body_fat,
+        "skeletal_muscle_mass_kg": payload.skeletal_muscle_mass_kg,
+        "basal_metabolic_rate_kcal": payload.basal_metabolic_rate_kcal,
+        "visceral_fat_level": payload.visceral_fat_level,
+        **{limb: f"{getattr(seg, limb):.{decimals}f}" for limb in _LIMB_KEYS},
+        "trunk_kg": seg.trunk_kg,
+    }
+
+
+def label_json(payload: InBodyPayload) -> str:
+    """The ground-truth JSON Donut trains on, limbs spelled as the sheet prints them.
+
+    `model_dump_json` writes a 270 arm printed 3.40 as 3.4, which teaches the
+    model to stop a digit early (#59). JSON still parses 3.40 as 3.4, so this
+    changes the training target and nothing that reads the label back.
+    """
+    label = _LIMB_IN_JSON.sub(
+        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{_LIMB_DECIMALS}f}', payload.model_dump_json()
+    )
+    return re.sub(
+        r'"percent_body_fat":(-?\d+(?:\.\d+)?)',
+        lambda m: f'"percent_body_fat":"{float(m.group(1)):.1f}"',
+        label,
+    )
+
+
+def _fill_template(device: Literal["inbody_270"], payload: InBodyPayload) -> str:
+    template = Template((_TEMPLATE_DIR / f"{device}.html").read_text(encoding="utf-8"))
+    values = _graded_fields(payload) | _derive_render_values(payload)
+    return template.substitute(values)
+
+
+def _find_browser() -> str:
+    # ponytail: shells out to a locally-installed Chrome/Edge/Chromium
+    # instead of adding a browser-automation dependency (playwright,
+    # weasyprint). Ceiling: fails on a machine/CI image with no such
+    # browser present. Swap in playwright if the training environment
+    # needs a guaranteed-portable renderer.
+    for candidate in _BROWSER_CANDIDATES:
+        if Path(candidate).exists() or shutil.which(candidate):
+            return candidate
+    raise RuntimeError(
+        "No headless-capable browser (Chrome/Edge/Chromium) found on PATH or in a "
+        "standard install location. Synthetic sheet rendering shells out to one "
+        "instead of adding a browser-automation dependency."
+    )
+
+
+def _render(device: Literal["inbody_270"], payload: InBodyPayload) -> Image.Image:
+    html = _fill_template(device, payload)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        html_path = Path(tmp_dir) / "sheet.html"
+        png_path = Path(tmp_dir) / "sheet.png"
+        html_path.write_text(html, encoding="utf-8")
+        subprocess.run(
+            [
+                _find_browser(),
+                "--headless",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                f"--screenshot={png_path}",
+                # A profile dir of this render's own. Chrome shares the default
+                # profile across instances, and a second instance that finds the
+                # first alive hands off to it and exits 0 having written no
+                # screenshot -- so concurrent renders (sharded dataset
+                # generation) silently lose sheets without a non-zero exit.
+                f"--user-data-dir={Path(tmp_dir) / 'profile'}",
+                f"--window-size={_WINDOW_SIZE}",
+                f"--force-device-scale-factor={_DEVICE_SCALE_FACTOR}",
+                "--hide-scrollbars",
+                html_path.as_uri(),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        if not png_path.exists():
+            raise RuntimeError(
+                f"{_find_browser()} exited 0 but wrote no screenshot for {device}. "
+                "Most often a profile clash between concurrent renders; each render "
+                "passes its own --user-data-dir, so check the browser install and "
+                "that the temp dir is writable."
+            )
+        image = Image.open(png_path).convert("RGB").copy()
+    return _crop_to_content(image)
+
+
+def _crop_to_content(image: Image.Image) -> Image.Image:
+    """Trim the white window margin down to the rendered sheet."""
+    background = Image.new("RGB", image.size, (255, 255, 255))
+    bbox = ImageChops.difference(image, background).getbbox()
+    return image.crop(bbox) if bbox else image
+
+
+def _augment(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Mimic phone capture (ADR-0007, strengthened in issue #13).
+
+    ~30% of sheets stay "easy" (mild, clean, colour) so the held-out synthetic
+    number stays interpretable; the rest get the full real-photo treatment —
+    grayscale B&W prints, a desk background, glare, stronger geometry (Q6).
+    """
+    easy = rng.random() < 0.30
+
+    if rng.random() < (0.15 if easy else 0.6):
+        image = ImageOps.grayscale(image).convert("RGB")
+
+    if not easy:
+        image = _place_on_surface(image, rng)
+
+    rotation = rng.uniform(-1.5, 1.5) if easy else rng.uniform(-6.0, 6.0)
+    image = image.rotate(rotation, expand=True, fillcolor=(90, 90, 92), resample=Image.BICUBIC)
+    image = _perspective_warp(image, rng, jitter=0.02 if easy else 0.06)
+
+    if not easy:
+        image = _glare(image, rng)
+
+    # Blur radius is in absolute pixels, so it must track the render resolution
+    # or raising _DEVICE_SCALE_FACTOR silently weakens the augmentation. These
+    # fractions reproduce the original 0.8 / 1.8 px ceilings at the ~1000 px
+    # render width they were tuned against.
+    blur_ceiling = (0.0008 if easy else 0.0018) * image.width
+    image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0, blur_ceiling)))
+    image = ImageEnhance.Brightness(image).enhance(rng.uniform(0.9, 1.1) if easy else rng.uniform(0.8, 1.2))
+    image = ImageEnhance.Contrast(image).enhance(rng.uniform(0.95, 1.05) if easy else rng.uniform(0.85, 1.15))
+    return _jpeg_noise(image, rng, quality_range=(80, 95) if easy else (55, 85))
+
+
+def _place_on_surface(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Paste the sheet onto a larger, darker 'desk' canvas with a random margin."""
+    width, height = image.size
+    margin_x = int(width * rng.uniform(0.04, 0.12))
+    margin_y = int(height * rng.uniform(0.04, 0.12))
+    shade = rng.randint(60, 120)
+    desk = Image.new("RGB", (width + 2 * margin_x, height + 2 * margin_y), (shade, shade, shade + 2))
+    desk.paste(image, (margin_x + rng.randint(-margin_x // 2, margin_x // 2), margin_y + rng.randint(-margin_y // 2, margin_y // 2)))
+    return desk
+
+
+def _glare(image: Image.Image, rng: random.Random) -> Image.Image:
+    """Composite a soft white blob over the sheet to mimic overhead-light glare."""
+    width, height = image.size
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    cx, cy = rng.uniform(0, width), rng.uniform(0, height * 0.7)
+    rw, rh = width * rng.uniform(0.2, 0.5), height * rng.uniform(0.12, 0.35)
+    draw.ellipse([cx - rw, cy - rh, cx + rw, cy + rh], fill=rng.randint(50, 130))
+    mask = mask.filter(ImageFilter.GaussianBlur(width * 0.05))
+    white = Image.new("RGB", (width, height), (255, 255, 255))
+    return Image.composite(white, image, mask)
+
+
+def _jpeg_noise(image: Image.Image, rng: random.Random, quality_range: tuple[int, int] = (60, 90)) -> Image.Image:
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=rng.randint(*quality_range))
+    buffer.seek(0)
+    return Image.open(buffer).convert("RGB")
+
+
+def _perspective_warp(image: Image.Image, rng: random.Random, jitter: float = 0.025) -> Image.Image:
+    width, height = image.size
+    jitter_x = width * jitter
+    jitter_y = height * (jitter * 0.6)
+    quad = (
+        rng.uniform(0, jitter_x), rng.uniform(0, jitter_y),
+        rng.uniform(0, jitter_x), height - rng.uniform(0, jitter_y),
+        width - rng.uniform(0, jitter_x), height - rng.uniform(0, jitter_y),
+        width - rng.uniform(0, jitter_x), rng.uniform(0, jitter_y),
+    )
+    return image.transform((width, height), Image.QUAD, quad, resample=Image.BICUBIC, fillcolor=(90, 90, 92))

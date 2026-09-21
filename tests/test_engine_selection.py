@@ -17,7 +17,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "inbody_sample.png"
 
 # The default checkpoint dir (ADR-0010). If a real download is present, one test
 # below round-trips it; otherwise that test skips.
-_REAL_CKPT = Path("models/donut-both-v3")
+_REAL_CKPT = Path("models/donut-270-v9")
 
 
 def _complete_partial() -> PartialInBody:
@@ -31,7 +31,7 @@ def _complete_partial() -> PartialInBody:
         segmental_lean=PartialSegmentalLean(
             left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
         ),
-        source_device="inbody_570",
+        source_device="inbody_270",
     )
 
 
@@ -155,13 +155,14 @@ def test_extract_inbody_resolves_default_engine_when_none(monkeypatch):
 
 @pytest.mark.skipif(not _REAL_CKPT.exists(), reason="Donut checkpoint not downloaded")
 def test_default_engine_round_trips_real_checkpoint(tmp_path):
+    pytest.importorskip("torch", reason='needs the training extra: pip install -e ".[training]"')
     # Only runs when the real 809 MB checkpoint is on disk (needs the training
     # extra). Drives the fine-tune on a synthetic sheet (the distribution it
     # trained on) and asserts it reads the known ground truth back, proving
     # load_checkpoint/load_engine bind a working model, not just that it loads.
     from inform.synthetic import generate_sheet
 
-    png, truth = generate_sheet("inbody_570", seed=1)
+    png, truth = generate_sheet("inbody_270", seed=1)
     sheet = tmp_path / "sheet.png"
     sheet.write_bytes(png)
 

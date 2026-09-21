@@ -2,8 +2,18 @@
 
 Results for issue #8: the fine-tuned Donut engine scored against the VLM
 baseline through the shared `extract_inbody` seam, using `inform.compare` and the
-`evaluate()` harness (ADR-0006). All numbers below are on **held-out synthetic
-InBody sheets** (seeds ≥ 5000, never seen in training).
+`evaluate()` harness (ADR-0006). The Headline and ablation tables are on **held-out
+synthetic InBody sheets** (seeds ≥ 5000, never seen in training); later sections add
+real printouts, photographed.
+
+> **Current status (2026-09-08).** The tables in this section are *held-out synthetic*
+> sheets and are the oldest numbers here. For where the engine actually stands, read
+> [Modern-layout real 270 hold-out, n=12](#modern-layout-real-270-hold-out-n12-2026-09-08):
+> on twelve genuine phone-photographed 270s, **3 read cleanly, 6 refused, 3 were caught by
+> a cross-check** -- and hand-labelling since showed that **only 1 of those 3 clean reads is
+> actually correct**; the other two silently invent a muscle imbalance. The **270** path is the only one measured against real photos; the
+> **570** path is validated on synthetic sheets and a print-and-rephotograph round-trip
+> only, and has never been read from a genuine modern 570 printout.
 
 ## Headline
 
@@ -12,6 +22,12 @@ InBody sheets** (seeds ≥ 5000, never seen in training).
 | **Whole-sheet accuracy** | **56.0%** | **100.0%** |
 | Critical-field mean (LBM + segmental) | 56.8% | 100.0% |
 | Per-field range | 56.5–57.0% | 100.0% |
+
+> **Scored under the pre-amendment tolerance.** Every figure in this section that includes
+> a segmental limb was measured before ADR-0006's 2026-09-09 amendment added the 1%
+> relative bound on limbs, so re-running would lower the whole-sheet and critical-field
+> numbers. They have not been re-measured, because the retrain that follows the template
+> geometry fix re-baselines them anyway.
 
 - **n = 200** held-out sheets (100 InBody 270 + 100 InBody 570).
 - VLM: `gpt-4o-2024-08-06`, zero-shot with Structured Outputs.
@@ -125,6 +141,8 @@ new-look sheets) on Kaggle. `InBodyPayload` contract unchanged.
 | **Real InBody 270 photo (n=1)** | **0%** whole-sheet (fail-closed) | **100%** whole-sheet |
 | Held-out synthetic, whole-sheet | 56.0% (easy augmentation) | 53.5% (harder augmentation) |
 | Held-out synthetic, per-field | ~57% | 55.0–57.0% |
+
+(Whole-sheet and per-field here also predate the 1% limb bound; see the note above.)
 | Failure mode | safe fail-closed | safe fail-closed (per-field > whole-sheet) |
 
 **The real-photo result is the headline: 0% → 100%.** The retrained model
@@ -248,6 +266,413 @@ those layouts added to the synthetic generator, or genuine **modern**-layout she
 transfer on the design we actually trained. Samples saved under `data/real_holdout/` (never
 committed — real health data).
 
+## Modern-layout real 270 hold-out, n=12 (2026-09-08)
+
+The "larger real-photo hold-out" listed under Future Work, delivered. **Twelve genuine
+InBody 270 printouts**, phone-photographed, scored on `donut-both-v3`. These are the
+*modern* layout — the one the generator clones and the model trains on — so this is the
+first measurement of the case the earlier n=1 anecdote covered.
+
+| Outcome | Sheets | |
+|---|---|---|
+| **Usable** — clean read, `as_payload()` returns a payload | **3** | 25% |
+| **Refused** — empty read, nothing extracted | **6** | 50% |
+| **Flagged** — read, but a cross-check caught it | **3** | 25% |
+
+**One real sheet in four produces a plan.** The earlier `inbody_real_01` result (100% on
+all health fields) was a favourable draw from this distribution, not a representative
+one — it should not be read as the expected real-world accuracy, and the Headline table
+above describes held-out *synthetic* sheets only.
+
+### The cross-checks earned their keep
+
+Every flagged sheet was caught by ADR-0003's LBM cross-check, on real data, for the first
+time. Example (sheet 06), digits masked:
+
+```
+printed Fat Free Mass          ##.# kg
+donut-both-v3 read             ##.# kg   (about half the printed value)
+weight x (1 - PBF/100)         ##.# x #.### = ##.#   (agrees with the printed value)
+flagged: weight_kg, percent_body_fat, lean_body_mass_kg, basal_metabolic_rate_kcal
+```
+
+Both guards fired independently — the LBM identity, and Katch-McArdle recomputing a BMR
+several hundred kcal below the printed one. `is_complete()` returned False, `as_payload()`
+returned None, and the pipeline raised rather than computing a plan from an LBM read at half
+its printed value.
+
+**What this does not establish.** The cross-checks cover LBM and BMR only. An error in SMM,
+visceral fat level, or a single segmental lean has nothing to contradict it and would pass
+through a "usable" read unnoticed. The three usable sheets are **unverified** — no
+ground-truth labels exist for this set yet. Hand-checking sheet 06 against the printout did
+turn up an uncaught `right_arm_kg` error (a `#.#` read against a `#.##` print, outside
+tolerance) that the cross-checks had no way to see; that sheet was flagged for other reasons,
+so it never reached a plan, but it shows the gap is real. The honest claim is **no usable
+read was contradicted by the checks that exist**, not that none is wrong.
+
+### Fat Free Mass is the failing field
+
+Weight, PBF, SMM, BMR and visceral fat read well; LBM was wrong on three of the six
+non-refused sheets, twice emitting *the same* wrong value:
+
+| Sheet | LBM read, against weight x (1 - PBF/100) |
+|---|---|
+| sheet_06 | about half |
+| sheet_10 | about half, and the same value sheet_06 emitted |
+| sheet_08 | a few kg high |
+
+The same wrong value on two sheets is a lead, not noise. This section originally proposed
+that the model was reading BMI, which sits nearby as a bold left-column figure while Fat
+Free Mass is small print in the right-hand Research Parameters block. **That hypothesis was
+tested against the printouts and refuted** -- see "Hand-labelled" below. It matters which
+value is wrong, since ADR-0003 makes LBM authoritative for BMR, TDEE and every macro target
+downstream.
+
+### Root cause: the synthetic sheets are the wrong shape
+
+Not a capture problem — image statistics are indistinguishable across outcomes:
+
+```
+usable    brightness 123.7  contrast 51.8  edge-energy 35.5
+flagged   brightness 123.6  contrast 51.7  edge-energy 33.0
+REFUSED   brightness 124.6  contrast 51.5  edge-energy 34.9
+```
+
+The mismatch is geometric, and measurable:
+
+| | Aspect | Pixel width |
+|---|---|---|
+| Synthetic training sheet (mean of 12 seeds) | **0.949** | 941-1251 |
+| Real A4 InBody printout | 0.707 | — |
+| Real phone photo (rotated upright) | 0.563 | 2296 |
+| Donut canvas | 0.750 | 1920 |
+
+Two consequences. The sheet is **nearly square** where a real printout is A4 portrait, traced
+to `synthetic/templates/inbody_270.html` — `.sheet { width: 1000px }` with content ending at
+993px. And the **resize runs in opposite directions**: synthetic sheets were upscaled ~2x onto
+the canvas while real photos are downscaled onto it, so the model learned soft interpolated
+text and meets sharp text at inference. Small print in a narrow column is what degrades first
+under both, which matches Fat Free Mass being the field that fails.
+
+This refines #24's "the gap is layout-bound" conclusion: for *modern*-layout sheets the
+binding constraint is page geometry and effective text scale, both of which are template
+bugs rather than missing training data.
+
+### The model is also undertrained
+
+Independent of any real photo: `donut-both-v3` scores **48% on its own held-out synthetic
+270 distribution**. It is weak on the data it was trained for, before domain shift is
+considered. The shipped checkpoint was trained for **1 epoch**, against `train.py`'s own
+default of 3.
+
+### Hand-labelled: the BMI hypothesis is refuted, and one "usable" read is wrong (2026-09-09)
+
+The six non-refused sheets were hand-read off the printouts. This is the per-field
+ground truth the section above said did not exist. It changes two conclusions.
+
+**BMI is not the source of the repeated value.** Printed BMI on the three failing sheets
+never equals the value emitted for LBM.
+
+Both sheets that emit the repeated value carry that same literal in the Body Composition
+History PBF row, which is a plausible source for the token. It is not an explanation of
+*when* the failure fires: the same row, containing it, also appears on sheets that read Fat
+Free Mass correctly. sheet_08's wrong value appears nowhere on sheet_08 at all. **The
+designer task that was going to compare the BMI and Fat Free Mass positions visually is no
+longer worth doing.**
+
+**The model reads across a panel boundary.** Sheet_05 was scored *usable* — every
+cross-checked field on it is correct — and its segmental lean is wrong on two limbs:
+
+```
+printed  Segmental Lean:  LA #.##  RA #.##  trunk ##.#  LL #.##  RL #.##
+printed  Segmental Fat:   LA #.#   RA #.#   trunk ##.#  LL #.#   RL #.#
+read                      LA = lean LA     RA = fat LA
+                          trunk = lean trunk
+                          LL = lean LL     RL = fat LL
+```
+
+The two wrong reads are the printed left-arm and left-leg **fat** figures. The model reads the
+left column of the Segmental Lean panel and then continues rightward into the adjacent
+Segmental Fat panel, taking that panel's left column as the lean panel's right column.
+This is a page-layout failure, not a glyph-recognition one, and it supports the geometry
+diagnosis below more directly than the Fat Free Mass errors do.
+
+Scored against the hand labels: **core fields 33/36, segmental lean 23/30, critical cut (LBM + limbs) 26/36.**
+
+Both figures now come from a committed scorer rather than a hand count, and are
+reproducible without a GPU or the checkpoint:
+
+```
+python -m inform.holdout --data-dir data/real_holdout \
+    --labels data/real_holdout/labels.json \
+    --reads data/real_holdout/donut-both-v3-reads.json
+```
+
+Two notes on the numbers. The segmental figure was first hand-counted as 22/30; the scorer
+puts it at 23/30 under ADR-0006's amended rule (25/30 if the 1% limb bound is dropped,
+19/30 on exact equality). The hand count could not be reproduced under any of the three
+rules, so the scorer's figure stands. And `source_device` is deliberately unlabelled: every
+sheet is a real 270, but nobody read that off the page, and inventing the label would
+change the 33/36 denominator.
+
+The 1% limb bound exists because of the row below. See ADR-0006's 2026-09-09 amendment.
+
+### The segmental errors reach the user as a fabricated imbalance
+
+`exercise_filter.py` triggers on a bilateral asymmetry above 5% and
+`synthesis/generate.py` then has the model name the limb that needs attention. Recomputing
+that trigger from the labels against the reads:
+
+| Sheet | Outcome | Arm asymmetry truth → read | Leg asymmetry truth → read | Verdict flips |
+|---|---|---|---|---|
+| sheet_02 | usable | under 2% → **over 5%** | under 2% → unchanged | **yes** |
+| sheet_05 | usable | under 2% → **over 60%** | under 2% → **over 60%** | **yes** |
+| sheet_07 | usable | under 2% → under 2% | under 2% → unchanged | no |
+| sheet_06 | flagged | under 2% → over 5% | under 2% → unchanged | (never reaches a plan) |
+| sheet_08 | flagged | under 2% → unchanged | under 2% → unchanged | no |
+| sheet_10 | flagged | under 2% → unchanged | under 2% → unchanged | no |
+
+**Two of the three sheets that produce a plan produce a plan asserting a muscle imbalance
+the subject does not have**, one of them an arm deficit over 60% in a person whose arms differ
+by under 2%. The honest headline for this hold-out is not "3 usable out of 12" but **3 reach a
+plan and 1 of those is correct**.
+
+Sheet_02 shows how little error it takes. Its printed arms differ by a few hundredths of a
+kilogram. Read with one arm a digit short and the other misread, they clear the 5% threshold.
+Arm values lose their second decimal across the set (`#.##` printed, `#.#` read) while leg
+values keep it, and a 5% threshold on ~3.5 kg figures has no tolerance for a dropped decimal.
+Why arms and not legs is issue #59.
+
+**Two consequences for the work queue.** For Track A, the designer's layout spec should
+additionally pin the *horizontal* gap and alignment between the Segmental Lean and
+Segmental Fat panels, and the decimal precision of the arm figures. For the application,
+`recommend_exercises` currently states an imbalance with the same confidence whether the
+limb pair differs by under 1% or by over 60%, on the two fields that have no cross-check
+behind them — that is a product-safety question independent of OCR quality.
+
+Labels are real health data and are not committed, as with the sheets themselves.
+
+### Caveats
+
+One subject, one gym, one printer, photographed in a single session, so this measures
+capture and layout robustness on one sheet design — not accuracy across people or devices.
+Every photo was shot sideways and **normalized to upright before scoring**; grading as-shot
+would be worse and would be the honest number for a raw upload path that does not auto-rotate.
+Outcome distribution only — no per-field accuracy until the set is hand-labeled.
+
+### Reproduction
+
+```bash
+# outcome split (no ground-truth labels needed)
+python -m inform.compare --data-dir <real-sheet-dir> --donut-checkpoint models/donut-both-v3 --skip-vlm
+```
+
+Sheets are real health data and are **not committed** (`data/real_holdout/`, as with #24).
+
+### Numbers above predate the generator and template fixes
+
+Following this run the generator was changed: sheets now render at 2.5x device scale
+(941 -> 2350 px) and are written as JPEG rather than PNG, and `train.py` defaults moved to 5
+epochs with every epoch's checkpoint retained. **The template aspect is now fixed too**:
+`scripts/check_sheet_geometry.py` reports 0.702 (270) and 0.701 (570) against the 0.707
+target, up from 0.936 and 0.885, and the render is 2350x3346 / 2350x3352.
+
+The height went into the blocks rather than the page margins: table row heights, bar-graph
+row heights, the segmental body figure and every font size grew together, so effective text
+scale grew with the page instead of text staying small on a taller sheet. The gutter between
+the Segmental Lean and Segmental Fat panels was widened at the same time (270: 10px to 26px
+plus larger panel padding and labels pulled in from the panel edge; 570: column gap 20px to
+30px), because that is the boundary the model crossed on sheet_05. Both gutters are
+provisional: they have not been measured off a real printout. That measurement is issue #46
+(also section 5 of the designer's layout-fidelity brief, on the `docs/track-b-spec` branch,
+which is deferred).
+
+Every number in this section belongs to the pre-fix generator and `donut-both-v3`. Re-run
+after regenerating and retraining from `donut-base`, and compare against the 3/6/3 split and
+the hand labels above.
+
+## v4 retrain: geometry fixed, hypothesis not supported (2026-09-10)
+
+The regenerate-and-retrain called for above is done. `synth_v4_both` (5000 sheets, aspect
+0.702, min width 2352 px, JPEG) trained from `donut-base` on Kaggle for 4 of a planned 5
+epochs before the 12 h session cap; epochs 1-4 are on disk, epoch 5 was never written.
+
+**The retrain did not beat `donut-both-v3`, and the sharpest indicator says geometry was not
+the cause.**
+
+| real hold-out (n=12, 6 labelled) | v3 | e1 | e2 | e3 | e4 |
+|---|---|---|---|---|---|
+| core fields | **33/36 (91.7%)** | 16/36 (44.4%) | 27/36 (75.0%) | 30/36 (83.3%) | 13/36 (36.1%) |
+| segmental lean | **23/30 (76.7%)** | 4/30 (13.3%) | 21/30 (70.0%) | 20/30 (66.7%) | 4/30 (13.3%) |
+| critical (LBM + limbs) | 26/36 (72.2%) | 9/36 (25.0%) | 26/36 (72.2%) | 26/36 (72.2%) | 9/36 (25.0%) |
+| usable / flagged / unread / refused | 3/6/3/0 | 0/4/8/0 | 1/10/1/0 | 4/5/3/0 | 0/4/8/0 |
+
+Best v4 checkpoint is epoch 3: worse than v3 on core fields and segmental lean, level on the
+critical cut, one more `usable` sheet. No checkpoint is a promotion candidate. **`donut-both-v3`
+remains the shipped model.**
+
+### The sheet_05 panel crossing did not disappear
+
+Pre-registered as the sharpest single indicator that geometry was the cause. It was not fixed:
+`segmental_lean.right_arm_kg` reads 1/6 under v3 and 2/6 under v4 epoch 3. The widened gutters
+did not stop the model crossing into the adjacent Segmental Fat panel. Those gutters are
+guessed, not measured (issue #46), so this does not refute the geometry story so much as show
+that **guessed geometry cannot test it** — the measurement is now a precondition for any
+further retrain, not a nice-to-have. ADR-0007's 2026-09-10 amendment records what this does
+and does not establish.
+
+### Fat Free Mass improved; Percent Body Fat regressed
+
+`lean_body_mass_kg` went 3/6 (v3) to 5/6 (epoch 3), which is the field this whole line of work
+started from. But `percent_body_fat` went 6/6 (v3) to 3/6 (epoch 3), and to 0/6 at epochs 1 and
+4. It is also where epoch 3's generation breaks (consistently at char 62 of the emitted JSON).
+
+**It is a structural failure at that field's value slot, not a misread number** (2026-09-12,
+issue #48). Decoding all four v4 checkpoints and `donut-both-v3` over the twelve real sheets,
+reporting shape only with digits masked: on the malformed sheets the model emits the **next key**
+where the number belongs, e.g. `"percent_body_fat":"skeletal_muscle_mass_kg":##.#`, which is what
+breaks the JSON at char 62. Three modes appear — no value at all, the wrong integer-digit count
+(one or three where two belong), and the decimal dropped for a bare integer.
+
+Shape of the emitted `percent_body_fat` over 12 sheets:
+
+| | no value | 1 int digit | 2 int + 1 dec (correct) | 3 int digits |
+|---|---|---|---|---|
+| e1 | 7 | 3 | 2 | 0 |
+| e2 | 1 | 10 | 1 | 0 |
+| e3 | 3 | 3 | 5 | 1 |
+| e4 | 1 | 11 | 0 | 0 |
+| **v3** | 0 | 0 | **12** | 0 |
+
+v3 emits the correct shape on 12 of 12 and **never** breaks at this field; its own six malformed
+generations break after `weight_kg` (x2), `lean_body_mass_kg`, `skeletal_muscle_mass_kg`,
+`basal_metabolic_rate_kcal` and `trunk_kg`. So v3 learned the field's numeric form and no v4
+checkpoint did, at any epoch.
+
+**It is not a run-wide instability.** In the same generations where epoch 3 emits no value for
+`percent_body_fat`, it emits `skeletal_muscle_mass_kg` correctly as `##.#` — that is the key
+sitting in PBF's value slot above. **It is also not the PBF row's geometry**: the tick axis, the
+`pbf_history` drift and the row structure are byte-identical to the pre-v4 template, and the
+`.bv` / `.ticks` font bumps were cancelled by the sheet scaling down further onto Donut's canvas
+(0.817 to 0.765). Both directions the section above invited are closed.
+
+What remains, as a hypothesis: `percent_body_fat` is the only scored field whose value magnitude
+coincides with its own axis labels (10-35 against ticks 8..58), and the bar value overlaps the
+tick band with only a 2px halo between them (issue #52). A field that was always marginally
+segmentable stopped being so when v4's geometry change cost a little resolution. **Issue #48
+records a prediction for the v5 retrain to settle**: v5 keeps this geometry and the overlap
+untouched, so if v5 still fails the field the reading holds, and if v5 recovers it the reading is
+wrong.
+
+### Held-out synthetic
+
+`holdout_v4_both` (400 sheets), epoch 4: 49.0% on almost every field, whole-sheet 48.2%,
+uniform across fields. The uniformity is the parser defect below, not a per-field signal: whole
+sheets either read or scored zero. Worth re-measuring now that the defect is fixed.
+
+## A parser defect was discarding good reads, including v3's (2026-09-10)
+
+Found while diagnosing the v4 numbers above. Donut frequently emits every field correctly and
+then stops before the closing brace. `_to_partial` returned an empty read on any
+`JSONDecodeError`, so a sheet that was read correctly except for one missing character scored
+as a total refusal.
+
+**This was never a v4 problem.** On the real hold-out it discarded 6 of 12 reads for the shipped
+`donut-both-v3` and 8 of 12 for v4 epoch 4. v3's per-field accuracy never showed it, because the
+six discarded sheets happened to be the six that were never hand-labelled. Every `refused` count
+in the sections above is therefore inflated: v3's real split is 3 usable / 6 flagged / 3 unread /
+**0 refused**, not the 3/3/0/6 reported at 2026-09-08.
+
+Fixed in `57aa70d`: recovery cuts fall only on a field boundary, because every prefix of a number
+is itself a number and closing `58.0` at `5` would hand back a fabricated `lean_body_mass_kg`
+(ADR-0008 forbids exactly this). A generation ending on a bare digit is therefore not recoverable
+at all, and its last field reads unread.
+
+Per-field accuracy on the labelled six is unchanged by the fix; the outcome split and the
+unlabelled sheets are what moved.
+
+### Beam search does not help
+
+Tested directly, `num_beams=4` against greedy, well-formed JSON out of 12 real sheets:
+
+| model | greedy | 4 beams |
+|---|---|---|
+| `donut-both-v3` | 6/12 | 6/12 |
+| v4 epoch 3 | 8/12 | 8/12 |
+
+No difference. At ~1e-3 training loss the model is confident enough that beams converge on the
+greedy path; the truncation is not a search failure. Note also that **v4 emits well-formed JSON
+more often than v3** — v4's regression is in the values, not the structure.
+
+### Reproduction
+
+```bash
+# real hold-out, any checkpoint
+python -m inform.holdout --data-dir data/real_holdout --labels data/real_holdout/labels.json     --donut-checkpoint <ckpt>
+
+# held-out synthetic
+python -m inform.compare --data-dir D:/cera/data/holdout_v4_both --donut-checkpoint <ckpt> --skip-vlm
+```
+
+Checkpoints are at `D:/cera/kaggle_out_v4/donut-both-v4/checkpoint-{1250,2500,3750,5000}`. They
+were saved mid-run, so they carry no processor; rebuild it from `donut-base` plus the task token
+before scoring (`build_model_and_processor` does exactly this).
+
+## Silent-error baseline for `donut-both-v3` (2026-09-11)
+
+The measure of an engine is now the **silent error** — a wrong value inside an `unverified`
+read (CONTEXT.md, and the 2026-09-11 amendment to
+[ADR-0006](adr/0006-ocr-evaluation-protocol.md)). `inform.holdout` computes it, and this is
+the shipped model's figure. Per-field accuracy is unchanged; it is a diagnostic now.
+
+| `donut-both-v3`, real hold-out | value |
+|---|---|
+| unverified reads carrying one or more wrong values | **3 / 3 (100%)** |
+| wrong fields within those reads | 4 / 33 (12.1%) |
+| unverified reads with no hand label (not measurable) | 0 |
+| outcome split (unverified / flagged / unread / refused) | 3 / 6 / 3 / 0 |
+
+**Every read that the engine does not object to is wrong somewhere.** That is the honest
+headline for the shipped model, and it is a stronger statement than the per-field table above
+makes: 91.7% on core fields and 76.7% on segmental lean describe the same six sheets.
+
+It is also consistent with the hand analysis in "The segmental errors reach the user as a
+fabricated imbalance" above, and slightly stricter. That section found 2 of the 3 sheets
+produce a plan asserting an imbalance the subject does not have; the third has wrong arm
+values that happen not to flip the asymmetry verdict. A wrong value is a silent error whether
+or not a downstream threshold notices, so it counts here and did not count there.
+
+**n = 3. This supports no comparison between engines.** The denominator is three sheets
+because only three reads land `unverified` and all three happen to be hand-labelled; six of
+twelve sheets have labels at all (issue #24). Scoring a second checkpoint against this and
+declaring a winner would be the error ADR-0006 exists to prevent. The denominator is the work.
+
+### The recorded-reads baseline was stale, and is re-recorded
+
+`data/real_holdout/donut-both-v3-reads.json` predates the parser fix in
+"A parser defect was discarding good reads" above. Replaying it now gives an outcome split of
+3/3/0/6 — six refusals that the current parser does not produce — because the recorded reads
+are missing the fields that `_salvage` now recovers. Any silent-error figure computed from it
+is measured against a parser that no longer ships.
+
+Re-recorded from the local `donut-both-v3` checkpoint under the current parser as
+`data/real_holdout/donut-both-v3-reads-57aa760.json`, which reproduces the documented v3
+baseline exactly: 3/6/3/0, core 33/36, segmental lean 23/30, critical 26/36. **That file is
+the one to replay.** The stale one is left in place rather than overwritten, since neither is
+in the repo (`data/` is gitignored) and the older one is what earlier sections were measured
+against.
+
+Reproduce with, from a checkout with the hold-out data present:
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONPATH=src python -m inform.holdout \
+    --data-dir data/real_holdout --labels data/real_holdout/labels.json \
+    --reads data/real_holdout/donut-both-v3-reads-57aa760.json
+```
+
+A recorded-reads file is model output over real health records. It stays out of the repo, and
+its values stay out of issues, docs and artifacts — counts only, as above.
+
 ## Future Work
 
 - **Real *metric* 570 photo.** The adult 570 clone + both-device retrain is done
@@ -257,8 +682,18 @@ committed — real health data).
 - **Device-label robustness on real photos.** The both-device model reads real 270
   health fields perfectly but misclassifies `source_device` on the out-of-distribution
   photo. Worth a real-photo-aware fix (more real captures, or device-agnostic scoring).
-- **Larger real-photo hold-out.** A hand-labeled set of real InBody 270/570
-  photos (>1) to turn the anecdote above into a measured synthetic→real gap for
-  both engines.
-- **Beam-search decoding** for Donut — may recover some refusals with no
-  retrain; untested.
+- **~~Regenerate and retrain~~ — done 2026-09-10, negative.** See the v4 section
+  above. The retrain did not beat `donut-both-v3` and the sheet_05 crossing survived.
+  **Measure the #46 gutters before retraining again**: guessed geometry cannot test a
+  geometry hypothesis, so another run on the current templates would answer nothing.
+- **Hand-label the other six sheets (highest value).** They are no longer refused --
+  that was the parser defect, and all 12 now produce a read — but they still have no
+  ground truth. The evaluation is 6 labelled sheets, 36 field observations, so the v3
+  vs v4-epoch-3 gap is five fields. **Most improvements are currently too small for
+  this hold-out to see**, which makes labelling worth more than another retrain
+  (issue #24 also wants 20-30 sheets and some real 570s).
+- **~~Beam-search decoding~~ — tested 2026-09-10, no effect.** See above. The
+  remaining decoding idea is **schema-constrained decoding**: restrict the decoder to
+  tokens consistent with `InBodyPayload` so a malformed generation becomes impossible
+  rather than something to recover from. Untested, and it touches the `extract_inbody`
+  seam that Track B depends on, so design it before building it.

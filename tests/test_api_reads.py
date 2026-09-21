@@ -32,7 +32,12 @@ def test_create_read_live_starts_pending_job():
     # Stub engine that takes a short time
     def slow_stub(path: Path) -> PartialInBody:
         time.sleep(0.5)
-        return PartialInBody(weight_kg=60.0, lean_body_mass_kg=45.0, percent_body_fat=25.0)
+        return PartialInBody(
+            weight_kg=60.0,
+            lean_body_mass_kg=45.0,
+            percent_body_fat=25.0,
+            source_device="inbody_270",
+        )
 
     app.dependency_overrides[get_engine] = lambda: slow_stub
     try:
@@ -53,7 +58,12 @@ def test_poll_read_long_polling_waits_and_returns_complete():
     """AC: Long polling survives past client waits and returns complete when engine finishes."""
     def stub_engine(path: Path) -> PartialInBody:
         time.sleep(0.2)
-        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
+        return PartialInBody(
+            weight_kg=70.0,
+            lean_body_mass_kg=55.0,
+            percent_body_fat=21.4,
+            source_device="inbody_270",
+        )
 
     app.dependency_overrides[get_engine] = lambda: stub_engine
     try:
@@ -77,7 +87,12 @@ def test_poll_read_times_out_and_returns_pending_surviving_timeout():
     """AC: The read survives past a host request timeout (returns pending with progress)."""
     def very_slow_stub(path: Path) -> PartialInBody:
         time.sleep(1.0)
-        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
+        return PartialInBody(
+            weight_kg=70.0,
+            lean_body_mass_kg=55.0,
+            percent_body_fat=21.4,
+            source_device="inbody_270",
+        )
 
     app.dependency_overrides[get_engine] = lambda: very_slow_stub
     try:
@@ -183,7 +198,12 @@ def test_plan_with_completed_read_id():
 def test_plan_with_pending_read_id_returns_409():
     def hanging_stub(path: Path) -> PartialInBody:
         time.sleep(2.0)
-        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
+        return PartialInBody(
+            weight_kg=70.0,
+            lean_body_mass_kg=55.0,
+            percent_body_fat=21.4,
+            source_device="inbody_270",
+        )
 
     app.dependency_overrides[get_engine] = lambda: hanging_stub
     try:
@@ -543,7 +563,12 @@ def test_pdf_read_in_progress_is_not_called_a_photo():
 
     def slow_stub(img_input) -> PartialInBody:
         time.sleep(0.5)
-        return PartialInBody(weight_kg=60.0, lean_body_mass_kg=45.0, percent_body_fat=25.0)
+        return PartialInBody(
+            weight_kg=60.0,
+            lean_body_mass_kg=45.0,
+            percent_body_fat=25.0,
+            source_device="inbody_270",
+        )
 
     app.dependency_overrides[get_engine] = lambda: slow_stub
     try:

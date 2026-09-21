@@ -13,14 +13,14 @@ _MODEL = "gpt-4o-2024-08-06"
 
 _SYSTEM_PROMPT = (
     "You extract structured body-composition data from a photo of an InBody "
-    "270 or InBody 570 result sheet. Set is_inbody_sheet to false if the "
+    "270 result sheet. Set is_inbody_sheet to false if the "
     "image is not an InBody result sheet, and leave every other field unset "
     "in that case. Otherwise, read every field directly off the sheet and "
     "set source_device to the device model printed on it. Never guess a "
     "value: if a field is blurred, glare-washed, or otherwise not "
     "confidently readable, leave it unset rather than estimate it. Both the "
-    "InBody 270 and the InBody 570 print a Visceral Fat Level, so read it "
-    "whenever it appears on the sheet. It is a programmable output that some "
+    "The InBody 270 prints a Visceral Fat Level, so read it whenever it appears "
+    "on the sheet. It is a programmable output that some "
     "configurations omit; leave visceral_fat_level unset only when the sheet "
     "genuinely does not show it, not by default."
 )

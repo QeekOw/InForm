@@ -23,7 +23,7 @@ InForm is a web prototype for turning reviewed body-composition readings from **
 All actionable plan facts come from deterministic, auditable code. AI may provide an optional coaching note, but it cannot alter measurements, targets, exercises, or imbalance findings.
 
 > [!IMPORTANT]
-> **Device Compatibility: InBody 270 Only**  
+> **Device Compatibility: InBody 270 Only**<br>
 > InForm is calibrated for and currently **only accepts InBody 270** result sheets. Other models (such as InBody 570, InBody 770, or consumer smart scales) are **not supported**.
 
 > InForm supports fitness planning. It is not a medical diagnosis or a substitute for professional advice.
@@ -42,6 +42,17 @@ The app is intentionally transparent about what is and is not live yet:
 - **Supported device:** InForm strictly accepts and parses **InBody 270** result sheets only.
 - The web flow currently uses sample readings or clearly labelled demo values. Upload, camera, and PDF screens are part of the user experience, but uploaded files are **not yet processed by OCR**.
 - Accounts, sign-in, saved history, and persistence are not implemented. The browser keeps the in-progress plan only for the current session.
+
+## Python CLI & OCR Demo
+
+To run extraction directly from a photo of an InBody sheet using the self-hosted Donut OCR engine:
+
+```bash
+python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
+    --age 30 --sex female --activity 1.55 --goal fat_loss
+```
+
+By default the photo is read by the self-hosted Donut engine (`models/donut-270-v9`, or remotely from Hugging Face Hub `QeeeeK/donut-inbody`). If you would rather read the photo with the cloud VLM, add `--engine vlm`, which uses `OPENAI_API_KEY`. Without an API key, InForm uses the deterministic template plan.
 
 ## How it works
 

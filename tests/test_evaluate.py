@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from inform.errors import NotAnInBodySheetError
-from inform.evaluate import evaluate
+from inform.evaluate import IMAGE_SUFFIXES, evaluate, load_labeled_set, segmental_matches
 from inform.inbody import InBodyExtraction, InBodyPayload, PartialInBody, SegmentalLean
 
 _TRUTH = InBodyPayload(
@@ -14,7 +14,7 @@ _TRUTH = InBodyPayload(
         left_arm_kg=3.2, right_arm_kg=3.3, left_leg_kg=8.1, right_leg_kg=8.2, trunk_kg=24.5
     ),
     visceral_fat_level=7,
-    source_device="inbody_570",
+    source_device="inbody_270",
 )
 _IMAGE = Path("sheet.png")
 
@@ -159,3 +159,57 @@ def test_averages_per_field_rate_across_multiple_sheets():
 
     assert report.per_field_accuracy["weight_kg"] == 0.5
     assert report.whole_sheet_accuracy == 0.5
+
+
+def test_eval_and_training_agree_on_accepted_image_formats():
+    # evaluate duplicates the tuple to stay importable without the training
+    # package (same pattern as donut.TASK_TOKEN); they must not drift.
+    from inform.training.dataset import IMAGE_SUFFIXES as TRAINING_SUFFIXES
+
+    assert IMAGE_SUFFIXES == TRAINING_SUFFIXES
+
+
+def test_load_labeled_set_reads_jpeg_and_png_alike(tmp_path):
+    # generate_dataset now writes .jpg, and a real phone photo is already .jpg,
+    # but PNG sets written by earlier runs must still load.
+    from PIL import Image
+
+    for stem, suffix in (("sheet_01", ".jpg"), ("sheet_02", ".png")):
+        Image.new("RGB", (4, 4), (255, 255, 255)).save(tmp_path / f"{stem}{suffix}")
+        (tmp_path / f"{stem}.json").write_text(_TRUTH.model_dump_json(), encoding="utf-8")
+
+    pairs = load_labeled_set(tmp_path)
+
+    assert [p.name for p, _ in pairs] == ["sheet_01.jpg", "sheet_02.png"]
+    assert all(expected == _TRUTH for _, expected in pairs)
+
+
+def test_segmental_match_needs_both_the_absolute_and_the_relative_bound():
+    # Invented printed/read pairs shaped like the real 270 hold-out's, whose
+    # values stay out of the repo. A limb spans an order of magnitude on one
+    # sheet, so one absolute tolerance is either useless on an arm or
+    # unreachable on a trunk:
+    #   arm   3.04 read as 3.0   -> 0.04 kg, within +/-0.1, but 1.3% off
+    #   arm   3.37 read as 3.4   -> 0.03 kg, 0.89% off
+    #   trunk 24.4 read as 24.3  -> 0.10 kg, 0.41% off
+    #   trunk 24.4 read as 24.2  -> 0.20 kg, over the absolute bound, 0.82% off
+    assert segmental_matches(3.4, 3.37) is True
+    assert segmental_matches(3.0, 3.04) is False  # relative bound binds
+    assert segmental_matches(24.3, 24.4) is True
+    assert segmental_matches(24.2, 24.4) is False  # absolute bound binds
+
+
+def test_evaluate_scores_segmental_limbs_by_the_relative_bound_too():
+    # Truth's right arm is 3.3 kg. Read as 3.38 that is 0.08 kg out, inside the
+    # +/-0.1 absolute tolerance, but 2.42% out -- over the 1% limb bound, so it
+    # is a miss. The rest of the sheet is still credited.
+    near_miss = _TRUTH.model_copy(
+        update={"segmental_lean": _TRUTH.segmental_lean.model_copy(update={"right_arm_kg": 3.38})}
+    )
+
+    report = evaluate(_returning(near_miss), [(_IMAGE, _TRUTH)])
+
+    assert report.per_field_accuracy["segmental_lean.right_arm_kg"] == 0.0
+    assert report.per_field_accuracy["segmental_lean.left_arm_kg"] == 1.0
+    assert report.per_field_accuracy["weight_kg"] == 1.0
+    assert report.whole_sheet_accuracy == 0.0

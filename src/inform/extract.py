@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
 from inform.engines import donut
-from inform.errors import DonutCheckpointError, MissingRequiredFieldsError
+from inform.errors import DonutCheckpointError, MissingRequiredFieldsError, NotAnInBodySheetError
 from inform.formulas import katch_mcardle_bmr
 from inform.inbody import (
     REQUIRED_DOTTED_FIELDS,
@@ -21,11 +21,10 @@ _LBM_TOLERANCE_KG = 2.0
 _BMR_TOLERANCE_KCAL = 100.0
 
 # Where the default (Donut) engine finds its fine-tuned checkpoint (ADR-0010).
-# A local checkpoint dir, defaulting to the Kaggle output folder name so a local
-# download works without extra config. (Hub-id support is a future option; it
-# needs the loader to stop Path-wrapping, which mangles "org/name" on Windows.)
+# A local checkpoint dir or a Hugging Face Hub id, defaulting to the Kaggle output
+# folder name so a local download works without extra config.
 _DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
-_DEFAULT_DONUT_CKPT = "models/donut-both-v3"
+_DEFAULT_DONUT_CKPT = "models/donut-270-v9"
 
 
 def _looks_like_hub_id(raw: str) -> bool:
@@ -44,7 +43,7 @@ def _looks_like_hub_id(raw: str) -> bool:
 def default_engine(checkpoint: str | Path | None = None) -> Engine:
     """Build the default runtime engine: self-hosted Donut (ADR-0010).
 
-    Points at INFORM_DONUT_CKPT (default `models/donut-both-v3`), which can be a
+    Points at INFORM_DONUT_CKPT (default `models/donut-270-v9`), which can be a
     local directory path or a Hugging Face Hub model ID (e.g. `org/model`). Fails
     loudly (DonutCheckpointError) when the checkpoint is absent or the training
     extra (torch/transformers) is not installed. It never silently falls back to
@@ -95,15 +94,18 @@ def extract_inbody(
     unread = [f for f in REQUIRED_DOTTED_FIELDS if partial_field_value(partial, f) is None]
     if len(unread) == len(REQUIRED_DOTTED_FIELDS):
         raise MissingRequiredFieldsError(unread)
+    if partial.source_device != "inbody_270":
+        raise NotAnInBodySheetError()
     flagged = _cross_check(partial)
     return InBodyExtraction(data=partial, unread=unread, flagged=flagged)
 
 
 def _cross_check(payload: PartialInBody) -> list[str]:
-    """Return the fields implicated by a failed cross-check (ADR-0003), or [].
+    """Return the fields implicated by a failed cross-check (ADR-0003, ADR-0008), or [].
 
-    Each check runs only when its inputs are all present. A breach can't isolate
-    the single misread, so every field feeding the check is flagged "verify".
+    Each check runs only when its inputs are all present. The LBM and BMR checks
+    can't isolate the single misread, so every field feeding one is flagged
+    "verify". The arm-precision check (ADR-0008, 2026-09-13) names the arm itself.
     """
     flagged: list[str] = []
 
@@ -119,4 +121,19 @@ def _cross_check(payload: PartialInBody) -> list[str]:
         if abs(bmr - recomputed_bmr) > _BMR_TOLERANCE_KCAL:
             flagged += ["basal_metabolic_rate_kcal", "lean_body_mass_kg"]
 
+    segmental = payload.segmental_lean
+    if segmental is not None and any(
+        _has_second_decimal(leg) for leg in (segmental.left_leg_kg, segmental.right_leg_kg)
+    ):
+        # A leg at two decimals means the sheet prints limbs to two, so a
+        # one-decimal arm has most likely lost a digit (ADR-0008, #59).
+        for arm in ("left_arm_kg", "right_arm_kg"):
+            value = getattr(segmental, arm)
+            if value is not None and not _has_second_decimal(value):
+                flagged.append(f"segmental_lean.{arm}")
+
     return list(dict.fromkeys(flagged))  # de-dup, preserve order
+
+
+def _has_second_decimal(value: float | None) -> bool:
+    return value is not None and round(value, 1) != value

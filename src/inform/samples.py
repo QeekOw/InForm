@@ -40,7 +40,7 @@ class SampleSheet(BaseModel):
     id: str
     name: str
     provenance: Literal["synthetic", "real"]
-    source_device: Literal["inbody_270", "inbody_570"] | None = None
+    source_device: Literal["inbody_270"] | None = None
     image_path: str
     description: str
 
@@ -80,6 +80,7 @@ def default_extractions_path() -> Path:
 
 def current_checkpoint_id() -> str:
     return os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
+
 
 
 def _load_json_model(model_cls: type[T], path: Path | str | None, default_path: Path) -> T:
@@ -151,7 +152,9 @@ def generate_extractions(
     root = base_dir or _REPO_ROOT
     ckpt = checkpoint_id or current_checkpoint_id()
     if engine is None:
-        engine = default_engine(ckpt)
+        ckpt_path = Path(ckpt)
+        resolved_ckpt = root / ckpt_path if not ckpt_path.is_absolute() and (root / ckpt_path).exists() else ckpt
+        engine = default_engine(resolved_ckpt)
 
     extractions: dict[str, ExtractionItem] = {}
     for sample in manifest.samples:

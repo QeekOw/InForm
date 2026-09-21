@@ -1,4 +1,5 @@
 import io
+import json
 import random
 import re
 import shutil
@@ -14,8 +15,38 @@ from inform.formulas import katch_mcardle_bmr
 from inform.inbody import InBodyPayload, SegmentalLean
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
-# Both devices render a full-page portrait clone of a real sheet.
-_WINDOW_SIZE = {"inbody_270": "1060,1320", "inbody_570": "1060,1440"}
+_WINDOW_SIZE = "1060,1680"
+_SHEET_JPEG_QUALITY = 92
+
+# Target geometry of a rendered sheet, shared by tests and
+# scripts/check_sheet_geometry.py so there is one definition of "done".
+# A real InBody printout is A4 portrait; the render is measured before
+# augmentation because that is what the template controls.
+#
+# ponytail: SHEET_ASPECT is a fact about A4 paper, but the tolerance and the
+# width floor are fixed judgement calls, not measurements. The floor is one
+# observed phone photo (2296 px, docs/ocr-eval-results.md); widen the sample
+# before trusting it as a distribution.
+SHEET_ASPECT = 210 / 297  # 0.707
+SHEET_ASPECT_TOLERANCE = 0.03
+MIN_SHEET_WIDTH_PX = 2300
+
+# Render at higher pixel density than the CSS layout so a synthetic sheet lands
+# at roughly the pixel width of a real phone photo (~2300 px). Donut resizes
+# every input onto its fixed 2560x1920 canvas, so this decides the *direction*
+# of that resize: at 1x the synthetic sheet was upscaled onto the canvas while
+# real photos are downscaled onto it, and the model learned to read soft,
+# interpolated text it then never sees at inference. Layout is unchanged --
+# this multiplies device pixels only.
+_DEVICE_SCALE_FACTOR = 2.5
+
+# Sheets are emitted as JPEG, not PNG. _augment's last step (_jpeg_noise) has
+# already JPEG-compressed the image, so PNG was storing those artifacts
+# losslessly at ~3x the cost (1.73 MB vs 0.58 MB per sheet; 8.4 GB vs 2.8 GB for
+# a 5,000-sheet run, which is the difference between fitting on a Kaggle disk and
+# not). It is also the format a real phone upload arrives in. subsampling=0
+# (4:4:4) keeps the coloured section headings crisp -- this is a document the
+# model has to read, so chroma detail on text edges is worth the few percent.
 
 # ponytail: fixed physiological ranges/proportions, not learned from data.
 # Tune against real InBody sheets if the synthetic distribution drifts.
@@ -71,18 +102,20 @@ _BROWSER_CANDIDATES = (
 )
 
 
-def generate_sheet(device: Literal["inbody_270", "inbody_570"], seed: int) -> tuple[bytes, InBodyPayload]:
+def generate_sheet(device: Literal["inbody_270"], seed: int) -> tuple[bytes, InBodyPayload]:
     """Render one synthetic InBody sheet + its exact ground-truth payload (ADR-0007)."""
     payload = _generate_values(device, seed)
     image = _render(device, payload)
     image = _augment(image, random.Random(seed))
 
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="JPEG", quality=_SHEET_JPEG_QUALITY, subsampling=0)
     return buffer.getvalue(), payload
 
 
-def _generate_values(device: Literal["inbody_270", "inbody_570"], seed: int) -> InBodyPayload:
+def _generate_values(device: Literal["inbody_270"], seed: int) -> InBodyPayload:
+    if device != "inbody_270":
+        raise ValueError("InBody 270 is the only supported synthetic device")
     rng = random.Random(seed)
 
     weight_kg = round(rng.uniform(*_WEIGHT_RANGE_KG), 1)
@@ -343,8 +376,18 @@ def label_json(payload: InBodyPayload) -> str:
     changes the training target and nothing that reads the label back.
     """
     decimals = _LIMB_DECIMALS[payload.source_device]
-    return _LIMB_IN_JSON.sub(
-        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{decimals}f}', payload.model_dump_json()
+    fields = payload.model_dump(mode="json")
+    label = json.dumps(
+        {"source_device": fields.pop("source_device"), **fields},
+        separators=(",", ":"),
+    )
+    label = _LIMB_IN_JSON.sub(
+        lambda m: f'"{m.group(1)}":{float(m.group(2)):.{decimals}f}', label
+    )
+    return re.sub(
+        r'"percent_body_fat":(-?\d+(?:\.\d+)?)',
+        lambda m: f'"percent_body_fat":"{float(m.group(1)):.1f}"',
+        label,
     )
 
 
@@ -373,7 +416,7 @@ def _find_browser() -> str:
     )
 
 
-def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload) -> Image.Image:
+def _render(device: Literal["inbody_270"], payload: InBodyPayload) -> Image.Image:
     html = _fill_template(device, payload)
     with tempfile.TemporaryDirectory() as tmp_dir:
         html_path = Path(tmp_dir) / "sheet.html"
@@ -387,13 +430,27 @@ def _render(device: Literal["inbody_270", "inbody_570"], payload: InBodyPayload)
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 f"--screenshot={png_path}",
-                f"--window-size={_WINDOW_SIZE[device]}",
+                # A profile dir of this render's own. Chrome shares the default
+                # profile across instances, and a second instance that finds the
+                # first alive hands off to it and exits 0 having written no
+                # screenshot -- so concurrent renders (sharded dataset
+                # generation) silently lose sheets without a non-zero exit.
+                f"--user-data-dir={Path(tmp_dir) / 'profile'}",
+                f"--window-size={_WINDOW_SIZE}",
+                f"--force-device-scale-factor={_DEVICE_SCALE_FACTOR}",
                 "--hide-scrollbars",
                 html_path.as_uri(),
             ],
             check=True,
             capture_output=True,
         )
+        if not png_path.exists():
+            raise RuntimeError(
+                f"{_find_browser()} exited 0 but wrote no screenshot for {device}. "
+                "Most often a profile clash between concurrent renders; each render "
+                "passes its own --user-data-dir, so check the browser install and "
+                "that the temp dir is writable."
+            )
         image = Image.open(png_path).convert("RGB").copy()
     return _crop_to_content(image)
 
@@ -411,6 +468,8 @@ def _augment(image: Image.Image, rng: random.Random) -> Image.Image:
     ~30% of sheets stay "easy" (mild, clean, colour) so the held-out synthetic
     number stays interpretable; the rest get the full real-photo treatment —
     grayscale B&W prints, a desk background, glare, stronger geometry (Q6).
+    Hard examples also span the 576--1200 px widths measured in the independent
+    real-photo confirmation set instead of only the original ~2300 px sample.
     """
     easy = rng.random() < 0.30
 
@@ -427,17 +486,25 @@ def _augment(image: Image.Image, rng: random.Random) -> Image.Image:
     if not easy:
         image = _glare(image, rng)
 
-    image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0, 0.8 if easy else 1.8)))
+    # Blur radius is in absolute pixels, so it must track the render resolution
+    # or raising _DEVICE_SCALE_FACTOR silently weakens the augmentation. These
+    # fractions reproduce the original 0.8 / 1.8 px ceilings at the ~1000 px
+    # render width they were tuned against.
+    blur_ceiling = (0.0008 if easy else 0.0018) * image.width
+    image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0, blur_ceiling)))
     image = ImageEnhance.Brightness(image).enhance(rng.uniform(0.9, 1.1) if easy else rng.uniform(0.8, 1.2))
     image = ImageEnhance.Contrast(image).enhance(rng.uniform(0.95, 1.05) if easy else rng.uniform(0.85, 1.15))
+    if not easy and rng.random() < 0.5:
+        target_width = rng.randint(576, 1200)
+        image.thumbnail((target_width, round(image.height * target_width / image.width)), Image.Resampling.LANCZOS)
     return _jpeg_noise(image, rng, quality_range=(80, 95) if easy else (55, 85))
 
 
 def _place_on_surface(image: Image.Image, rng: random.Random) -> Image.Image:
     """Paste the sheet onto a larger, darker 'desk' canvas with a random margin."""
     width, height = image.size
-    margin_x = int(width * rng.uniform(0.04, 0.12))
-    margin_y = int(height * rng.uniform(0.04, 0.12))
+    margin_x = int(width * rng.uniform(0.04, 0.28))
+    margin_y = int(height * rng.uniform(0.04, 0.20))
     shade = rng.randint(60, 120)
     desk = Image.new("RGB", (width + 2 * margin_x, height + 2 * margin_y), (shade, shade, shade + 2))
     desk.paste(image, (margin_x + rng.randint(-margin_x // 2, margin_x // 2), margin_y + rng.randint(-margin_y // 2, margin_y // 2)))

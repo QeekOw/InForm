@@ -2,13 +2,21 @@
 # run fast across many seeds. Only a couple of tests exercise the full
 # generate_sheet() render path, which shells out to a headless browser.
 import io
+import random
+import subprocess
 
+import pytest
 from PIL import Image
 
 from inform.synthetic import (
+    MIN_SHEET_WIDTH_PX,
+    SHEET_ASPECT,
+    SHEET_ASPECT_TOLERANCE,
+    _augment,
     _derive_render_values,
     _fill_template,
     _generate_values,
+    _render,
     generate_sheet,
     label_json,
 )
@@ -26,7 +34,7 @@ def _segmental_figures(html: str) -> tuple[str, str]:
 
 
 def test_lbm_matches_weight_times_one_minus_pbf():
-    for device in ("inbody_270", "inbody_570"):
+    for device in ("inbody_270",):
         for seed in _SEEDS:
             payload = _generate_values(device, seed)
             derived_lbm = payload.weight_kg * (1 - payload.percent_body_fat / 100)
@@ -34,14 +42,14 @@ def test_lbm_matches_weight_times_one_minus_pbf():
 
 
 def test_smm_is_less_than_lbm():
-    for device in ("inbody_270", "inbody_570"):
+    for device in ("inbody_270",):
         for seed in _SEEDS:
             payload = _generate_values(device, seed)
             assert payload.skeletal_muscle_mass_kg < payload.lean_body_mass_kg
 
 
 def test_bmr_matches_katch_mcardle_recompute():
-    for device in ("inbody_270", "inbody_570"):
+    for device in ("inbody_270",):
         for seed in _SEEDS:
             payload = _generate_values(device, seed)
             recomputed = 370 + 21.6 * payload.lean_body_mass_kg
@@ -49,7 +57,7 @@ def test_bmr_matches_katch_mcardle_recompute():
 
 
 def test_segments_sum_to_lbm():
-    for device in ("inbody_270", "inbody_570"):
+    for device in ("inbody_270",):
         for seed in _SEEDS:
             payload = _generate_values(device, seed)
             segments = payload.segmental_lean
@@ -63,13 +71,9 @@ def test_segments_sum_to_lbm():
             assert abs(total - payload.lean_body_mass_kg) <= _TOLERANCE
 
 
-def test_both_devices_report_visceral_fat():
-    # ADR-0004 corrected (issue #13): the real InBody 270 *does* print a
-    # Visceral Fat Level (confirmed on two real 270 sheets), so both devices
-    # now populate it. The schema keeps it optional for real-world absence.
+def test_270_reports_visceral_fat():
     for seed in _SEEDS:
         assert _generate_values("inbody_270", seed).visceral_fat_level is not None
-        assert _generate_values("inbody_570", seed).visceral_fat_level is not None
 
 
 def test_some_seeds_produce_deliberate_bilateral_asymmetry():
@@ -78,21 +82,21 @@ def test_some_seeds_produce_deliberate_bilateral_asymmetry():
         pairs = ((s.left_arm_kg, s.right_arm_kg), (s.left_leg_kg, s.right_leg_kg))
         return max(abs(left - right) / ((left + right) / 2) * 100 for left, right in pairs)
 
-    deviations = [_max_pair_deviation_pct(_generate_values("inbody_570", seed)) for seed in _SEEDS]
+    deviations = [_max_pair_deviation_pct(_generate_values("inbody_270", seed)) for seed in _SEEDS]
     assert any(deviation > 5.0 for deviation in deviations)
 
 
 def test_same_seed_is_deterministic():
-    first = _generate_values("inbody_570", seed=42)
-    second = _generate_values("inbody_570", seed=42)
+    first = _generate_values("inbody_270", seed=42)
+    second = _generate_values("inbody_270", seed=42)
     assert first == second
 
 
-def test_generate_sheet_returns_png_matching_device_window():
-    image_bytes, payload = generate_sheet("inbody_570", seed=7)
+def test_generate_sheet_returns_jpeg_for_the_requested_device():
+    image_bytes, payload = generate_sheet("inbody_270", seed=7)
     image = Image.open(io.BytesIO(image_bytes))
-    assert image.format == "PNG"
-    assert payload.source_device == "inbody_570"
+    assert image.format == "JPEG"
+    assert payload.source_device == "inbody_270"
 
 
 def test_ground_truth_matches_rendered_template_values():
@@ -100,8 +104,8 @@ def test_ground_truth_matches_rendered_template_values():
     # _generate_values() call, and _fill_template renders directly from the
     # payload's own fields — so the rendered text and the ground truth JSON
     # can never diverge (ADR-0007).
-    _, payload = generate_sheet("inbody_570", seed=7)
-    html = _fill_template("inbody_570", payload)
+    _, payload = generate_sheet("inbody_270", seed=7)
+    html = _fill_template("inbody_270", payload)
 
     assert str(payload.weight_kg) in html
     assert str(payload.lean_body_mass_kg) in html
@@ -127,26 +131,6 @@ def test_270_template_includes_visceral_fat_and_fat_free_mass():
     assert "Fat Free Mass" in html_270
 
 
-def test_570_template_uses_lean_body_mass_not_fat_free_mass():
-    # The adult 570 sheet labels LBM as "Lean Body Mass" (270 uses "Fat Free
-    # Mass"); both map to the same $lean_body_mass_kg placeholder.
-    html_570 = _fill_template("inbody_570", _generate_values("inbody_570", seed=3))
-    assert "Lean Body Mass" in html_570
-    assert "Fat Free Mass" not in html_570
-    assert "Visceral Fat" in html_570
-
-
-def test_570_body_water_split_is_coherent():
-    # The 570 Body Composition block cross-adds like a real sheet:
-    # ICW + ECW = TBW; TBW + Dry Lean = LBM; LBM + Body Fat = Weight.
-    for seed in _SEEDS:
-        payload = _generate_values("inbody_570", seed)
-        d = _derive_render_values(payload)
-        assert abs(d["intracellular_water_l"] + d["extracellular_water_l"] - d["total_body_water_l"]) <= _TOLERANCE
-        assert abs(d["total_body_water_l"] + d["dry_lean_mass_kg"] - payload.lean_body_mass_kg) <= 0.15
-        assert abs(payload.lean_body_mass_kg + d["body_fat_mass_kg"] - payload.weight_kg) <= _TOLERANCE
-
-
 def test_270_ground_truth_matches_rendered_template_values():
     _, payload = generate_sheet("inbody_270", seed=3)
     html = _fill_template("inbody_270", payload)
@@ -166,18 +150,15 @@ def test_270_ground_truth_matches_rendered_template_values():
 _LIMBS = ("left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg")
 
 
-def test_270_limbs_carry_two_decimals_and_570_limbs_one():
-    # A real 270 prints limb lean mass to two decimals (#59). Nothing real
-    # settles the 570's precision, so it keeps one.
+def test_270_limbs_carry_two_decimals():
+    # A real 270 prints limb lean mass to two decimals (#59).
     hundredths = set()
     for seed in _SEEDS:
         seg_270 = _generate_values("inbody_270", seed).segmental_lean
-        seg_570 = _generate_values("inbody_570", seed).segmental_lean
         for limb in _LIMBS:
             value = getattr(seg_270, limb)
             assert round(value, 2) == value, (seed, limb, value)
             hundredths.add(round(value * 100) % 10)
-            assert round(getattr(seg_570, limb), 1) == getattr(seg_570, limb), (seed, limb)
     assert len(hundredths) > 5, "270 limbs must vary in their second decimal"
 
 
@@ -203,14 +184,14 @@ def test_270_label_spells_limbs_the_way_the_sheet_prints_them():
 
     assert '"left_arm_kg":3.40' in label
     assert '"right_leg_kg":8.00' in label
+    assert f'"percent_body_fat":"{payload.percent_body_fat:.1f}"' in label
     assert f'"trunk_kg":{segmental.trunk_kg}' in label
     assert type(payload).model_validate_json(label) == payload
 
 
-def test_570_label_is_the_plain_payload_json():
-    payload = _generate_values("inbody_570", seed=3)
-
-    assert label_json(payload) == payload.model_dump_json()
+def test_retired_570_cannot_generate():
+    with pytest.raises(ValueError, match="only supported"):
+        _generate_values("inbody_570", seed=3)
 
 
 def test_generate_dataset_writes_the_label_spelling(tmp_path, monkeypatch):
@@ -224,6 +205,18 @@ def test_generate_dataset_writes_the_label_spelling(tmp_path, monkeypatch):
     assert (tmp_path / "inbody_270_000000.json").read_text(encoding="utf-8") == label_json(payload)
 
 
+def test_training_label_puts_device_identity_first():
+    label = label_json(_generate_values("inbody_270", seed=3))
+
+    assert label.index('"source_device"') < label.index('"weight_kg"')
+
+
+def test_augment_keeps_high_resolution_and_adds_low_resolution_phone_photos():
+    image = Image.new("RGB", (1600, 2260), "white")
+    widths = [_augment(image, random.Random(seed)).width for seed in range(30)]
+
+    assert any(576 <= width <= 1200 for width in widths)
+    assert any(width > 1200 for width in widths)
 def test_derived_distractors_are_coherent_and_deterministic():
     # Q3: distractor values derive coherently from the ground truth so a
     # rendered sheet cross-adds like a real one and is human-verifiable.
@@ -242,6 +235,56 @@ def test_derived_distractors_are_coherent_and_deterministic():
         # Deterministic given the same payload.
         assert _derive_render_values(payload) == d
 
+
+def test_rendered_sheets_are_a4_portrait_at_phone_photo_resolution():
+    # Donut learns whatever geometry the synthetic set has. A nearly-square
+    # sheet trained against real A4 photos is the diagnosed cause of the poor
+    # real-world reads (docs/ocr-eval-results.md), so the template's own
+    # geometry is locked here and not only by scripts/check_sheet_geometry.py.
+    for device in ("inbody_270",):
+        rendered = _render(device, _generate_values(device, seed=9001))
+        aspect = rendered.width / rendered.height
+        assert abs(aspect - SHEET_ASPECT) <= SHEET_ASPECT_TOLERANCE, (
+            f"{device} rendered {rendered.width}x{rendered.height} (aspect {aspect:.3f})"
+        )
+        assert rendered.width >= MIN_SHEET_WIDTH_PX, f"{device} rendered {rendered.width}px wide"
+
+
+def test_render_gives_each_browser_run_its_own_profile_dir(monkeypatch):
+    # Concurrent renders (sharded dataset generation) must not share Chrome's
+    # default profile. When they do, a second instance hands off to the first
+    # and exits 0 without writing the screenshot, which surfaced as a missing
+    # PNG 574 sheets into a shard rather than as an error.
+    seen = []
+
+    def fake_run(argv, **kwargs):
+        seen.append(argv)
+        png = next(a.split("=", 1)[1] for a in argv if a.startswith("--screenshot="))
+        Image.new("RGB", (40, 60), "white").save(png)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _render("inbody_270", _generate_values("inbody_270", seed=1))
+    _render("inbody_270", _generate_values("inbody_270", seed=2))
+
+    profiles = [
+        next(a.split("=", 1)[1] for a in argv if a.startswith("--user-data-dir="))
+        for argv in seen
+    ]
+    assert len(profiles) == 2
+    assert profiles[0] != profiles[1], "two renders shared one Chrome profile"
+
+
+def test_render_fails_loudly_when_the_browser_writes_no_screenshot(monkeypatch):
+    # The browser can exit 0 and produce nothing. That used to surface as a
+    # FileNotFoundError from inside PIL, which says nothing about the cause;
+    # ADR-0008's fail-closed posture wants the real reason named.
+    monkeypatch.setattr(
+        subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0)
+    )
+
+    with pytest.raises(RuntimeError, match="no screenshot"):
+        _render("inbody_270", _generate_values("inbody_270", seed=1))
 
 
 def test_270_segmental_figures_are_shape_indistinguishable():

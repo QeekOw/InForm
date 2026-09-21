@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -36,6 +37,7 @@ def load_engine(checkpoint_source: str | Path):
     import torch
     from PIL import Image
 
+    from inform.preprocess import crop_if_misframed
     from inform.training.train import load_checkpoint
 
     source = checkpoint_source.as_posix() if isinstance(checkpoint_source, Path) else str(checkpoint_source)
@@ -51,6 +53,10 @@ def load_engine(checkpoint_source: str | Path):
         if isinstance(image_path, bytes):
             image_path = io.BytesIO(image_path)
         image = Image.open(image_path).convert("RGB")
+        # A phone photo is a picture of a table with a sheet on it; the model
+        # trained on sheets. Declines to crop anything already framed like the
+        # training set, so synthetic input is untouched (#53).
+        image = crop_if_misframed(image)
         pixel_values = processor(image, return_tensors="pt").pixel_values.to(device)
         outputs = model.generate(
             pixel_values,
@@ -79,6 +85,8 @@ def _to_partial(decoded: str) -> PartialInBody:
     try:
         data = json.loads(body)
     except json.JSONDecodeError:
+        data = _salvage(body)
+    if data is None:
         return PartialInBody()
     if not isinstance(data, dict):
         return PartialInBody()
@@ -92,3 +100,71 @@ def _to_partial(decoded: str) -> PartialInBody:
         # block, which then reads as unread — acceptable, still no guess.
         bad = {str(error["loc"][0]) for error in exc.errors()}
         return PartialInBody.model_validate({k: v for k, v in data.items() if k not in bad})
+
+
+def _salvage(body: str) -> dict | None:
+    """Recover the fields a malformed generation already committed to.
+
+    Donut stops mid-object often enough to matter: on the real-photo hold-out it
+    emitted every field correctly and then ended before the closing brace, and
+    discarding that read cost the whole sheet — every core field and the entire
+    segmental lean block — over one missing character. The ValidationError branch
+    in `_to_partial` above already keeps what parsed; this keeps the syntax-error
+    path consistent with it.
+
+    Cuts only ever fall on a **field boundary**, because every prefix of a number
+    is itself a number: truncating `58.0` at `5` would parse cleanly and hand the
+    caller a fabricated value, which is the one thing ADR-0008 forbids. Trailing
+    content past the last boundary is dropped and reads unread. Returns None when
+    nothing parses.
+    """
+    for cut, depth in _field_boundaries(body):
+        try:
+            data = json.loads(body[:cut] + "}" * depth)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def _field_boundaries(body: str) -> list[tuple[int, int]]:
+    """Every point the object can be truncated at without inventing a value.
+
+    Yields `(cut, depth)` in preference order — longest read first — where `cut`
+    slices `body` and `depth` is how many braces are still open there. A boundary
+    is either the end of the whole body (only when it already ends on a closed
+    string or object, never on a bare number) or a comma separating two members.
+    """
+    boundaries: list[tuple[int, int]] = []
+    depth = in_string = escaped = 0
+    last = ""
+    commas: list[tuple[int, int]] = []
+    for i, ch in enumerate(body):
+        if in_string:
+            if escaped:
+                escaped = 0
+            elif ch == "\\":
+                escaped = 1
+            elif ch == '"':
+                in_string = 0
+                last = '"'
+            continue
+        if ch == '"':
+            in_string = 1
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            last = "}"
+        elif ch == ",":
+            commas.append((i, depth))
+        if not ch.isspace() and ch not in '",{}':
+            last = ch
+    # A body ending on a closed string or object is complete up to its final
+    # member; one ending on a digit may be a number cut in half, so it is not a
+    # boundary at all and only the commas below are safe.
+    if depth >= 1 and last in ('"', "}"):
+        boundaries.append((len(body), depth))
+    boundaries.extend((i, d) for i, d in reversed(commas) if d >= 1)
+    return boundaries
