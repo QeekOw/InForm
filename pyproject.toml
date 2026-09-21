@@ -14,6 +14,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+    # fastapi.testclient.TestClient is an httpx client under the hood;
+    # tests/test_api_*.py will not import without it.
+    "httpx",
 ]
 # Heavy (GPU-oriented) deps for Donut fine-tuning — kept out of the base
 # install so the extraction seam (Module 1's runtime path) stays light.
