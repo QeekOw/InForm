@@ -106,7 +106,7 @@ python scripts/demo_pipeline.py path/to/inbody_sheet.jpg \
     --age 30 --sex female --activity 1.55 --goal fat_loss
 ```
 
-By default the photo is read on your machine by the self-hosted Donut engine, so you need its checkpoint (set `INFORM_DONUT_CKPT`, default `models/donut-270-v9`) and the training extra (`pip install -e ".[training]"`). If you would rather read the photo with the cloud VLM, add `--engine vlm`, which uses your OpenAI key instead of a local checkpoint. Either way the plan-writing step uses the OpenAI key; if it is missing or the model ever tries to alter a number, InForm falls back to the deterministic plan instead of giving you a wrong one.
+By default the photo is read on your machine by the self-hosted Donut engine, so you need its checkpoint (set `INFORM_DONUT_CKPT`, default `models/donut-270-v9`) and the training extra (`pip install -e ".[training]"`). The checkpoint is not in the repo: it is the `checkpoint-3750` output of the [v9 training notebook](https://www.kaggle.com/code/qeekowen/module-1-donut-270-v9-training) (inputs: [cera-synth-v9-270](https://www.kaggle.com/datasets/qeekowen/cera-synth-v9-270)), which you download and point `INFORM_DONUT_CKPT` at. Without it the engine fails closed rather than sending your photo to the cloud. If you would rather read the photo with the cloud VLM, add `--engine vlm`, which uses your OpenAI key instead of a local checkpoint. Either way the plan-writing step uses the OpenAI key; if it is missing or the model ever tries to alter a number, InForm falls back to the deterministic plan instead of giving you a wrong one.
 
 ## How it works
 

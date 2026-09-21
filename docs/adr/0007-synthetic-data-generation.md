@@ -217,4 +217,3 @@ training-target representation, not its rendered spelling, physiology, layout, o
 The experiment is falsifiable: a failed gate ends this formatting line of investigation rather
 than adding another synthetic-data variation. Tests cover rendered one-decimal PBF spelling and
 quoted-target parser compatibility without using real hold-out data.
-

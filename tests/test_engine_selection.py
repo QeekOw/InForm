@@ -155,6 +155,7 @@ def test_extract_inbody_resolves_default_engine_when_none(monkeypatch):
 
 @pytest.mark.skipif(not _REAL_CKPT.exists(), reason="Donut checkpoint not downloaded")
 def test_default_engine_round_trips_real_checkpoint(tmp_path):
+    pytest.importorskip("torch", reason='needs the training extra: pip install -e ".[training]"')
     # Only runs when the real 809 MB checkpoint is on disk (needs the training
     # extra). Drives the fine-tune on a synthetic sheet (the distribution it
     # trained on) and asserts it reads the known ground truth back, proving

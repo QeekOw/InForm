@@ -26,5 +26,12 @@ make its quality unmeasurable and dilute the controlled v8 experiment.
 
 ## Consequences
 
+The `source_device` field keeps `inbody_570` as a *parseable* value even though nothing
+generates or accepts it any more. `holdout.replay_engine` validates the archived read files in
+`data/real_holdout/` back into `PartialInBody`, and some of those pre-v8 checkpoints did emit
+`inbody_570`; narrowing the literal would make those archives unreplayable and so unable to be
+compared against a new checkpoint. Runtime still refuses a non-270 sheet, so this is a parsing
+allowance for archives, not a supported device.
+
 The supported-device claim now matches the available real-photo evidence. Reintroducing 570
 requires new real-photo evidence and a fresh ADR; it is not a configuration switch.
