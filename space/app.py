@@ -75,7 +75,7 @@ def build_app(engine: Engine | None = None):
         title="InForm — Donut Engine (OCR)",
         description=(
             "Self-hosted Document Understanding Transformer (Donut) fine-tuned on "
-            "InBody 270 and 570 result sheets. Outputs deterministic extracted data, "
+            "InBody 270 result sheets. Outputs deterministic extracted data, "
             "unread fields, and flagged cross-checks. Never calls cloud VLM."
         ),
         api_name="predict",

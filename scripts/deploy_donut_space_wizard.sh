@@ -169,6 +169,8 @@ TOTAL_STAGES=5
 PYTHON_BIN="python"
 if [[ -f ".venv/Scripts/python.exe" ]]; then
   PYTHON_BIN=".venv/Scripts/python.exe"
+elif [[ -f "../.venv/Scripts/python.exe" ]]; then
+  PYTHON_BIN="../.venv/Scripts/python.exe"
 elif [[ -f "/mnt/c/Users/sukse/InForm/.venv/Scripts/python.exe" ]]; then
   PYTHON_BIN="/mnt/c/Users/sukse/InForm/.venv/Scripts/python.exe"
 elif [[ -f ".venv/bin/python" ]]; then
@@ -215,22 +217,27 @@ set_var INFORM_DONUT_CKPT "$HF_MODEL_REPO"
 
 # ── Stage 3: Upload Model Weights ─────────────────────────────────────────
 stage "Upload Donut Checkpoint"
-say "We will now upload the trained weights from 'models/donut-both-v3' (809 MB)"
+DEFAULT_LOCAL_CKPT="models/donut-270-v9"
+step "Enter the local checkpoint directory containing trained weights to upload."
+ask LOCAL_CKPT_DIR "Local checkpoint directory (default: ${DEFAULT_LOCAL_CKPT}):"
+LOCAL_CKPT_DIR="${LOCAL_CKPT_DIR:-$DEFAULT_LOCAL_CKPT}"
+
+say "We will now upload the trained weights from '${LOCAL_CKPT_DIR}' (~809 MB)"
 say "to Hugging Face Hub (${HF_MODEL_REPO})."
 note "This includes model.safetensors, config.json, tokenizer.json, and processor files."
 
-if [[ -d "models/donut-both-v3" ]]; then
-  if confirm "Ready to upload models/donut-both-v3 to ${HF_MODEL_REPO}?"; then
+if [[ -d "$LOCAL_CKPT_DIR" ]]; then
+  if confirm "Ready to upload ${LOCAL_CKPT_DIR} to ${HF_MODEL_REPO}?"; then
     say "Uploading weights to Hugging Face Hub (this may take a couple of minutes)..."
-    "$PYTHON_BIN" -m huggingface_hub.cli.hf upload "$HF_MODEL_REPO" models/donut-both-v3 . --repo-type model
+    "$PYTHON_BIN" -m huggingface_hub.cli.hf upload "$HF_MODEL_REPO" "$LOCAL_CKPT_DIR" . --repo-type model --exclude "*.pt" --exclude "*.pth" --exclude "training_args.bin"
     say "Weights uploaded successfully!"
   else
     warn "Skipped model upload. Remember to run:"
-    note "  $PYTHON_BIN -m huggingface_hub.cli.hf upload ${HF_MODEL_REPO} models/donut-both-v3 . --repo-type model"
+    note "  $PYTHON_BIN -m huggingface_hub.cli.hf upload ${HF_MODEL_REPO} ${LOCAL_CKPT_DIR} . --repo-type model --exclude \"*.pt\" --exclude \"*.pth\" --exclude \"training_args.bin\""
   fi
 else
-  warn "Local directory 'models/donut-both-v3' not found!"
-  note "Ensure your trained checkpoint is placed at models/donut-both-v3 before uploading."
+  warn "Local directory '${LOCAL_CKPT_DIR}' not found!"
+  note "Ensure your trained checkpoint is placed at ${LOCAL_CKPT_DIR} before uploading."
 fi
 pause "Press Enter to proceed to Space deployment."
 
@@ -279,6 +286,7 @@ stage "Live Verification & Timing Benchmark"
 say "Verifying inference against model on Hub (${HF_MODEL_REPO})..."
 
 say "Running benchmark probe on 'tests/fixtures/inbody_sample.png'..."
+BENCHMARK_OUT=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/inform_benchmark.txt")
 "$PYTHON_BIN" -c "
 import os, sys, dotenv, time
 dotenv.load_dotenv()
@@ -297,10 +305,10 @@ t3 = time.time()
 
 print(f'BENCHMARK_COLD={t1-t0:.2f}s')
 print(f'BENCHMARK_WARM={t3-t2:.2f}s')
-" > /tmp/inform_benchmark.txt 2>&1 || true
+" > "$BENCHMARK_OUT" 2>&1 || true
 
-if [[ -f /tmp/inform_benchmark.txt ]]; then
-  cat /tmp/inform_benchmark.txt
+if [[ -f "$BENCHMARK_OUT" ]]; then
+  cat "$BENCHMARK_OUT"
 fi
 
 ask COLD_START_TIME "Observed cold start / load time (e.g. 17.6s):"
@@ -337,12 +345,12 @@ else
 fi
 
 if command -v gh >/dev/null 2>&1; then
-  if confirm "Post benchmark comment to GitHub Issue #33?"; then
-    gh issue comment 33 -R QeekOw/InForm --body "$COMMENT_BODY"
-    say "Posted benchmark comment to Issue #33!"
+  if confirm "Post benchmark comment to GitHub Issue #64 / #33?"; then
+    gh issue comment 64 -R QeekOw/InForm --body "$COMMENT_BODY" 2>/dev/null || gh issue comment 33 -R QeekOw/InForm --body "$COMMENT_BODY"
+    say "Posted benchmark comment!"
   fi
 else
-  say "Record this comment on Issue #33:"
+  say "Record this comment on Issue #64 / #33:"
   note "$COMMENT_BODY"
 fi
 
