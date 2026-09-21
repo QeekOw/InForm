@@ -1,6 +1,6 @@
 {
-  "checkpoint": "models/donut-both-v3",
-  "generated_at": "2026-09-12T17:46:59.077116+00:00",
+  "checkpoint": "models/donut-270-v9",
+  "generated_at": "2026-09-21T00:40:34.620579+00:00",
   "extractions": {
     "synthetic_270_clean": {
       "status": "complete",
@@ -29,26 +29,23 @@
       "status": "complete",
       "data": {
         "weight_kg": 86.9,
-        "lean_body_mass_kg": 7.0,
+        "lean_body_mass_kg": 61.2,
         "percent_body_fat": 29.5,
         "skeletal_muscle_mass_kg": 34.8,
         "basal_metabolic_rate_kcal": 1693.0,
         "segmental_lean": {
-          "left_arm_kg": 3.5,
-          "right_arm_kg": 3.7,
+          "left_arm_kg": 3.53,
+          "right_arm_kg": 3.5,
           "left_leg_kg": 9.4,
           "right_leg_kg": 9.44,
           "trunk_kg": 27.6
         },
-        "visceral_fat_level": 10,
+        "visceral_fat_level": null,
         "source_device": "inbody_270"
       },
       "unread": [],
       "flagged": [
-        "weight_kg",
-        "percent_body_fat",
-        "lean_body_mass_kg",
-        "basal_metabolic_rate_kcal"
+        "segmental_lean.right_arm_kg"
       ],
       "error": null,
       "message": null
@@ -57,13 +54,13 @@
       "status": "complete",
       "data": {
         "weight_kg": 84.8,
-        "lean_body_mass_kg": 76.0,
+        "lean_body_mass_kg": 62.5,
         "percent_body_fat": 26.3,
         "skeletal_muscle_mass_kg": 35.6,
         "basal_metabolic_rate_kcal": 1721.0,
         "segmental_lean": {
-          "left_arm_kg": 3.5,
-          "right_arm_kg": 3.3,
+          "left_arm_kg": 3.59,
+          "right_arm_kg": 3.53,
           "left_leg_kg": 9.84,
           "right_leg_kg": 9.88,
           "trunk_kg": 27.6
@@ -72,34 +69,17 @@
         "source_device": "inbody_270"
       },
       "unread": [],
-      "flagged": [
-        "weight_kg",
-        "percent_body_fat",
-        "lean_body_mass_kg",
-        "basal_metabolic_rate_kcal"
-      ],
+      "flagged": [],
       "error": null,
       "message": null
     },
     "refused_non_sheet": {
       "status": "refused",
       "data": null,
-      "unread": [
-        "weight_kg",
-        "lean_body_mass_kg",
-        "percent_body_fat",
-        "skeletal_muscle_mass_kg",
-        "basal_metabolic_rate_kcal",
-        "source_device",
-        "segmental_lean.left_arm_kg",
-        "segmental_lean.right_arm_kg",
-        "segmental_lean.left_leg_kg",
-        "segmental_lean.right_leg_kg",
-        "segmental_lean.trunk_kg"
-      ],
+      "unread": [],
       "flagged": [],
-      "error": "missing_required_fields",
-      "message": "Could not confidently read: weight_kg, lean_body_mass_kg, percent_body_fat, skeletal_muscle_mass_kg, basal_metabolic_rate_kcal, source_device, segmental_lean.left_arm_kg, segmental_lean.right_arm_kg, segmental_lean.left_leg_kg, segmental_lean.right_leg_kg, segmental_lean.trunk_kg. Please re-upload a clearer photo."
+      "error": "not_an_inbody_sheet",
+      "message": "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 sheet."
     }
   }
 }

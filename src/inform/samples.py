@@ -145,7 +145,9 @@ def generate_extractions(
     root = base_dir or _REPO_ROOT
     ckpt = checkpoint_id or current_checkpoint_id()
     if engine is None:
-        engine = default_engine(ckpt)
+        ckpt_path = Path(ckpt)
+        resolved_ckpt = root / ckpt_path if not ckpt_path.is_absolute() and (root / ckpt_path).exists() else ckpt
+        engine = default_engine(resolved_ckpt)
 
     extractions: dict[str, ExtractionItem] = {}
     for sample in manifest.samples:

@@ -10,19 +10,19 @@
     },
     {
       "id": "real_270_clean",
-      "name": "Real InBody 270 Printout (Redacted, Misread LBM)",
+      "name": "Real InBody 270 Printout (Redacted, Single-Decimal Arm Flag)",
       "provenance": "real",
       "source_device": "inbody_270",
       "image_path": "data/samples/real_270_clean.png",
-      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Triggers cross-check flags due to misread LBM."
+      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Core metrics are read accurately, with a warning flag on single-decimal arm precision."
     },
     {
       "id": "real_270_flagged",
-      "name": "Real InBody 270 Printout (Flagged LBM, Redacted)",
+      "name": "Real InBody 270 Printout (Redacted, Clean Read)",
       "provenance": "real",
       "source_device": "inbody_270",
       "image_path": "data/samples/real_270_flagged.png",
-      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). Triggers deterministic physiological cross-check flags."
+      "description": "Genuine InBody 270 printout held with subject consent; member ID and gym name are fully redacted (ADR-0011). All core and segmental values pass validation cleanly under V9."
     },
     {
       "id": "refused_non_sheet",
