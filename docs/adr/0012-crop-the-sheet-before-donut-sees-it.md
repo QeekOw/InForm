@@ -127,7 +127,12 @@ genuinely breaks the mask.
   geometry, not real photo texture; they say what the detector does on a dark desk, not how
   well it does it. `tests/test_preprocess.py` now carries one case per input #54 named, so
   the next person to move a threshold finds out what it costs.
-- **Outstanding: the no-regression run.** Every guard added here can only decline more, and
-  a declined crop costs a real upload ~10 points of accuracy. `python -m inform.holdout
-  --data-dir data/real_holdout` must be re-run on the 12 + 5 real photos and show the cropped
-  numbers unchanged. That needs the machine holding the photos; it is not verified here.
+- **The no-regression check is a test, and it skips where the photos are not.** Every guard
+  added here can only decline more, and a declined crop costs a real upload ~10 points of
+  accuracy — far more than the silent error the guards buy back. So
+  `test_the_guards_decline_nothing_the_real_holdout_already_cropped` asserts that no photo
+  which cropped before declines now, and skips with a named path where `data/real_holdout`
+  is absent. It checks the crop decision rather than the scored read: if every photo still
+  crops to the same box, the scored numbers are unchanged by construction, so this needs no
+  checkpoint, no torch and no GPU. **It has not run against the real photos yet** — it is
+  green only where they exist, which is the owner's machine.

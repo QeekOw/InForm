@@ -1,8 +1,18 @@
 """The sheet has to come out of the frame before Donut sees it (#53)."""
 
+from pathlib import Path
+
+import pytest
 from PIL import Image, ImageDraw
 
-from inform.preprocess import crop_if_misframed, crop_to_sheet, sheet_box
+from inform.preprocess import (
+    _MIN_ASPECT_GAIN,
+    _aspect_gain,
+    _is_plausible_sheet,
+    crop_if_misframed,
+    crop_to_sheet,
+    sheet_box,
+)
 
 # A phone frame: 9:16, a wooden table, a near-A4 sheet lying on it.
 _FRAME = (574, 1020)
@@ -189,3 +199,39 @@ def test_the_untested_surfaces_all_fail_towards_no_crop():
     # behaviour that shipped before this module, rather than to half a sheet.
     for description, photo in _surfaces_and_lights().items():
         assert crop_if_misframed(photo) is photo, description
+
+
+# The real photos are one consenting subject's health records and live outside
+# the repo (ADR-0011), so this runs only on a machine that holds them.
+_REAL_HOLDOUT = Path(__file__).resolve().parents[1] / "data" / "real_holdout"
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+
+
+@pytest.mark.skipif(
+    not _REAL_HOLDOUT.is_dir(),
+    reason=f"needs the real hold-out photos at {_REAL_HOLDOUT}",
+)
+def test_the_guards_decline_nothing_the_real_holdout_already_cropped():
+    """The guards may only ever decline, so they have to decline nothing real.
+
+    A declined crop costs a real upload ~10 points of accuracy (ADR-0012), which
+    is far more than the silent error the guards buy back. Checking the crop
+    decision rather than the scored read is deliberate: if every photo that
+    cropped before still crops to the same box, the scored numbers are unchanged
+    by construction, and this needs no checkpoint, no torch and no GPU.
+    """
+    photos = sorted(p for p in _REAL_HOLDOUT.rglob("*") if p.suffix.lower() in _IMAGE_SUFFIXES)
+    assert photos, f"no images under {_REAL_HOLDOUT}"
+
+    declined = []
+    for path in photos:
+        image = Image.open(path).convert("RGB")
+        box = sheet_box(image)
+        if _aspect_gain(image, box) >= _MIN_ASPECT_GAIN and not _is_plausible_sheet(image, box):
+            declined.append(path.name)
+
+    assert not declined, (
+        f"{len(declined)} of {len(photos)} hold-out photos cropped before the #54 guards and "
+        f"do not now: {', '.join(declined)}. Either a threshold is too tight, or these photos "
+        f"really are cut off at the frame edge -- check the crop by eye before loosening it."
+    )
