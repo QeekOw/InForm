@@ -82,3 +82,110 @@ def test_a_frame_with_no_sheet_is_never_cropped():
     blank = Image.new("RGB", _FRAME, _WOOD)
 
     assert crop_if_misframed(blank) is blank
+
+
+# The inputs #54 lists as never tried. Flat colour, so these exercise the paper
+# mask and the guards rather than real photo texture -- they say what the
+# detector does on a dark desk, not how well it does it.
+
+
+def _cut_off_at_the_edge() -> Image.Image:
+    """A sheet running past the right edge of the frame."""
+    image = Image.new("RGB", _FRAME, _WOOD)
+    ImageDraw.Draw(image).rectangle((150, 100, 700, 726), fill=_PAPER)
+    return image
+
+
+def _bright_card_on_a_dark_desk() -> Image.Image:
+    """Something small, bright and sheet-shaped that is not the sheet."""
+    image = Image.new("RGB", _FRAME, (28, 28, 30))
+    ImageDraw.Draw(image).rectangle((230, 420, 330, 560), fill=_PAPER)
+    return image
+
+
+def test_a_sheet_cut_off_by_the_frame_is_not_cropped():
+    # The dangerous case: the detector confidently bounds the visible part, the
+    # crop improves the aspect (+0.104, over the 0.10 threshold), and Donut gets
+    # a sheet with its right third missing -- which it reads confidently and the
+    # cross-checks have nothing to object to.
+    photo = _cut_off_at_the_edge()
+
+    assert crop_if_misframed(photo) is photo
+
+
+def test_a_small_bright_object_is_not_mistaken_for_the_sheet():
+    # Aspect gain is +0.145 here, the highest of any case measured. Area is what
+    # separates it: 2% of the frame against ~60% for a real hold-out sheet.
+    photo = _bright_card_on_a_dark_desk()
+
+    assert crop_if_misframed(photo) is photo
+
+
+def test_a_sheet_on_a_dark_desk_is_still_cropped():
+    # The guards may only ever decline, so the case the module exists for has to
+    # survive them on a surface other than the wooden table it was tuned on.
+    photo = Image.new("RGB", _FRAME, (28, 28, 30))
+    ImageDraw.Draw(photo).rectangle(_SHEET, fill=_PAPER)
+
+    assert crop_if_misframed(photo).size != photo.size
+
+
+def test_a_sheet_on_a_bright_placemat_is_cropped_to_include_the_whole_sheet():
+    # The mask takes the placemat for paper too, so the box is too big. That is
+    # the harmless direction: the crop still contains every value on the sheet.
+    photo = Image.new("RGB", _FRAME, _WOOD)
+    draw = ImageDraw.Draw(photo)
+    draw.rectangle((40, 100, 534, 820), fill=(230, 228, 225))
+    draw.rectangle((120, 200, 450, 700), fill=_PAPER)
+
+    left, top, right, bottom = sheet_box(photo)
+
+    assert crop_if_misframed(photo).size != photo.size
+    assert left <= 120 and top <= 200
+    assert right >= 450 and bottom >= 700
+
+
+def _surfaces_and_lights() -> dict[str, Image.Image]:
+    """One frame per untested input in #54, keyed by what it is."""
+    scan = Image.new("RGB", (1240, 1754), _PAPER)
+
+    night = Image.new("RGB", _FRAME, (40, 30, 20))
+    ImageDraw.Draw(night).rectangle(_SHEET, fill=(118, 96, 64))
+
+    two_sheets = Image.new("RGB", _FRAME, _WOOD)
+    draw = ImageDraw.Draw(two_sheets)
+    draw.rectangle((30, 140, 270, 726), fill=_PAPER)
+    draw.rectangle((310, 140, 550, 726), fill=_PAPER)
+
+    patterned = Image.new("RGB", _FRAME, _WOOD)
+    draw = ImageDraw.Draw(patterned)
+    for y in range(0, _FRAME[1], 80):
+        draw.rectangle((0, y, _FRAME[0], y + 30), fill=(225, 225, 228))
+    draw.rectangle(_SHEET, fill=_PAPER)
+
+    glare = _photo()
+    ImageDraw.Draw(glare).rectangle((0, 300, _FRAME[0], 420), fill=(252, 252, 252))
+
+    white_desk = Image.new("RGB", _FRAME, (248, 248, 250))
+    ImageDraw.Draw(white_desk).rectangle(_SHEET, fill=_PAPER)
+
+    against_clothing = Image.new("RGB", _FRAME, (200, 200, 205))
+    ImageDraw.Draw(against_clothing).rectangle(_SHEET, fill=_PAPER)
+
+    return {
+        "a scan with no frame around it": scan,
+        "a photo taken at night under warm light": night,
+        "two sheets in frame": two_sheets,
+        "a patterned surface": patterned,
+        "heavy glare spilling onto the table": glare,
+        "a white desk": white_desk,
+        "a sheet held against clothing": against_clothing,
+    }
+
+
+def test_the_untested_surfaces_all_fail_towards_no_crop():
+    # None of these is a case the detector handles -- the mask assumption does
+    # not hold on any of them. The claim is only that each one degrades to the
+    # behaviour that shipped before this module, rather than to half a sheet.
+    for description, photo in _surfaces_and_lights().items():
+        assert crop_if_misframed(photo) is photo, description
