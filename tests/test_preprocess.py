@@ -1,5 +1,6 @@
 """The sheet has to come out of the frame before Donut sees it (#53)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,9 @@ from PIL import Image, ImageDraw
 from inform.preprocess import (
     _MIN_ASPECT_GAIN,
     _aspect_gain,
+    _box_from_mask,
     _is_plausible_sheet,
+    _paper_mask,
     crop_if_misframed,
     crop_to_sheet,
     sheet_box,
@@ -202,8 +205,13 @@ def test_the_untested_surfaces_all_fail_towards_no_crop():
 
 
 # The real photos are one consenting subject's health records and live outside
-# the repo (ADR-0011), so this runs only on a machine that holds them.
-_REAL_HOLDOUT = Path(__file__).resolve().parents[1] / "data" / "real_holdout"
+# the repo (ADR-0011), so this runs only where they are. They sit in one checkout
+# while the code is worked on in another, so the directory can be pointed at:
+#     INFORM_REAL_HOLDOUT=/path/to/real_holdout pytest tests/test_preprocess.py
+_REAL_HOLDOUT = Path(
+    os.environ.get("INFORM_REAL_HOLDOUT")
+    or Path(__file__).resolve().parents[1] / "data" / "real_holdout"
+)
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
@@ -226,8 +234,11 @@ def test_the_guards_decline_nothing_the_real_holdout_already_cropped():
     declined = []
     for path in photos:
         image = Image.open(path).convert("RGB")
-        box = sheet_box(image)
-        if _aspect_gain(image, box) >= _MIN_ASPECT_GAIN and not _is_plausible_sheet(image, box):
+        paper = _paper_mask(image)
+        box = _box_from_mask(image, paper)
+        if _aspect_gain(image, box) >= _MIN_ASPECT_GAIN and not _is_plausible_sheet(
+            image, box, paper
+        ):
             declined.append(path.name)
 
     assert not declined, (

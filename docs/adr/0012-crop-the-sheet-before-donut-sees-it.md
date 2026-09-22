@@ -98,22 +98,39 @@ against the inputs #54 lists as never tried shows that is true of nine cases out
 not of all of them: the aspect guard asks whether cropping *helps*, not whether what was
 found *is a sheet*, and two constructed frames clear it while being wrong.
 
-| | aspect gain | area | edge clearance | before |
+| | aspect gain | area | border coverage | before |
 |---|---|---|---|---|
-| correctly framed sheet (wood, dark desk, placemat) | +0.116 .. +0.138 | 0.40–0.59 | 0.070–0.133 | cropped ✓ |
-| **sheet cut off at the frame edge** | +0.104 | 0.43 | **0.016** | cropped ✗ |
-| **bright card on a dark desk** | +0.145 | **0.02** | 0.394 | cropped ✗ |
+| twelve real hold-out photos | +0.125 .. +0.184 | 0.58–0.67 | 0.090–0.325 | cropped ✓ |
+| **sheet cut off at the frame edge** | +0.104 | 0.43 | **0.512–0.718** | cropped ✗ |
+| **bright card on a dark desk** | +0.145 | **0.02** | 0.000 | cropped ✗ |
 
 The first is the silent error this ADR said the guard prevented: Donut gets a sheet with its
 right third missing, reads it confidently, and the cross-checks have nothing to object to.
 
 Two thresholds, both of which can only ever *decline* a crop:
 
-- `_MIN_EDGE_CLEARANCE = 0.03` — a box reaching the border means paper continues past it,
-  since `_LO`/`_HI` already trim 1% of paper inward. Separation is 0.070 against 0.016.
+- `_MAX_BORDER_COVERAGE = 0.45` — how much of any one frame edge reads as paper. A sheet cut
+  off by the edge lays paper along most of it; a whole sheet leaves the surface showing.
+  Measured at 0.512–0.718 across cut-off frames (off any edge, any severity, including a
+  corner) against 0.325 at worst on the twelve real photos.
 - `_MIN_AREA = 0.10` — below this the box is likelier a glint, a card or a label than the
   sheet, and even when it is the sheet it carries too few pixels to survive the upscale onto
-  the canvas. Separation is 0.40 against 0.02, against ~0.60 for a real hold-out sheet.
+  the canvas. Real sheets fill 0.58–0.67 of the frame; the constructed false positives fill
+  0.02.
+
+**The first attempt at the edge check was wrong, and the hold-out caught it.** Distance from
+the box to the frame border looked like the obvious signal and separated cleanly on
+constructed frames — 0.070–0.133 for a well-framed sheet against 0.016 for a cut-off one — so
+a 0.03 threshold looked safe. Run against the real photos it declined **eight of twelve**,
+which would have cost every one of them the crop this ADR exists to take. Real sheets fill
+0.58–0.67 of the frame and sit close to its edges, so their clearance is 0.021–0.052: the
+constructed frames had the sheet smaller and more centred than any real photo, and the
+margin they showed was an artefact of how they were drawn. Border coverage was chosen because
+it survives that: 0.325 against 0.512 is a real gap on real photos.
+
+That is the whole argument of #24 and #54 landing on the change meant to answer them —
+constructed evidence is worth what the constructions are worth, and the only thing that
+caught it was running against the real photos before merging.
 
 **A fill-ratio (rectangularity) check was measured and rejected.** #54 suggested it, but it
 reads 0.97 on both the correct crops and the cut-off sheet, so it does not close the hole;
@@ -127,12 +144,18 @@ genuinely breaks the mask.
   geometry, not real photo texture; they say what the detector does on a dark desk, not how
   well it does it. `tests/test_preprocess.py` now carries one case per input #54 named, so
   the next person to move a threshold finds out what it costs.
-- **The no-regression check is a test, and it skips where the photos are not.** Every guard
-  added here can only decline more, and a declined crop costs a real upload ~10 points of
-  accuracy — far more than the silent error the guards buy back. So
+- **The no-regression check is a test, and it has now run.** Every guard added here can only
+  decline more, and a declined crop costs a real upload ~10 points of accuracy — far more
+  than the silent error the guards buy back. So
   `test_the_guards_decline_nothing_the_real_holdout_already_cropped` asserts that no photo
-  which cropped before declines now, and skips with a named path where `data/real_holdout`
-  is absent. It checks the crop decision rather than the scored read: if every photo still
-  crops to the same box, the scored numbers are unchanged by construction, so this needs no
-  checkpoint, no torch and no GPU. **It has not run against the real photos yet** — it is
-  green only where they exist, which is the owner's machine.
+  which cropped before declines now. All twelve still crop, with border coverage 0.090–0.325
+  against the 0.45 threshold. It checks the crop decision rather than the scored read: if
+  every photo still crops to the same box, the scored numbers are unchanged by construction,
+  so it needs no checkpoint, no torch and no GPU. It skips with a named path where the photos
+  are absent, and `INFORM_REAL_HOLDOUT` points it at whichever checkout holds them.
+- **The real-photo side of the border threshold is the soft one.** 0.325 is the worst of
+  twelve photos of one sheet on one surface in one session, and a brighter desk reads higher.
+  The threshold is placed at 0.45 to leave that side room rather than to split the gap, but a
+  user photographing a sheet on a white table may still lose the crop. That is the direction
+  this ADR has always chosen to fail in, and it is now a named number to watch rather than an
+  unexamined assumption.

@@ -29,8 +29,8 @@ a sheet and it would read the half confidently.
 **That last case is reachable, so the box is checked for shape too** (#54). The
 aspect guard asks whether cropping helps, not whether what was found is a
 sheet, and a sheet cut off at the frame edge clears it at +0.104 while a bright
-card on a dark desk clears it at +0.145. `_is_plausible_sheet` declines both on
-edge clearance and area. It is an in-band check rather than a wider photo set
+card on a dark desk clears it at +0.145. `_is_plausible_sheet` declines both, on how
+much of a frame edge is paper and on area. It is an in-band check rather than a wider photo set
 because the hold-out is the maximum obtainable corpus (ADR-0010, 2026-09-20).
 """
 
@@ -61,21 +61,50 @@ _MIN_ASPECT_GAIN = 0.10
 # sheet. Two constructed cases clear it while being wrong (#54), so the box is
 # also checked for shape before it is trusted.
 #
-# A box that runs into the frame border is a sheet the camera cut off, not a
-# sheet the detector bounded: `_LO`/`_HI` already trim 1% of paper inward, so
-# paper reaching the edge means paper continues past it. A correctly framed
-# sheet clears the border by 0.070-0.133 of the frame; one cut off at the right
-# edge clears it by 0.016 and crops at +0.104 gain, handing Donut a sheet with
-# its right third missing.
-_MIN_EDGE_CLEARANCE = 0.03
+# A sheet running off the edge of the frame is the dangerous one: the detector
+# bounds the visible part, the crop improves the aspect (+0.104), and Donut gets
+# a sheet with its right third missing, reads it confidently, and the
+# cross-checks have nothing to object to. It is caught by how much of a frame
+# edge is paper -- a sheet cut off by the edge lays paper along most of it,
+# while a whole sheet leaves the surface showing.
+#
+# Measured: 0.512--0.718 across cut-off frames (off any edge, any severity,
+# including a corner), against 0.325 at worst on the twelve real hold-out
+# photos. The threshold sits in that gap. The real-photo side is the soft one --
+# n=12 on one surface, and a brighter desk reads higher -- so it is placed to
+# leave that side room rather than split the difference.
+_MAX_BORDER_COVERAGE = 0.45
 
 # Below this share of the frame the box is likelier a glint, a card or a label
 # than the sheet, and even when it is the sheet it carries too few pixels to
-# survive the upscale onto the canvas. Real hold-out sheets fill ~60% of the
-# frame and the constructed false positives fill 2%, so this is set well clear
-# of both: declining here costs a read that would have been unreadable anyway,
-# while taking the crop is a confident read of the wrong thing.
+# survive the upscale onto the canvas. Real hold-out sheets fill 0.58-0.67 of
+# the frame and the constructed false positives fill 0.02, so this sits well
+# clear of both: declining here costs a read that would have been unreadable
+# anyway, while taking the crop is a confident read of the wrong thing.
 _MIN_AREA = 0.10
+
+
+def _paper_mask(image: Image.Image) -> np.ndarray:
+    """Which pixels of a thumbnail of `image` read as paper."""
+    thumbnail = image.resize(
+        (max(1, image.width // _DOWNSCALE), max(1, image.height // _DOWNSCALE))
+    )
+    hsv = np.asarray(thumbnail.convert("HSV"), dtype=np.float32) / 255.0
+    return (hsv[..., 1] < _MAX_SATURATION) & (hsv[..., 2] > _MIN_VALUE)
+
+
+def _box_from_mask(image: Image.Image, paper: np.ndarray) -> tuple[int, int, int, int]:
+    ys, xs = np.nonzero(paper)
+    if len(xs) == 0:
+        return 0, 0, image.width, image.height
+    scale_x = image.width / paper.shape[1]
+    scale_y = image.height / paper.shape[0]
+    return (
+        int(np.percentile(xs, _LO) * scale_x),
+        int(np.percentile(ys, _LO) * scale_y),
+        int(np.percentile(xs, _HI) * scale_x),
+        int(np.percentile(ys, _HI) * scale_y),
+    )
 
 
 def sheet_box(image: Image.Image) -> tuple[int, int, int, int]:
@@ -88,23 +117,7 @@ def sheet_box(image: Image.Image) -> tuple[int, int, int, int]:
     Returns the full frame when no paper is found, so a caller that crops
     unconditionally still gets a valid image back.
     """
-    thumbnail = image.resize(
-        (max(1, image.width // _DOWNSCALE), max(1, image.height // _DOWNSCALE))
-    )
-    hsv = np.asarray(thumbnail.convert("HSV"), dtype=np.float32) / 255.0
-    paper = (hsv[..., 1] < _MAX_SATURATION) & (hsv[..., 2] > _MIN_VALUE)
-
-    ys, xs = np.nonzero(paper)
-    if len(xs) == 0:
-        return 0, 0, image.width, image.height
-    scale_x = image.width / paper.shape[1]
-    scale_y = image.height / paper.shape[0]
-    return (
-        int(np.percentile(xs, _LO) * scale_x),
-        int(np.percentile(ys, _LO) * scale_y),
-        int(np.percentile(xs, _HI) * scale_x),
-        int(np.percentile(ys, _HI) * scale_y),
-    )
+    return _box_from_mask(image, _paper_mask(image))
 
 
 def crop_to_sheet(image: Image.Image) -> Image.Image:
@@ -122,26 +135,26 @@ def _aspect_gain(image: Image.Image, box: tuple[int, int, int, int]) -> float:
     return before - after
 
 
-def _is_plausible_sheet(image: Image.Image, box: tuple[int, int, int, int]) -> bool:
+def _is_plausible_sheet(
+    image: Image.Image, box: tuple[int, int, int, int], paper: np.ndarray
+) -> bool:
     """Whether `box` bounds a whole sheet rather than a lucky rectangle.
 
     Cheap and in-band, because the photos that would settle the detector's real
     range do not exist: the hold-out is the maximum obtainable corpus (ADR-0010,
-    2026-09-20). So the check is on the geometry the detector already produced,
-    and it can only ever decline -- which is the direction this module is
-    already built to fail in.
+    2026-09-20). So the check is on the mask the detector already built, and it
+    can only ever decline -- which is the direction this module is already built
+    to fail in.
     """
     left, top, right, bottom = box
     if right <= left or bottom <= top:
         return False
-    clearance = min(
-        left / image.width,
-        top / image.height,
-        1 - right / image.width,
-        1 - bottom / image.height,
+    if (right - left) * (bottom - top) / (image.width * image.height) < _MIN_AREA:
+        return False
+    border = max(
+        paper[0].mean(), paper[-1].mean(), paper[:, 0].mean(), paper[:, -1].mean()
     )
-    area = (right - left) * (bottom - top) / (image.width * image.height)
-    return clearance >= _MIN_EDGE_CLEARANCE and area >= _MIN_AREA
+    return border < _MAX_BORDER_COVERAGE
 
 
 def crop_if_misframed(image: Image.Image) -> Image.Image:
@@ -151,8 +164,9 @@ def crop_if_misframed(image: Image.Image) -> Image.Image:
     is the case for anything already framed like the training set, or when the
     box found does not look like a whole sheet (#54).
     """
-    box = sheet_box(image)
-    if not _is_plausible_sheet(image, box):
+    paper = _paper_mask(image)
+    box = _box_from_mask(image, paper)
+    if not _is_plausible_sheet(image, box, paper):
         return image
     if _aspect_gain(image, box) < _MIN_ASPECT_GAIN:
         return image
