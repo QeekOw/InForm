@@ -176,7 +176,7 @@ export default function Upload() {
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="max-h-screen overflow-y-auto px-[24px] pt-[50px] pb-[80px]">
+      <div className="px-[24px] pt-[50px] pb-[80px]">
         {/* Title */}
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Select an InBody sheet</h1>
 

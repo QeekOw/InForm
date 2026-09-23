@@ -232,7 +232,7 @@ export default function Preview() {
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="max-h-screen overflow-y-auto pb-10">
+      <div className="pb-10">
         <div className="flex items-center gap-3 px-[30px] pt-[62px]">
           <Link
             href="/upload"
