@@ -33,6 +33,28 @@ body {
   animation: scan 2s ease-in-out infinite;
 }
 
+/*
+ * Desktop phone frame (components/PhoneFrame.tsx): scale the 436 x 902 device down
+ * to fit the window height so the page itself never scrolls. tan(atan2(a, b)) turns
+ * two lengths into the unitless ratio a / b. Below 0.5 the page scrolls instead.
+ */
+@media (width >= 40rem) {
+  .phone-fit {
+    --phone-scale: clamp(0.5, tan(atan2(100dvh - 40px, 902px)), 1);
+    width: calc(436px * var(--phone-scale));
+    height: calc(902px * var(--phone-scale));
+    flex-shrink: 0;
+  }
+  .phone-device {
+    transform: scale(var(--phone-scale));
+    transform-origin: top left;
+  }
+  /* Make the screen the containing block for fixed overlays such as modals. */
+  .phone-screen {
+    transform: translateZ(0);
+  }
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
