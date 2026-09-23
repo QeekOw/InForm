@@ -159,3 +159,54 @@ misfire on real photos, where the shadow band this module exists to survive brea
   sheet on a white table may lose the crop. That is the direction this ADR has always chosen
   to fail in. On the other side, a shadow that breaks more than about 45% of the cut-off edge
   would read under 0.55 and be cropped. Both are named numbers to watch.
+
+## Amendment (2026-09-23): what the crop and its guard are worth on V9
+
+**The crop stays on the runtime path. V9 barely needs it, but the V5 rollback does.** #88 asked
+whether the guard's narrow margins cost real reads, and the five difficult photos from
+ADR-0010's v9 amendment were found, so both questions could be measured with V9
+checkpoint 3750 on the GPU.
+
+**The guard wrongly declines four of the five difficult photos.** By eye each is a whole
+sheet, and the old code cropped all four. Their edge coverage reads 0.85–1.00 against the
+0.55 threshold for two reasons: a light wall or cloth behind the sheet reads as paper, and a
+sheet whose blank margin runs past the frame looks cut off. The guard cannot tell lost
+margin from lost content. So the "real photos read 0.13–0.49" side of the threshold held for
+one session on one table and not beyond it.
+
+**On V9 those declines cost nothing.** Crop taken (the code before #87) against crop declined
+(main), on the five:
+
+| V9, five difficult photos | before #87 (4 of 5 cropped) | main (guard declines 4) |
+|---|---|---|
+| core fields | 32/35 | 31/35 |
+| segmental lean | 18/25 | 21/25 |
+| critical (LBM + limbs) | 23/30 | 25/30 |
+| sheets with a silent error | 3 | 3 |
+
+The first column reproduces the V9 numbers recorded in ADR-0010, which confirms the setup.
+
+**V9 does not need the crop, V5 does.** With the crop switched off entirely:
+
+| twelve real photos | V9 crop | V9 no crop | V5 crop | V5 no crop |
+|---|---|---|---|---|
+| core fields | 70/72 | 71/72 | 66/72 | 51/72 |
+| critical (LBM + limbs) | 72/72 | 72/72 | 68/72 | 47/72 |
+| unverified reads with a silent error | 1 of 10 | 0 of 10 | 0 of 4 | 2 of 2 |
+
+On the five, main's guard already declines four of the crops, so crop and no crop are nearly
+the same run there and say nothing more. V9 was trained on
+phone-photo framing, so it reads a whole frame about as well as a cropped one. The crop costs
+it one field on one of twelve sheets. V5 is the rollback checkpoint (ADR-0010) and loses 15
+core fields and gains silent errors without the crop. The engine does not know which
+checkpoint it loaded, so taking the crop out, or switching it per checkpoint, would make a
+rollback to V5 silently worse. One field on V9 is the cheaper price.
+
+- **The guard's case now rests on V5.** For V9 a wrong crop and a declined crop both cost
+  about nothing on these photos. The guard still matters for any checkpoint that depends on
+  the crop, which today is the rollback.
+- **The no-regression test stays scoped to the twelve.** Run over all seventeen photos it
+  would fail on the four declines above, which are measured and harmless on V9.
+- **The evidence is still one person's sheets.** Seventeen photos, and the five influenced V9
+  development, so they are not an independent estimate. A checkpoint trained after V9 should
+  be measured with and without the crop before the crop is kept or removed for it.
