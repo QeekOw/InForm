@@ -84,78 +84,78 @@ cropped, it has the best segmental lean (28/30) and critical (34/36) of any chec
   unsaturated, which is a fair assumption for a printout and an untested one for a dark
   desk, a patterned surface, or a photo taken at night. The guard limits the blast radius
   to "no crop", not "bad crop", but the detector's real-world range is unmeasured.
-  *Amended 2026-09-22: the blast-radius claim was too strong — see below.*
+  *Amended 2026-09-22: the blast-radius claim was too strong. See below.*
 - **`numpy` becomes a base dependency.** `inform.preprocess` is on the runtime path and
   percentiles over a pixel mask are not something Pillow does well.
 - **The synthetic cost is real and now measured**, so a future decision to crop
   unconditionally has a number attached rather than an intuition.
 
-## Amendment (2026-09-22) — the aspect guard alone lets two bad crops through
+## Amendment (2026-09-22): the aspect guard alone lets bad crops through
 
-**`crop_if_misframed` now also checks the box's shape, in `_is_plausible_sheet`.** The
-original decision rested on the claim that the worst case is "no crop". Probing the detector
-against the inputs #54 lists as never tried shows that is true of nine cases out of ten, but
-not of all of them: the aspect guard asks whether cropping *helps*, not whether what was
-found *is a sheet*, and two constructed frames clear it while being wrong.
+**`crop_if_misframed` now also checks the box, in `_is_plausible_sheet`.** The original
+decision rested on the claim that the worst case is "no crop". Probing the detector against
+the inputs #54 lists as never tried shows that holds for most of them but not all. The aspect
+guard asks whether cropping *helps*, not whether what was found *is a sheet*, and two kinds of
+constructed frame clear it while being wrong:
 
-| | aspect gain | area | border coverage | before |
+| | aspect gain | area | edge coverage | before |
 |---|---|---|---|---|
-| twelve real hold-out photos | +0.125 .. +0.184 | 0.58–0.67 | 0.090–0.325 | cropped ✓ |
-| **sheet cut off at the frame edge** | +0.104 | 0.43 | **0.512–0.718** | cropped ✗ |
-| **bright card on a dark desk** | +0.145 | **0.02** | 0.000 | cropped ✗ |
+| twelve real hold-out photos | +0.125 .. +0.184 | 0.58–0.67 | 0.13–0.49 | cropped ✓ |
+| **sheet cut off by the frame** | +0.10 .. +0.18 | 0.13–0.44 | **0.58–1.00** | cropped ✗ |
+| **bright card on a dark desk** | +0.145 | **0.02** | 0.00 | cropped ✗ |
 
-The first is the silent error this ADR said the guard prevented: Donut gets a sheet with its
-right third missing, reads it confidently, and the cross-checks have nothing to object to.
+A cut-off sheet is the silent error this ADR said the guard prevented. Donut gets part of a
+sheet, reads it confidently, and the cross-checks have nothing to object to.
 
 Two thresholds, both of which can only ever *decline* a crop:
 
-- `_MAX_BORDER_COVERAGE = 0.45` — how much of any one frame edge reads as paper. A sheet cut
-  off by the edge lays paper along most of it; a whole sheet leaves the surface showing.
-  Measured at 0.512–0.718 across cut-off frames (off any edge, any severity, including a
-  corner) against 0.325 at worst on the twelve real photos.
-- `_MIN_AREA = 0.10` — below this the box is likelier a glint, a card or a label than the
+- `_MAX_EDGE_COVERAGE = 0.55`: how much of the box's side along a frame edge reads as paper,
+  on whichever side reads highest. Where a sheet was cut off, paper runs the length of that
+  side. A whole sheet leaves surface showing between it and the frame. Cut-off frames read
+  0.97–1.00 off every edge and corner, and 0.58–0.98 with a hand's shadow across 20–40% of the
+  sheet. The twelve real photos read 0.13–0.49.
+- `_MIN_AREA = 0.10`: below this the box is likelier a glint, a card or a label than the
   sheet, and even when it is the sheet it carries too few pixels to survive the upscale onto
-  the canvas. Real sheets fill 0.58–0.67 of the frame; the constructed false positives fill
-  0.02.
+  the canvas. Real sheets fill 0.58–0.67 of the frame. The card fills 0.02.
 
-**The first attempt at the edge check was wrong, and the hold-out caught it.** Distance from
-the box to the frame border looked like the obvious signal and separated cleanly on
-constructed frames — 0.070–0.133 for a well-framed sheet against 0.016 for a cut-off one — so
-a 0.03 threshold looked safe. Run against the real photos it declined **eight of twelve**,
-which would have cost every one of them the crop this ADR exists to take. Real sheets fill
-0.58–0.67 of the frame and sit close to its edges, so their clearance is 0.021–0.052: the
-constructed frames had the sheet smaller and more centred than any real photo, and the
-margin they showed was an artefact of how they were drawn. Border coverage was chosen because
-it survives that: 0.325 against 0.512 is a real gap on real photos.
+**Two earlier edge checks were tried and rejected, and the real photos caught both.**
 
-That is the whole argument of #24 and #54 landing on the change meant to answer them —
-constructed evidence is worth what the constructions are worth, and the only thing that
-caught it was running against the real photos before merging.
+1. *Distance from the box to the frame border.* On constructed frames it separated cleanly:
+   0.070–0.133 for a well-framed sheet against 0.016 for a cut-off one, so a 0.03 threshold
+   looked safe. On the real photos it declined **eight of twelve**. Real sheets fill most of
+   the frame and sit 0.021–0.052 from its edges. The constructed frames had drawn the sheet
+   smaller and more centred than any real photo.
+2. *How much of the whole frame edge is paper*, declining at 0.45. It kept all twelve real
+   photos (0.325 at worst) and caught a sheet cut off along one edge (0.51–0.72). It missed
+   two cases found in review. A sheet cut off at a corner only lays paper along part of each
+   frame edge (0.38–0.44 with 39–48% of the sheet missing on each axis), and a shadow across a
+   cut-off sheet breaks the paper along the edge (0.37). Both were cropped. No threshold on
+   this signal can catch them without also declining a real photo.
+
+Constructed evidence is only as good as the constructions. Both rejections came from running
+the check against something other than the frames it was designed on.
 
 **A fill-ratio (rectangularity) check was measured and rejected.** #54 suggested it, but it
-reads 0.97 on both the correct crops and the cut-off sheet, so it does not close the hole;
-the only frames it would catch are already declined on aspect; and it is the check most
-likely to misfire on real photos, where the shadow band this module exists to survive
-genuinely breaks the mask.
+reads 0.97 on both the correct crops and a cut-off sheet, so it does not close the hole. The
+only frames it would catch are already declined on aspect, and it is the check most likely to
+misfire on real photos, where the shadow band this module exists to survive breaks the mask.
 
 - **The in-band check is a substitute for evidence, not a replacement.** The photos that
-  would settle the detector's real range are not obtainable (ADR-0010, 2026-09-20), so these
-  thresholds are set from constructed frames. Flat-colour frames exercise the mask and the
-  geometry, not real photo texture; they say what the detector does on a dark desk, not how
-  well it does it. `tests/test_preprocess.py` now carries one case per input #54 named, so
-  the next person to move a threshold finds out what it costs.
-- **The no-regression check is a test, and it has now run.** Every guard added here can only
-  decline more, and a declined crop costs a real upload ~10 points of accuracy — far more
-  than the silent error the guards buy back. So
-  `test_the_guards_decline_nothing_the_real_holdout_already_cropped` asserts that no photo
-  which cropped before declines now. All twelve still crop, with border coverage 0.090–0.325
-  against the 0.45 threshold. It checks the crop decision rather than the scored read: if
-  every photo still crops to the same box, the scored numbers are unchanged by construction,
-  so it needs no checkpoint, no torch and no GPU. It skips with a named path where the photos
-  are absent, and `INFORM_REAL_HOLDOUT` points it at whichever checkout holds them.
-- **The real-photo side of the border threshold is the soft one.** 0.325 is the worst of
-  twelve photos of one sheet on one surface in one session, and a brighter desk reads higher.
-  The threshold is placed at 0.45 to leave that side room rather than to split the gap, but a
-  user photographing a sheet on a white table may still lose the crop. That is the direction
-  this ADR has always chosen to fail in, and it is now a named number to watch rather than an
-  unexamined assumption.
+  would settle the detector's real range are not obtainable (ADR-0010, 2026-09-20), so the
+  cut-off side of these thresholds is set from constructed frames. Flat-colour frames exercise
+  the mask and the geometry, not real photo texture. `tests/test_preprocess.py` carries one
+  case per input #54 named, and one per cut-off edge and corner, each placed so the crop would
+  improve the aspect. The next person to move a threshold finds out what it costs.
+- **The no-regression check is a test, and it has run.** Every guard added here can only
+  decline more, and a declined crop costs a real upload ~10 points of accuracy.
+  `test_every_real_holdout_photo_is_still_cropped_to_the_sheet` runs each photo through
+  `crop_if_misframed` and asserts it comes back cropped to the detected sheet. All twelve do.
+  It checks the crop rather than the scored read: if every photo still crops to the same box,
+  the scored numbers are unchanged by construction, so it needs no checkpoint, no torch and no
+  GPU. It skips with a named path where the photos are absent, fails if fewer than twelve are
+  found, and `INFORM_REAL_HOLDOUT` points it at whichever checkout holds them.
+- **The margins are narrow on both sides.** 0.49 is the worst of twelve photos of one sheet
+  on one surface in one session, and a brighter desk reads higher, so a user photographing a
+  sheet on a white table may lose the crop. That is the direction this ADR has always chosen
+  to fail in. On the other side, a shadow that breaks more than about 45% of the cut-off edge
+  would read under 0.55 and be cropped. Both are named numbers to watch.

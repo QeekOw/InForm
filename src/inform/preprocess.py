@@ -28,10 +28,10 @@ a sheet and it would read the half confidently.
 
 **That last case is reachable, so the box is checked for shape too** (#54). The
 aspect guard asks whether cropping helps, not whether what was found is a
-sheet, and a sheet cut off at the frame edge clears it at +0.104 while a bright
-card on a dark desk clears it at +0.145. `_is_plausible_sheet` declines both, on how
-much of a frame edge is paper and on area. It is an in-band check rather than a wider photo set
-because the hold-out is the maximum obtainable corpus (ADR-0010, 2026-09-20).
+sheet: a sheet cut off at the frame edge clears it, and so does a bright card
+on a dark desk. `_is_plausible_sheet` declines both. It is an in-band check
+rather than a wider photo set because the hold-out is the maximum obtainable
+corpus (ADR-0010, 2026-09-20).
 """
 
 import numpy as np
@@ -62,18 +62,23 @@ _MIN_ASPECT_GAIN = 0.10
 # also checked for shape before it is trusted.
 #
 # A sheet running off the edge of the frame is the dangerous one: the detector
-# bounds the visible part, the crop improves the aspect (+0.104), and Donut gets
-# a sheet with its right third missing, reads it confidently, and the
-# cross-checks have nothing to object to. It is caught by how much of a frame
-# edge is paper -- a sheet cut off by the edge lays paper along most of it,
-# while a whole sheet leaves the surface showing.
+# bounds the visible part, the crop improves the aspect, and Donut gets part of
+# a sheet, reads it confidently, and the cross-checks have nothing to object to.
+# It is caught by how much of the box's side along a frame edge is paper. Where
+# the sheet was cut off, paper runs the length of that side; a whole sheet
+# leaves the surface showing between it and the frame.
 #
-# Measured: 0.512--0.718 across cut-off frames (off any edge, any severity,
-# including a corner), against 0.325 at worst on the twelve real hold-out
-# photos. The threshold sits in that gap. The real-photo side is the soft one --
-# n=12 on one surface, and a brighter desk reads higher -- so it is placed to
-# leave that side room rather than split the difference.
-_MAX_BORDER_COVERAGE = 0.45
+# Measured on the box's side rather than the whole frame edge, because a corner
+# cut-off only lays paper along part of the frame edge (0.38 at worst), which
+# no threshold can separate from the real photos (0.325 at worst):
+#
+#     cut off, any edge or corner     0.97 .. 1.00
+#     cut off, shadow across it       0.58 .. 0.98
+#     twelve real hold-out photos     0.13 .. 0.49
+#
+# The gap is narrow on both sides, and both sides are constructed or n=12 on
+# one surface. A brighter desk reads higher on the real side.
+_MAX_EDGE_COVERAGE = 0.55
 
 # Below this share of the frame the box is likelier a glint, a card or a label
 # than the sheet, and even when it is the sheet it carries too few pixels to
@@ -147,14 +152,19 @@ def _is_plausible_sheet(
     to fail in.
     """
     left, top, right, bottom = box
-    if right <= left or bottom <= top:
-        return False
     if (right - left) * (bottom - top) / (image.width * image.height) < _MIN_AREA:
         return False
-    border = max(
-        paper[0].mean(), paper[-1].mean(), paper[:, 0].mean(), paper[:, -1].mean()
+    # The box's extent in thumbnail pixels, where the mask lives.
+    rows, cols = paper.shape
+    x0, x1 = left * cols // image.width, right * cols // image.width
+    y0, y1 = top * rows // image.height, bottom * rows // image.height
+    coverage = max(
+        paper[0, x0:x1].mean(),
+        paper[-1, x0:x1].mean(),
+        paper[y0:y1, 0].mean(),
+        paper[y0:y1, -1].mean(),
     )
-    return border < _MAX_BORDER_COVERAGE
+    return coverage < _MAX_EDGE_COVERAGE
 
 
 def crop_if_misframed(image: Image.Image) -> Image.Image:
