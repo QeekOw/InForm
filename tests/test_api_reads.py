@@ -411,3 +411,179 @@ def test_plan_with_uploaded_sheet_read_id():
         app.dependency_overrides.clear()
 
 
+
+# --- Honest failure attribution (issue #45 follow-up, ADR-0010) --------------
+#
+# Three read failures, three causes, three messages. A missing Donut checkpoint
+# is a fact about this server; it must never come back as a claim about the
+# person's photo, because no retake can fix it.
+
+
+def _tiny_png_data_url() -> str:
+    """A valid, decodable 10x10 PNG — so any refusal is about the engine, not the bytes."""
+    import base64
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color=(255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+
+def test_live_sample_read_without_checkpoint_reports_engine_unavailable():
+    """A live read with no Donut checkpoint blames the server, not the sheet."""
+    from inform.errors import DonutCheckpointError
+
+    def no_checkpoint(path):
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
+    try:
+        start_resp = client.post("/reads", json={"sample_id": "synthetic_270_clean", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["error"] == "engine_unavailable"
+
+        msg = poll_data["extraction"]["message"].lower()
+        assert "unavailable" in msg
+        # Never attributed to the image (Requirement 1.2)
+        assert "blurry" not in msg
+        assert "retake" not in msg
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_live_sample_read_failure_does_not_substitute_stored_extraction():
+    """A failed live read returns no numbers at all (issue #29 stories 23-25).
+
+    The live read exists to prove the gallery numbers were not typed in by the
+    developers. Serving the stored extraction when the model could not run would
+    destroy the only reason the action exists.
+    """
+    from inform.errors import DonutCheckpointError
+
+    stored = load_extractions().extractions["synthetic_270_clean"]
+    assert stored.data is not None, "fixture guard: this sample has stored numbers"
+
+    def no_checkpoint(path):
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
+    try:
+        start_resp = client.post("/reads", json={"sample_id": "synthetic_270_clean", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["data"] is None
+        assert poll_data["extraction"]["unread"] == []
+        assert poll_data["extraction"]["flagged"] == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_uploaded_photo_without_checkpoint_reports_engine_unavailable():
+    """A readable photo plus a missing checkpoint is an engine fault, not a photo fault."""
+    from inform.errors import DonutCheckpointError
+
+    def no_checkpoint(img_input):
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
+    try:
+        start_resp = client.post(
+            "/reads", json={"image_data": _tiny_png_data_url(), "live": True}
+        )
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["error"] == "engine_unavailable"
+        assert "blurry" not in poll_data["extraction"]["message"].lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_engine_construction_failure_reports_engine_unavailable():
+    """The engine failing to *build* is engine_unavailable too, not just failing to read.
+
+    An eager engine_factory raises on the request thread, before any worker
+    starts, so it needs its own guard. Driven through the manager directly
+    because a raising FastAPI dependency never reaches the manager at all.
+    """
+    from inform.errors import DonutCheckpointError
+    from inform.reads import read_manager
+
+    def failing_factory():
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    upload_job = read_manager.create_read(
+        image_data=_tiny_png_data_url(), live=True, engine_factory=failing_factory
+    )
+    assert upload_job.status == "refused"
+    assert upload_job.error == "engine_unavailable"
+    assert upload_job.extraction is not None
+    assert upload_job.extraction.error == "engine_unavailable"
+
+    sample_job = read_manager.create_read(
+        sample_id="synthetic_270_clean", live=True, engine_factory=failing_factory
+    )
+    assert sample_job.status == "refused"
+    assert sample_job.error == "engine_unavailable"
+    assert sample_job.extraction is not None
+    assert sample_job.extraction.data is None
+
+
+def test_unreadable_photo_is_not_reported_as_engine_unavailable():
+    """The reverse direction of Property 5: a real photo fault stays a photo fault."""
+    from inform.errors import MissingRequiredFieldsError
+
+    def blurry(img_input):
+        raise MissingRequiredFieldsError(["weight_kg", "lean_body_mass_kg"])
+
+    app.dependency_overrides[get_engine] = lambda: blurry
+    try:
+        start_resp = client.post(
+            "/reads", json={"image_data": _tiny_png_data_url(), "live": True}
+        )
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["extraction"]["error"] == "unreadable_photo"
+        assert poll_data["extraction"]["error"] != "engine_unavailable"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_non_sheet_is_not_reported_as_engine_unavailable():
+    """The third mode stays distinct from the other two."""
+    def refusing(path):
+        raise NotAnInBodySheetError()
+
+    app.dependency_overrides[get_engine] = lambda: refusing
+    try:
+        start_resp = client.post("/reads", json={"sample_id": "refused_non_sheet", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["extraction"]["error"] == "not_an_inbody_sheet"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_instant_sample_path_completes_with_no_checkpoint_present():
+    """Requirement 1.1: the gallery works without the Donut checkpoint.
+
+    No engine override is installed, so this exercises the real default engine
+    resolution path — which the instant path must never reach.
+    """
+    for sample_id in ("synthetic_270_clean", "synthetic_570_clean", "real_270_clean"):
+        data = client.post("/reads", json={"sample_id": sample_id, "live": False}).json()
+        assert data["status"] == "complete", f"{sample_id} did not complete instantly"
+        assert data["progress"] == 1.0
+        assert data["extraction"]["data"] is not None
+        assert data["extraction"]["error"] is None

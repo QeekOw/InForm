@@ -40,3 +40,7 @@ models/
 
 # Raw real InBody holdout photos (unredacted personal health data, ADR-0011)
 data/real_holdout/
+
+# Binaries and local IDE specs
+*.exe
+.kiro/

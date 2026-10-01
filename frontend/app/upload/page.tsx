@@ -1,21 +1,34 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/BackButton";
+import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
+import PhotoConfirm from "@/components/PhotoConfirm";
+import { usePrivacyGate } from "@/components/PrivacyNotice";
+import { btn, cardClass, OrDivider, Tag } from "@/components/ui";
+import { useAuth } from "@/lib/AuthProvider";
 import { API_URL } from "@/lib/config";
-import { isCleanRead, type ReadJob, type SampleExtraction, type SampleSheetMeta } from "@/lib/inbody";
+import {
+  type Capabilities,
+  type ReadJob,
+  type SampleExtraction,
+  type SampleSheetMeta,
+} from "@/lib/inbody";
 import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
-import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { clearSheet, loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
-const imgCamera = "/upload/camera-icon.svg";
-const imgUpload = "/upload/upload-icon.svg";
 const imgInBody270 = "/upload/inbody-270.png";
 
 export default function Upload() {
   const router = useRouter();
+  const { account } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Own photos only: the notice is about what happens to *your* sheet, so the
+  // sample gallery isn't gated.
+  const { guard, notice: privacyNotice } = usePrivacyGate();
 
   const [samples, setSamples] = useState<SampleSheetMeta[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -23,10 +36,48 @@ export default function Upload() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loadingSample, setLoadingSample] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [scepticModalSample, setScepticModalSample] = useState<SampleSheetMeta | null>(null);
   const [startingLiveRead, setStartingLiveRead] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [stagedPhoto, setStagedPhoto] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // null while the probe is in flight; the live-read action stays unavailable
+  // until the server confirms it can actually perform it.
+  const [liveReadAvailable, setLiveReadAvailable] = useState<boolean | null>(null);
+
+  // A screen that redirected here leaves its reason behind, so someone bounced
+  // back to the gallery is told why rather than left guessing. One-shot: read it
+  // and drop it, so a later reload doesn't replay a stale explanation.
+  useEffect(() => {
+    const handedOver = loadJSON<string>(SESSION_KEYS.notice);
+    if (handedOver) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotice(handedOver);
+      removeSessionItem(SESSION_KEYS.notice);
+    }
+  }, []);
+
+  // Ask the server whether it can run the model on demand (Requirement 1.6).
+  // A failed probe is treated as "no": better to withhold the action than to
+  // offer one that cannot succeed.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/capabilities`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Capability probe failed: ${res.statusText}`);
+        return res.json();
+      })
+      .then((caps: Capabilities) => {
+        if (!cancelled) setLiveReadAvailable(caps.live_read_available === true);
+      })
+      .catch((err) => {
+        console.error("Failed to probe server capabilities:", err);
+        if (!cancelled) setLiveReadAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Fetch live manifest from backend on mount
   useEffect(() => {
@@ -53,90 +104,102 @@ export default function Upload() {
     };
   }, []);
 
-  const handlePickSample = async (sample: SampleSheetMeta) => {
+  const handleSelectSample = async (sample: SampleSheetMeta) => {
     setSelectedId(sample.id);
-    setLoadingSample(true);
     setPickError(null);
 
-    try {
-      const res = await fetch(`${API_URL}/samples/${sample.id}`);
-      if (!res.ok) {
-        throw new Error(`Failed to load sample extraction: ${res.statusText}`);
+    // If live reading is available, run the live AI model on the sample sheet
+    if (liveReadAvailable === true) {
+      setStartingLiveRead(true);
+      try {
+        const res = await fetch(`${API_URL}/reads`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sample_id: sample.id, live: true }),
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to start live read: ${res.statusText}`);
+        }
+        const job: ReadJob = await res.json();
+
+        clearSheet();
+        saveJSON(SESSION_KEYS.sampleId, sample.id);
+        saveJSON(SESSION_KEYS.readId, job.read_id);
+        saveJSON(SESSION_KEYS.photo, `${API_URL}${sample.image_url}`);
+
+        router.push(`/upload/analyzing?read_id=${job.read_id}&live=1`);
+      } catch (err) {
+        console.error("Error starting live read:", err);
+        setPickError("Failed to initiate live model reading. Please try again.");
+      } finally {
+        setStartingLiveRead(false);
       }
-      const extraction: SampleExtraction = await res.json();
+    } else {
+      // Fallback if model isn't installed: load stored sample extraction, but ALWAYS go to /preview
+      setLoadingSample(true);
+      try {
+        const res = await fetch(`${API_URL}/samples/${sample.id}`);
+        if (!res.ok) {
+          throw new Error(`Failed to load sample extraction: ${res.statusText}`);
+        }
+        const extraction: SampleExtraction = await res.json();
 
-      clearSheet();
-      saveJSON(SESSION_KEYS.sampleId, sample.id);
-      saveJSON(SESSION_KEYS.extraction, extraction);
+        clearSheet();
+        saveJSON(SESSION_KEYS.sampleId, sample.id);
+        saveJSON(SESSION_KEYS.extraction, extraction);
+        saveJSON(SESSION_KEYS.photo, `${API_URL}${sample.image_url}`);
 
-      if (extraction.status === "complete" && extraction.data) {
-        saveJSON(SESSION_KEYS.reading, extraction.data);
-      } else {
-        // Fail-closed (ADR-0008): never store fabricated numbers for a refused sheet
-        saveJSON(SESSION_KEYS.reading, null);
+        if (extraction.status === "complete" && extraction.data) {
+          saveJSON(SESSION_KEYS.reading, extraction.data);
+        } else {
+          saveJSON(SESSION_KEYS.reading, null);
+        }
+
+        // Under Choice 1, all sheets always route to /preview for review & clarification
+        router.push("/preview");
+      } catch (err) {
+        console.error("Error loading sample:", err);
+        setPickError("Couldn't load that sheet. Check your connection and tap it again.");
+      } finally {
+        setLoadingSample(false);
       }
-
-      // A clean read goes straight to results with no extra taps; anything
-      // unread, flagged or refused stops at the preview for a person.
-      router.push(isCleanRead(extraction) ? "/result" : "/preview");
-    } catch (err) {
-      console.error("Error loading sample:", err);
-      setPickError("Couldn't load that sheet. Check your connection and tap it again.");
-    } finally {
-      setLoadingSample(false);
     }
   };
 
-  const handleStartLiveRead = async (sample: SampleSheetMeta) => {
-    setStartingLiveRead(true);
-    setPickError(null);
-
-    try {
-      const res = await fetch(`${API_URL}/reads`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sample_id: sample.id, live: true }),
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to start live read: ${res.statusText}`);
-      }
-      const job: ReadJob = await res.json();
-
-      clearSheet();
-      saveJSON(SESSION_KEYS.sampleId, sample.id);
-      saveJSON(SESSION_KEYS.readId, job.read_id);
-      saveJSON(SESSION_KEYS.photo, `${API_URL}${sample.image_url}`);
-
-      setScepticModalSample(null);
-      router.push(`/upload/analyzing?read_id=${job.read_id}&live=1`);
-    } catch (err) {
-      console.error("Error starting live read:", err);
-      setPickError("Failed to initiate live model reading. Please try again.");
-    } finally {
-      setStartingLiveRead(false);
-    }
-  };
-
+  // Picking a file only stages it: the person sees it full-size first and
+  // nothing is sent until "Confirm and Analyze" (Figma "Preview").
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset so picking the same file again after "Choose other file" still fires.
+    e.target.value = "";
     if (!file) return;
-
-    clearSheet();
-    setUploadingPhoto(true);
     setUploadError(null);
 
     let photoDataUrl = "";
     if (file.type.startsWith("image/")) {
       try {
         photoDataUrl = await fileToDataUrl(file);
-        saveJSON(SESSION_KEYS.photo, photoDataUrl);
       } catch (err) {
         console.error("Error converting file to data URL:", err);
+        setUploadError("Couldn't open that file. Try a JPG or PNG photo of your sheet.");
+        return;
       }
     } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
       photoDataUrl = createPdfDataUrl(file.name);
-      saveJSON(SESSION_KEYS.photo, photoDataUrl);
+    } else {
+      setUploadError("That file type isn't supported. Use a JPG, PNG or PDF.");
+      return;
     }
+    setStagedPhoto(photoDataUrl);
+  };
+
+  const handleConfirmUpload = async () => {
+    const photoDataUrl = stagedPhoto;
+    if (!photoDataUrl) return;
+    clearSheet();
+    saveJSON(SESSION_KEYS.photo, photoDataUrl);
+    setUploadingPhoto(true);
+    setUploadError(null);
 
     try {
       const res = await fetch(`${API_URL}/reads`, {
@@ -159,270 +222,185 @@ export default function Upload() {
     }
   };
 
-  return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="max-h-screen overflow-y-auto px-[24px] pt-[50px] pb-[80px]">
-        {/* Title */}
-        <h1 className="text-[24px] font-bold text-[#fcfcfc]">Select an InBody sheet</h1>
+  const busy = startingLiveRead || loadingSample;
 
-        {/* Short line explaining what an InBody sheet is (Acceptance Criteria #5) */}
-        <div className="mt-3 rounded-xl border border-emerald-500/30 bg-[#117d69]/15 p-3 text-[12px] leading-relaxed text-[#fcfcfc]">
-          <span className="font-bold text-[#2dd4bf]">What is an InBody sheet?</span> An InBody
-          sheet is a body composition printout that breaks down total weight into skeletal muscle,
-          body fat, and body water using bioelectrical impedance analysis.
+  return (
+    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+      <div className="px-[30px] pb-[60px] pt-[54px] text-[#fcfcfc]">
+        <div className="flex items-center justify-between">
+          <BackButton fallbackHref={account ? "/dashboard" : "/"} />
+          {account && (
+            <Link href="/dashboard" className="text-[12px] font-bold text-[#7ee0cf] hover:underline">
+              Dashboard
+            </Link>
+          )}
         </div>
 
-        {/* Sample Gallery Section */}
-        <div className="mt-5">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-[16px] font-bold text-[#fcfcfc]">Sample Gallery</h2>
-            <span className="text-[11px] text-emerald-400 font-medium">Instant pre-computed reads</span>
+        {notice && (
+          <div
+            role="status"
+            className="mt-4 flex items-start gap-2 rounded-[8px] border border-amber-400/40 bg-amber-500/15 p-3 text-[11px] leading-relaxed text-amber-100"
+          >
+            <Icon name="alert" size={14} className="mt-[1px]" />
+            <p>{notice}</p>
           </div>
-          <p className="mt-1 text-[11px] text-white/70">
-            Pick any sheet to see its stored extraction immediately without waiting on the model.
-          </p>
+        )}
 
-          {loadingList ? (
-            <p className="mt-4 text-[12px] text-white/60">Loading sample sheets…</p>
-          ) : listError ? (
-            <p role="alert" className="mt-4 text-[12px] text-rose-300">
-              Couldn&apos;t load the sample sheets. The server may be starting up; reload the page
-              in a moment.
+        <h1 className="mt-[26px] text-[24px] font-bold tracking-[0.02em]">Upload your InBody 270</h1>
+        <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">
+          Upload a clear photo or file of your InBody 270 sheet. Make sure all numbers and sections
+          are visible.
+        </p>
+
+        {liveReadAvailable === false ? (
+          // Reading your own sheet needs the model. Say so before anyone goes
+          // and finds their sheet, not after they've uploaded it.
+          <div className={`${cardClass} mt-[24px] p-[20px] text-[12px] leading-relaxed`}>
+            <p className="font-bold">Reading your own sheet isn&apos;t available here yet</p>
+            <p className="mt-1.5 text-black/75">
+              Your own sheet has to be read by the model, and it isn&apos;t installed on this
+              server. Rather than let you take a photo nothing can read, we&apos;re telling you now.
             </p>
-          ) : samples.length === 0 ? (
-            <p className="mt-4 text-[12px] text-white/60">No sample sheets available.</p>
-          ) : (
-            <div className="mt-3 flex flex-col gap-3">
-              {samples.map((sample) => {
-                const isSelected = selectedId === sample.id;
-                // Only the 270 has a bundled fallback thumbnail; others hide on error.
-                const fallbackThumb = sample.source_device === "inbody_270" ? imgInBody270 : null;
-                const imgSource = `${API_URL}${sample.image_url}`;
+            <p className="mt-2 text-black/60">
+              The sample sheets below give the full experience: flagged values, corrections,
+              calorie targets, exercises and the dashboard all work from them.
+            </p>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => guard(() => fileInputRef.current?.click())}
+              disabled={uploadingPhoto || liveReadAvailable === null}
+              className="mt-[24px] flex h-[114px] w-full flex-col items-center justify-center rounded-[15px] border-2 border-dashed border-[#fcfcfc]/50 bg-[#fcfcfc]/5 transition-colors hover:bg-[#fcfcfc]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7ee0cf] disabled:opacity-50"
+            >
+              <Icon name="upload" size={32} />
+              <span className="mt-[6px] text-[12px] font-bold">
+                {uploadingPhoto
+                  ? "Starting analysis…"
+                  : liveReadAvailable === null
+                    ? "Checking the reader is available…"
+                    : "Upload from device"}
+              </span>
+              <span className="mt-[14px] self-end pr-[12px] text-[8px] text-[#fcfcfc]/70">
+                Supported formats: JPG, PNG, PDF
+              </span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={handleFileSelected}
+            />
 
-                return (
-                  <div
-                    key={sample.id}
-                    className={`overflow-hidden rounded-[14px] bg-white p-3 text-left transition-all ${
-                      isSelected
-                        ? "ring-4 ring-[#117d69] shadow-lg"
-                        : "hover:ring-2 hover:ring-white/40"
+            <button
+              type="button"
+              onClick={() => guard(() => router.push("/upload/capture"))}
+              disabled={liveReadAvailable === null}
+              className={`${btn.primary} mt-[15px]`}
+            >
+              <Icon name="camera" size={16} />
+              Open Camera and Take Photo
+            </button>
+          </>
+        )}
+
+        {uploadError && (
+          <p role="alert" className="mt-3 text-[12px] text-rose-300">
+            {uploadError}
+          </p>
+        )}
+
+        <div className="my-[32px] text-[#fcfcfc]">
+          <OrDivider label="or use" />
+        </div>
+
+        <h2 className="text-[24px] font-bold tracking-[0.02em]">Sample Gallery</h2>
+        <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">
+          No InBody report? No problem. Choose one of our samples to explore how it works.
+        </p>
+
+        {loadingList ? (
+          <p className="mt-4 text-[12px] text-white/60">Loading sample sheets…</p>
+        ) : listError ? (
+          <p role="alert" className="mt-4 text-[12px] text-rose-300">
+            Couldn&apos;t load the sample sheets. The server may be starting up; reload the page in
+            a moment.
+          </p>
+        ) : samples.length === 0 ? (
+          <p className="mt-4 text-[12px] text-white/60">No sample sheets available.</p>
+        ) : (
+          <ul className="mt-[15px] grid grid-cols-2 gap-[12px]">
+            {samples.map((sample) => {
+              const isSelected = selectedId === sample.id;
+              const isWorking = isSelected && busy;
+              const fallbackThumb = sample.source_device === "inbody_270" ? imgInBody270 : null;
+              return (
+                <li key={sample.id}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectSample(sample)}
+                    disabled={busy}
+                    aria-busy={isWorking}
+                    className={`${cardClass} flex h-full w-full flex-col overflow-hidden p-[8px] text-left transition-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7ee0cf] disabled:cursor-wait ${
+                      isSelected ? "ring-[3px] ring-[#117d69]" : "hover:ring-2 hover:ring-white/50"
                     }`}
                   >
-                    {/* Primary clickable area: instant pre-computed reading */}
-                    <button
-                      type="button"
-                      onClick={() => handlePickSample(sample)}
-                      disabled={loadingSample && isSelected}
-                      className="group flex w-full text-left"
-                    >
-                      {/* Thumbnail */}
-                      <div className="relative h-[90px] w-[70px] shrink-0 overflow-hidden rounded-lg bg-zinc-200">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          alt={sample.name}
-                          className="size-full object-cover"
-                          src={imgSource}
-                          onError={(e) => {
-                            const img = e.currentTarget as HTMLImageElement;
-                            if (fallbackThumb && !img.src.endsWith(fallbackThumb)) {
-                              img.src = fallbackThumb;
-                            } else {
-                              img.style.display = "none";
-                            }
-                          }}
-                        />
-                        {isSelected && (
-                          <span className="absolute right-1 top-1 flex size-4 items-center justify-center rounded-full bg-[#117d69] text-[9px] text-white font-bold">
-                            ✓
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Metadata */}
-                      <div className="ml-3 flex flex-1 flex-col justify-between">
-                        <div>
-                          {/* Honest Provenance Badge Only */}
-                          <div className="flex flex-wrap gap-1">
-                            {sample.provenance === "synthetic" ? (
-                              <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[9px] font-bold text-sky-800">
-                                Synthetic
-                              </span>
-                            ) : (
-                              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-900">
-                                Real Printout (Consented)
-                              </span>
-                            )}
-                          </div>
-
-                          <h3 className="mt-1 text-[12px] font-bold text-zinc-900 leading-tight">
-                            {sample.name}
-                          </h3>
-                          <p className="mt-1 text-[10px] text-zinc-600 line-clamp-2 leading-snug">
-                            {sample.description}
-                          </p>
-                        </div>
-
-                        <div className="mt-1 text-[10px] font-semibold text-[#117d69]">
-                          {isSelected && loadingSample
-                            ? "Loading extraction…"
-                            : "Tap for instant stored read →"}
-                        </div>
-                      </div>
-                    </button>
-
-                    {/* Sceptic's Button: Clearly visible secondary action (Issue #40) */}
-                    <div className="mt-2.5 border-t border-zinc-100 pt-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setScepticModalSample(sample);
+                    <div className="relative h-[120px] w-full overflow-hidden rounded-[8px] bg-zinc-200">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        alt=""
+                        className="size-full object-cover object-top"
+                        src={`${API_URL}${sample.image_url}`}
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          if (fallbackThumb && !img.src.endsWith(fallbackThumb)) img.src = fallbackThumb;
+                          else img.style.visibility = "hidden";
                         }}
-                        disabled={loadingSample || startingLiveRead}
-                        className="flex w-full items-center justify-between rounded-lg border border-emerald-600/30 bg-emerald-50/60 px-2.5 py-1.5 text-[10px] font-medium text-emerald-900 hover:bg-emerald-100/80 transition-colors"
-                      >
-                        <span className="flex items-center gap-1">
-                          <span className="font-bold text-emerald-700">⚡ Sceptic&apos;s button:</span>
-                          <span className="underline decoration-emerald-600/40">Run model live</span>
+                      />
+                      <span className="absolute left-[6px] top-[6px]">
+                        <Tag tone={sample.provenance === "synthetic" ? "sky" : "teal"} className="shadow-sm">
+                          {sample.provenance === "synthetic" ? "Synthetic" : "Real printout"}
+                        </Tag>
+                      </span>
+                      {isWorking && (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/40">
+                          <span className="size-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
                         </span>
-                        <span className="rounded bg-emerald-200/90 px-1.5 py-0.5 font-mono text-[9px] font-bold text-emerald-950">
-                          ~45s wait
-                        </span>
-                      </button>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {pickError && (
-            <p role="alert" className="mt-3 text-[12px] text-rose-300">
-              {pickError}
-            </p>
-          )}
-        </div>
-
-        {/* Divider / Or Upload Your Own Sheet */}
-        <div className="my-6 flex items-center gap-3">
-          <div className="h-px flex-1 bg-white/20" />
-          <span className="text-[11px] font-semibold tracking-wider uppercase text-white/50">
-            Or Use Your Own Sheet
-          </span>
-          <div className="h-px flex-1 bg-white/20" />
-        </div>
-
-        {/* Student Project and Privacy Notice (Issue #45 / ADR-0011) */}
-        <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3.5 text-[11px] leading-relaxed text-zinc-200">
-          <div className="flex items-center gap-2 font-bold text-emerald-300 text-[12px]">
-            <span>🎓 Student Project &amp; Privacy Notice</span>
-          </div>
-          <p className="mt-1.5 text-zinc-300">
-            InForm is an academic student research prototype. When you upload or photograph your InBody sheet:
-          </p>
-          <ul className="mt-1.5 list-disc pl-4 space-y-1 text-zinc-300">
-            <li>
-              <strong>Temporary session only:</strong> Your photo is held in memory during this session only so you can review extracted numbers side-by-side.
-            </li>
-            <li>
-              <strong>Zero persistence:</strong> Your photo is <strong>never</strong> written to a database, cloud storage, disk, or logs (ADR-0011).
-            </li>
-            <li>
-              <strong>Discarded on save:</strong> Once you confirm or save your scan, the photo is permanently discarded. Only your verified numbers are used for your plan.
-            </li>
+                    <span className="mt-[8px] text-[12px] font-bold leading-tight">{sample.name}</span>
+                    <span className="mt-[3px] line-clamp-2 text-[9px] leading-snug text-black/60">
+                      {sample.description}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
-        </div>
-
-        <div>
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadingPhoto}
-            className="flex h-[75px] w-full flex-col items-center justify-center gap-1 rounded-[15px] border-2 border-dashed border-white/30 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-6 opacity-70" src={imgUpload} />
-            <span className="text-[11px] font-medium text-white/80">
-              {uploadingPhoto
-                ? "Starting model analysis…"
-                : "Upload from photo library (JPG, PNG, PDF)"}
-            </span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf"
-            className="hidden"
-            onChange={handleFileSelected}
-          />
-
-          <Link
-            href="/upload/capture"
-            className="mt-3 flex h-[38px] w-full items-center justify-center gap-[8px] rounded-lg bg-[#117d69] text-[13px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-4" src={imgCamera} />
-            Take Photo with Camera
-          </Link>
-
-          {uploadError && (
-            <p role="alert" className="mt-3 text-[12px] text-rose-300">
-              {uploadError}
-            </p>
-          )}
-        </div>
+        )}
+        {pickError && (
+          <p role="alert" className="mt-3 text-[12px] text-rose-300">
+            {pickError}
+          </p>
+        )}
       </div>
-
-      {/* Sceptic's Button Confirmation Modal (Issue #40: Upfront wait commitment) */}
-      {scepticModalSample && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-[330px] rounded-2xl border border-white/20 bg-zinc-900 p-5 text-white shadow-2xl">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <span className="text-xl">⚡</span>
-              <h3 className="text-[16px] font-bold">The Sceptic&apos;s Button</h3>
-            </div>
-
-            <p className="mt-2 text-[12px] leading-relaxed text-zinc-300">
-              Run our self-hosted <strong>Donut engine</strong> live on{" "}
-              <span className="font-semibold text-white">{scepticModalSample.name}</span> rather
-              than serving the pre-computed reading.
-            </p>
-
-            {/* Expected wait stated up front before committing (AC #2) */}
-            <div className="mt-3.5 rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-[11px] text-amber-200">
-              <p className="flex items-center gap-1 font-bold text-amber-300">
-                <span>⏱️ Expected wait:</span>
-                <span className="underline">around 45 seconds</span>
-              </p>
-              <p className="mt-1 text-[10px] leading-normal text-amber-200/90">
-                Inference runs live on CPU. It uses long polling so your read survives host timeouts,
-                with honest stage-by-stage progress.
-              </p>
-            </div>
-
-            <p className="mt-3 text-[11px] text-zinc-400">
-              The live read will return the exact same audited numbers as the stored reading.
-            </p>
-
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setScepticModalSample(null)}
-                disabled={startingLiveRead}
-                className="flex-1 rounded-lg bg-zinc-800 py-2.5 text-[12px] font-semibold text-zinc-300 hover:bg-zinc-700 transition"
-              >
-                Keep Instant Read
-              </button>
-              <button
-                type="button"
-                onClick={() => handleStartLiveRead(scepticModalSample)}
-                disabled={startingLiveRead}
-                className="flex-1 rounded-lg bg-[#117d69] py-2.5 text-[12px] font-bold text-white hover:bg-[#0e6857] shadow-sm transition"
-              >
-                {startingLiveRead ? "Starting…" : "Run Live Read (~45s)"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {privacyNotice}
+      {stagedPhoto && (
+        <PhotoConfirm
+          photo={stagedPhoto}
+          busy={uploadingPhoto}
+          error={uploadError}
+          onBack={() => {
+            setStagedPhoto(null);
+            setUploadError(null);
+          }}
+          alternateLabel="Choose other file"
+          alternateIcon="image"
+          onAlternate={() => fileInputRef.current?.click()}
+          onConfirm={handleConfirmUpload}
+        />
       )}
     </PhoneFrame>
   );

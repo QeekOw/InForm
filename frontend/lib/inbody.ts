@@ -130,6 +130,12 @@ export type SampleExtraction = {
   message?: string | null;
 };
 
+// Mirrors backend.main.CapabilitiesResponse. What this particular deployment
+// can do, so the UI never offers an action the server cannot perform.
+export type Capabilities = {
+  live_read_available: boolean;
+};
+
 export type ReadJob = {
   read_id: string;
   sample_id: string | null;

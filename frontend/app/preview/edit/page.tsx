@@ -1,20 +1,19 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/BackButton";
+import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
-import ReportPhoto from "@/components/ReportPhoto";
+import { btn, Modal, Tag } from "@/components/ui";
 import { API_URL } from "@/lib/config";
 import {
   FIELD_CONSTRAINTS,
   getFieldLabel,
-  getUnresolvedFlagged,
   normalizeFieldKey,
   parseAndValidateFieldInput,
   validateFieldValue,
 } from "@/lib/corrections";
-import { confirmReading } from "@/lib/flow";
 import {
   BMR_FIELD,
   BODY_COMPOSITION_FIELDS,
@@ -27,10 +26,10 @@ import {
   type ScalarInBodyField,
   type SegmentalLeanField,
 } from "@/lib/inbody";
-import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
-const imgBack = "/icons/preview/back-arrow.svg";
-const imgCamera = "/icons/preview/camera-icon.svg";
+/** Visceral Fat Level is the one optional field (ADR-0004). */
+const OPTIONAL_FIELD_KEYS = new Set(["visceral_fat_level"]);
 
 function isSegmentField(key: string): key is SegmentalLeanField {
   return (
@@ -42,22 +41,39 @@ function isSegmentField(key: string): key is SegmentalLeanField {
   );
 }
 
+/** One editable value, flattened out of the three separate groups the sheet is
+ * displayed in, so flagged and unread fields from anywhere on the sheet can be
+ * gathered onto one list (Requirement 4.3). */
+type EditableField = {
+  /** Canonical dotted key, e.g. `segmental_lean.left_arm_kg`. */
+  normKey: string;
+  /** The key `updateField` expects: short for segments, plain for scalars. */
+  inputKey: string;
+  label: string;
+  unit: string;
+  value: number | null;
+  optional: boolean;
+};
+
 function ValueField({
   value,
   fieldKey,
+  label,
   unit,
   invalid = false,
   onFieldChange,
 }: {
   value: number | null;
   fieldKey: string;
+  /** Accessible name for the input. */
+  label: string;
   unit: string;
   invalid?: boolean;
   onFieldChange: (val: number | null, unit?: string, error?: string | null) => void;
 }) {
   const [typedText, setTypedText] = useState<string | null>(null);
 
-  const displayValue = typedText !== null ? typedText : (value != null ? String(value) : "");
+  const displayValue = typedText !== null ? typedText : value != null ? String(value) : "";
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
@@ -77,24 +93,34 @@ function ValueField({
 
   return (
     <span
-      className={`flex items-center gap-1 rounded-md border-[1.5px] px-2 py-0.5 ${
-        invalid ? "border-red-500 bg-red-50/50" : "border-[#d9d9d9]"
+      className={`flex h-[24px] items-center gap-1 rounded-[6px] bg-[#fcfcfc] px-2 text-black focus-within:ring-2 focus-within:ring-[#7ee0cf] ${
+        invalid ? "ring-2 ring-rose-400" : ""
       }`}
     >
       <input
         type="text"
+        inputMode="decimal"
         value={displayValue}
         placeholder="—"
         aria-invalid={invalid}
+        aria-label={label}
         onBlur={handleBlur}
         onChange={handleChange}
-        className="w-20 text-right text-[12px] font-bold outline-none bg-transparent"
+        className="w-[52px] bg-transparent text-right text-[12px] font-bold outline-none"
       />
-      {unit && <span className="text-[8px] font-medium opacity-60">{unit}</span>}
+      {unit && <span className="text-[9px] font-medium opacity-60">{unit}</span>}
     </span>
   );
 }
 
+/**
+ * One row: label, the reason it needs attention, an input, and any error.
+ *
+ * No Confirm/Undo button. A flagged value left unchanged is reviewed by
+ * submitting this page, which is one act covering every flagged field at once
+ * (Requirements 4.2, 4.4). The gate itself is untouched: submitting is still
+ * the thing that has to happen before a plan exists (issue #39, ADR-0008).
+ */
 function Row({
   label,
   fieldKey,
@@ -104,8 +130,8 @@ function Row({
   invalid = false,
   isUnread = false,
   isFlagged = false,
-  isConfirmed = false,
-  onConfirm,
+  isCorrected = false,
+  optional = false,
   error = null,
 }: {
   label: string;
@@ -116,63 +142,39 @@ function Row({
   invalid?: boolean;
   isUnread?: boolean;
   isFlagged?: boolean;
-  isConfirmed?: boolean;
-  onConfirm?: () => void;
+  isCorrected?: boolean;
+  optional?: boolean;
   error?: string | null;
 }) {
   return (
-    <div className="py-1">
-      <div className="flex items-center justify-between text-[12px]">
-        <span className="flex items-center gap-1.5">
+    <div className="py-[3px]">
+      <div className="flex items-center justify-between gap-2 text-[12px]">
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span>{label}</span>
-          {isUnread && (
-            <span className="rounded bg-rose-200 px-1 py-0.5 text-[8px] font-bold text-rose-800">
-              Unread
-            </span>
+          {optional && <span className="text-[9px] text-white/50">optional</span>}
+          {isUnread && !isCorrected && <Tag tone="rose">Couldn&apos;t read</Tag>}
+          {isFlagged && !isCorrected && (
+            <Tag tone="amber">
+              <Icon name="alert" size={9} className="mr-[2px]" />
+              Check this
+            </Tag>
           )}
-          {isFlagged && !isConfirmed && (
-            <span className="inline-flex items-center gap-1">
-              <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
-                Flagged Check
-              </span>
-              {onConfirm && (
-                <button
-                  type="button"
-                  onClick={onConfirm}
-                  className="rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
-                >
-                  Confirm
-                </button>
-              )}
-            </span>
-          )}
-          {isConfirmed && (
-            <span className="inline-flex items-center gap-1">
-              <span className="rounded bg-emerald-200 px-1 py-0.5 text-[8px] font-bold text-emerald-800">
-                ✓ Confirmed
-              </span>
-              {onConfirm && (
-                <button
-                  type="button"
-                  onClick={onConfirm}
-                  className="text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
-                  title="Undo confirmation"
-                >
-                  Undo
-                </button>
-              )}
-            </span>
-          )}
+          {isCorrected && <Tag tone="sky">Edited</Tag>}
         </span>
         <ValueField
           value={value}
           fieldKey={fieldKey}
+          label={label}
           unit={unit}
           invalid={invalid}
           onFieldChange={onChange}
         />
       </div>
-      {error && <p role="alert" className="mt-0.5 text-right text-[10px] font-medium text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-0.5 text-right text-[10px] font-medium text-rose-300">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -180,14 +182,17 @@ function Row({
 export default function PreviewEdit() {
   const router = useRouter();
   const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
-  const [sampleId, setSampleId] = useState<string | null>(null);
-  const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>({});
-  const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(new Set());
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [viewingPhoto, setViewingPhoto] = useState(false);
+  const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>(
+    {},
+  );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [unreadKeys, setUnreadKeys] = useState<Set<string>>(new Set());
   const [flaggedKeys, setFlaggedKeys] = useState<Set<string>>(new Set());
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [showErrors, setShowErrors] = useState(false);
+  const [showWholeSheet, setShowWholeSheet] = useState(false);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -197,13 +202,13 @@ export default function PreviewEdit() {
     const loadedExtraction = loadJSON<SampleExtraction>(SESSION_KEYS.extraction);
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setExtraction(loadedExtraction);
     setCorrections(storedCorrections);
-    setSampleId(loadedSampleId);
+    setPhoto(
+      loadedSampleId ? `${API_URL}/samples/${loadedSampleId}/image` : loadJSON<string>(SESSION_KEYS.photo),
+    );
 
-    const storedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
-    setConfirmedKeys(new Set(storedConfirmations.map(normalizeFieldKey)));
     if (loadedExtraction?.flagged) {
       setFlaggedKeys(new Set(loadedExtraction.flagged.map(normalizeFieldKey)));
     }
@@ -214,17 +219,18 @@ export default function PreviewEdit() {
           segmental_lean: { ...storedReading.segmental_lean },
         }
       : loadedExtraction?.data
-      ? {
-          ...loadedExtraction.data,
-          segmental_lean: { ...loadedExtraction.data.segmental_lean },
-        }
-      : {
-          ...DEFAULT_READING,
-          segmental_lean: { ...DEFAULT_READING.segmental_lean },
-        };
+        ? {
+            ...loadedExtraction.data,
+            segmental_lean: { ...loadedExtraction.data.segmental_lean },
+          }
+        : {
+            ...DEFAULT_READING,
+            segmental_lean: { ...DEFAULT_READING.segmental_lean },
+          };
 
-    // If there are unread fields, ensure they are NOT prefilled with demo/default values
-    // unless a user correction was already stored for that field.
+    // An unread field has no value, and must not be pre-filled with a demo or
+    // default one — that would be handing someone a number to accept that nobody
+    // measured (ADR-0008).
     if (loadedExtraction?.unread && loadedExtraction.unread.length > 0) {
       const unreadSet = new Set(loadedExtraction.unread.map(normalizeFieldKey));
       setUnreadKeys(unreadSet);
@@ -264,13 +270,11 @@ export default function PreviewEdit() {
       }
     }
 
-    // Apply any previously stored corrections to the base draft
+    // Re-apply corrections typed on an earlier visit to this page.
     for (const [rawKey, corr] of Object.entries(storedCorrections)) {
       const normKey = normalizeFieldKey(rawKey);
       const val =
-        typeof corr === "object" && corr !== null && "value" in corr
-          ? corr.value
-          : Number(corr);
+        typeof corr === "object" && corr !== null && "value" in corr ? corr.value : Number(corr);
       if (!Number.isNaN(val)) {
         if (isSegmentField(rawKey)) {
           if (base.segmental_lean) base.segmental_lean[rawKey] = val;
@@ -284,6 +288,7 @@ export default function PreviewEdit() {
     }
 
     setDraft(base);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   const updateField = (
@@ -309,17 +314,14 @@ export default function PreviewEdit() {
     }
 
     if (value !== null) {
-      setCorrections((prev) => ({
-        ...prev,
-        [normKey]: { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) },
-      }));
-      // AC: Correcting a flagged value records a corrected field, not confirmed.
-      setConfirmedKeys((prev) => {
-        const next = new Set(prev);
-        if (next.has(normKey)) {
-          next.delete(normKey);
-          saveJSON(SESSION_KEYS.confirmations, Array.from(next));
-        }
+      // A value a person typed is a corrected field, recorded alongside the
+      // measured ones and never merged into them.
+      setCorrections((prev) => {
+        const next = {
+          ...prev,
+          [normKey]: { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) },
+        };
+        saveJSON(SESSION_KEYS.corrections, next);
         return next;
       });
     } else {
@@ -327,30 +329,10 @@ export default function PreviewEdit() {
         const next = { ...prev };
         delete next[normKey];
         delete next[key];
+        saveJSON(SESSION_KEYS.corrections, next);
         return next;
       });
     }
-  };
-
-  const handleToggleConfirm = (fieldKey: string) => {
-    const norm = normalizeFieldKey(fieldKey);
-    setConfirmedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(norm)) {
-        next.delete(norm);
-      } else {
-        next.add(norm);
-        // If confirmed, remove from corrections so it stays a measured field!
-        setCorrections((c) => {
-          const nextC = { ...c };
-          delete nextC[norm];
-          delete nextC[fieldKey];
-          return nextC;
-        });
-      }
-      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
-      return next;
-    });
   };
 
   const getFieldError = (normKey: string, value: number | null): string | null => {
@@ -360,34 +342,53 @@ export default function PreviewEdit() {
     return validateFieldValue(normKey, value);
   };
 
-  const errors: Record<string, string | null> = {
-    weight_kg: getFieldError("weight_kg", draft.weight_kg),
-    lean_body_mass_kg: getFieldError("lean_body_mass_kg", draft.lean_body_mass_kg),
-    percent_body_fat: getFieldError("percent_body_fat", draft.percent_body_fat),
-    skeletal_muscle_mass_kg: getFieldError("skeletal_muscle_mass_kg", draft.skeletal_muscle_mass_kg),
-    visceral_fat_level: getFieldError("visceral_fat_level", draft.visceral_fat_level),
-    basal_metabolic_rate_kcal: getFieldError("basal_metabolic_rate_kcal", draft.basal_metabolic_rate_kcal),
-    "segmental_lean.left_arm_kg": getFieldError(
-      "segmental_lean.left_arm_kg",
-      draft.segmental_lean?.left_arm_kg ?? null,
-    ),
-    "segmental_lean.right_arm_kg": getFieldError(
-      "segmental_lean.right_arm_kg",
-      draft.segmental_lean?.right_arm_kg ?? null,
-    ),
-    "segmental_lean.left_leg_kg": getFieldError(
-      "segmental_lean.left_leg_kg",
-      draft.segmental_lean?.left_leg_kg ?? null,
-    ),
-    "segmental_lean.right_leg_kg": getFieldError(
-      "segmental_lean.right_leg_kg",
-      draft.segmental_lean?.right_leg_kg ?? null,
-    ),
-    "segmental_lean.trunk_kg": getFieldError(
-      "segmental_lean.trunk_kg",
-      draft.segmental_lean?.trunk_kg ?? null,
-    ),
-  };
+  // Every value on the sheet, flattened and in display order.
+  const allFields: EditableField[] = [
+    ...BODY_COMPOSITION_FIELDS.map((field) => ({
+      normKey: normalizeFieldKey(field.key),
+      inputKey: field.key as string,
+      label: field.label,
+      unit: field.key === "visceral_fat_level" ? "level" : field.unit,
+      value: draft[field.key],
+      optional: OPTIONAL_FIELD_KEYS.has(field.key),
+    })),
+    {
+      normKey: normalizeFieldKey(BMR_FIELD.key),
+      inputKey: BMR_FIELD.key as string,
+      label: BMR_FIELD.label,
+      unit: BMR_FIELD.unit,
+      value: draft[BMR_FIELD.key],
+      optional: false,
+    },
+    ...SEGMENTAL_LEAN_COLUMNS.flat().map((field) => ({
+      normKey: normalizeFieldKey(field.key),
+      inputKey: field.key as string,
+      label: field.label,
+      unit: field.unit,
+      value: draft.segmental_lean?.[field.key] ?? null,
+      optional: false,
+    })),
+  ];
+
+  const errors: Record<string, string | null> = Object.fromEntries(
+    allFields.map((field) => [field.normKey, getFieldError(field.normKey, field.value)]),
+  );
+
+  const isCorrected = (normKey: string) => normKey in corrections;
+
+  // Everything the extraction couldn't read or couldn't reconcile, gathered from
+  // all three groups onto one list (Requirement 4.3).
+  const attentionFields = allFields.filter(
+    (field) => unreadKeys.has(field.normKey) || flaggedKeys.has(field.normKey),
+  );
+  const otherFields = allFields.filter(
+    (field) => !unreadKeys.has(field.normKey) && !flaggedKeys.has(field.normKey),
+  );
+
+  // Flagged fields the person has not retyped. Submitting the page records these
+  // as reviewed: looked at, checked against the sheet, left as measured. They
+  // stay measured fields and do not become corrections.
+  const reviewedUnchanged = [...flaggedKeys].filter((normKey) => !isCorrected(normKey));
 
   let crossFieldError: string | null = null;
   if (
@@ -395,216 +396,193 @@ export default function PreviewEdit() {
     draft.lean_body_mass_kg != null &&
     draft.lean_body_mass_kg > draft.weight_kg
   ) {
-    crossFieldError = "Lean Body Mass cannot exceed total Weight.";
+    crossFieldError = "Lean Body Mass can't be more than total Weight.";
   }
 
   const blank = blankRequiredFields(draft);
-  const hasRangeErrors = Boolean(
-    Object.values(errors).some(Boolean) || crossFieldError,
-  );
+  const hasRangeErrors = Boolean(Object.values(errors).some(Boolean) || crossFieldError);
 
-  const unresolvedFlagged = getUnresolvedFlagged(
-    flaggedKeys,
-    corrections,
-    confirmedKeys,
-  );
+  // A value already on the sheet that sits outside its plausible range has to be
+  // corrected — it cannot be accepted as-is (Requirement 4.7). This is what stops
+  // the real_270_clean sample's misread 7 kg lean body mass from becoming a
+  // 308 kcal daily target. The server's ImplausibleConfirmationError is the
+  // backstop; this is the immediate answer.
+  const outOfRangeFlagged = [...flaggedKeys].filter((normKey) => Boolean(errors[normKey]));
 
-  const handleConfirm = () => {
-    if (blank.length > 0 || hasRangeErrors || unresolvedFlagged.length > 0) {
+  const canSubmit = blank.length === 0 && !hasRangeErrors;
+
+  /** Save corrections and the review of what was left unchanged, then return to
+   * Preview, where Confirm builds the plan (Figma: Edit -> Save -> Preview). */
+  const handleSave = () => {
+    if (!canSubmit) {
       setShowErrors(true);
       return;
     }
 
-    // Every required field is filled and valid.
-    // Store corrections alongside measured fields (never merged into them)
-    router.push(
-      confirmReading(
-        draft as InBodyPayload,
-        corrections,
-        extraction?.data,
-        Array.from(confirmedKeys),
-      ),
-    );
+    saveJSON(SESSION_KEYS.reading, draft);
+    if (extraction?.data) {
+      saveJSON(SESSION_KEYS.measured, extraction.data);
+    }
+    if (Object.keys(corrections).length > 0) {
+      saveJSON(SESSION_KEYS.corrections, corrections);
+    } else {
+      removeSessionItem(SESSION_KEYS.corrections);
+    }
+    if (reviewedUnchanged.length > 0) {
+      saveJSON(SESSION_KEYS.confirmations, reviewedUnchanged);
+    } else {
+      removeSessionItem(SESSION_KEYS.confirmations);
+    }
+
+    router.push("/preview");
   };
 
+  const renderRow = (field: EditableField) => (
+    <Row
+      key={field.normKey}
+      label={field.label}
+      fieldKey={field.inputKey}
+      value={field.value}
+      unit={field.unit}
+      optional={field.optional}
+      invalid={(showErrors && blank.includes(field.label)) || Boolean(errors[field.normKey])}
+      isUnread={unreadKeys.has(field.normKey) && field.value === null}
+      isFlagged={flaggedKeys.has(field.normKey)}
+      isCorrected={isCorrected(field.normKey)}
+      error={errors[field.normKey]}
+      onChange={(value, unit, err) => updateField(field.inputKey, value, unit, err)}
+    />
+  );
+
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="max-h-screen overflow-y-auto pb-10">
-        <div className="flex items-center gap-3 px-[30px] pt-[62px]">
+    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+      {/* Sheet photo header, so values can be checked against it */}
+      <div className="relative h-[275px] w-full overflow-hidden">
+        {photo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            alt=""
+            src={photo}
+            className="size-full object-cover object-top"
+            onError={(e) => {
+              e.currentTarget.style.visibility = "hidden";
+            }}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-[#3e3e3e]/40 to-[#3e3e3e]" />
+        <BackButton href="/preview" label="Back to the preview" className="absolute left-[31px] top-[48px]" />
+        {photo && (
           <button
             type="button"
-            onClick={() => router.back()}
-            className="flex size-8 items-center justify-center rounded-full bg-white shadow-md"
+            onClick={() => setViewingPhoto(true)}
+            aria-label="View the full sheet photo"
+            className="absolute right-[30px] top-[48px] flex size-[28px] items-center justify-center rounded-full bg-[#117d69] text-white shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="Back" className="size-[18px]" src={imgBack} />
+            <Icon name="eye" size={15} />
           </button>
-          <h1 className="text-[24px] font-bold text-[#fcfcfc]">Edit Values</h1>
-        </div>
-
-        <div className="relative mx-[30px] mt-[31px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
-          {sampleId ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt="Sample report"
-              className="size-full object-cover opacity-90"
-              src={`${API_URL}/samples/${sampleId}/image`}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <ReportPhoto />
-          )}
-          <Link
-            href={sampleId ? "/upload" : "/upload/capture"}
-            className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white shadow"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-[14px]" src={imgCamera} />
-            {sampleId ? "Change Sheet" : "Retake"}
-          </Link>
-        </div>
-
-        <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black">
-          {unreadKeys.size > 0 && (
-            <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-[11px] text-rose-900">
-              <span className="font-bold">Enter unread values:</span> Type the missing values off your sheet. They are recorded as your corrections.
-            </div>
-          )}
-          {unresolvedFlagged.length > 0 && (
-            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-              <span className="font-bold">Verify flagged values:</span>{" "}
-              <span className="font-semibold">
-                {unresolvedFlagged.map(getFieldLabel).join(", ")}
-              </span>{" "}
-              triggered physiological cross-checks. Confirm unchanged values or edit them.
-            </div>
-          )}
-          {Object.keys(corrections).some((key) => key.startsWith("segmental_lean.") && key !== "segmental_lean.trunk_kg") && (
-            <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-[11px] text-sky-900">
-              Check edited segmental readings against your sheet. Corrected values will be used for the left/right balance check.
-            </div>
-          )}
-
-          <h2 className="text-[14px] font-bold">Body Composition</h2>
-          <div className="mt-3">
-            {BODY_COMPOSITION_FIELDS.map((field) => {
-              const normKey = normalizeFieldKey(field.key);
-              const error = errors[normKey];
-              const isFlagged = flaggedKeys.has(normKey) && !(normKey in corrections);
-              const isConfirmed = confirmedKeys.has(normKey) && !(normKey in corrections);
-
-              return (
-                <Row
-                  key={field.key}
-                  label={field.label}
-                  fieldKey={field.key}
-                  value={draft[field.key]}
-                  unit={field.key === "visceral_fat_level" ? "level" : field.unit}
-                  invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
-                  isUnread={unreadKeys.has(normKey) && draft[field.key] === null}
-                  isFlagged={isFlagged}
-                  isConfirmed={isConfirmed}
-                  onConfirm={() => handleToggleConfirm(field.key)}
-                  error={error}
-                  onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
-                />
-              );
-            })}
-          </div>
-
-          <div className="my-4 h-px bg-black/10" />
-
-          <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
-          <div className="mt-3 grid grid-cols-2 gap-x-4">
-            {SEGMENTAL_LEAN_COLUMNS.map((column) => (
-              <div key={column[0].key}>
-                {column.map((field) => {
-                  const normKey = normalizeFieldKey(field.key);
-                  const dottedKey = `segmental_lean.${field.key}`;
-                  const error = errors[normKey];
-                  const isFlagged =
-                    (flaggedKeys.has(dottedKey) || flaggedKeys.has(normKey)) &&
-                    !(normKey in corrections) &&
-                    !(dottedKey in corrections);
-                  const isConfirmed =
-                    (confirmedKeys.has(dottedKey) || confirmedKeys.has(normKey)) &&
-                    !(normKey in corrections) &&
-                    !(dottedKey in corrections);
-
-                  return (
-                    <Row
-                      key={field.key}
-                      label={field.label}
-                      fieldKey={field.key}
-                      value={draft.segmental_lean[field.key]}
-                      unit={field.unit}
-                      invalid={(showErrors && blank.includes(field.label)) || Boolean(error)}
-                      isUnread={unreadKeys.has(normKey) && draft.segmental_lean[field.key] === null}
-                      isFlagged={isFlagged}
-                      isConfirmed={isConfirmed}
-                      onConfirm={() => handleToggleConfirm(dottedKey)}
-                      error={error}
-                      onChange={(value, unit, err) => updateField(field.key, value, unit, err)}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          <div className="my-4 h-px bg-black/10" />
-
-          {(() => {
-            const normBmrKey = normalizeFieldKey(BMR_FIELD.key);
-            const bmrError = errors[normBmrKey];
-            const isFlagged = flaggedKeys.has(normBmrKey) && !(normBmrKey in corrections);
-            const isConfirmed = confirmedKeys.has(normBmrKey) && !(normBmrKey in corrections);
-            return (
-              <Row
-                label={BMR_FIELD.label}
-                fieldKey={BMR_FIELD.key}
-                value={draft[BMR_FIELD.key]}
-                unit={BMR_FIELD.unit}
-                invalid={(showErrors && blank.includes(BMR_FIELD.label)) || Boolean(bmrError)}
-                isUnread={unreadKeys.has(normBmrKey) && draft[BMR_FIELD.key] === null}
-                isFlagged={isFlagged}
-                isConfirmed={isConfirmed}
-                onConfirm={() => handleToggleConfirm(BMR_FIELD.key)}
-                error={bmrError}
-                onChange={(value, unit, err) => updateField(BMR_FIELD.key, value, unit, err)}
-              />
-            );
-          })()}
-
-          {showErrors && blank.length > 0 && (
-            <p role="alert" className="mt-4 text-[11px] text-red-600 font-medium">
-              Fill in {blank.join(", ")} before confirming.
-            </p>
-          )}
-
-          {showErrors && crossFieldError && (
-            <p role="alert" className="mt-2 text-[11px] text-red-600 font-medium">
-              {crossFieldError}
-            </p>
-          )}
-
-          {showErrors && unresolvedFlagged.length > 0 && (
-            <p role="alert" className="mt-2 text-[11px] text-amber-700 font-medium">
-              Building a plan is impossible while a flagged field is unresolved. Please confirm or correct: {unresolvedFlagged.map(getFieldLabel).join(", ")}.
-            </p>
-          )}
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            className="mt-6 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
-          >
-            Confirm
-          </button>
-        </div>
+        )}
       </div>
+
+      <div className="relative -mt-[72px] px-[30px] pb-[48px] text-[#fcfcfc]">
+        <h1 className="text-[24px] font-bold tracking-[0.02em]">Edit</h1>
+        <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">
+          {attentionFields.length > 0
+            ? "Make sure the flagged numbers match your InBody report. Fix any that are wrong; anything you leave as it is counts as checked by you."
+            : "Everything read cleanly. Change anything that doesn't match your sheet."}
+        </p>
+
+        {attentionFields.length > 0 ? (
+          <>
+            {unreadKeys.size > 0 && (
+              <p className="mt-[14px] rounded-[8px] bg-rose-400/15 p-[10px] text-[11px] leading-relaxed text-rose-100">
+                <span className="font-bold">Couldn&apos;t be read.</span> Blank boxes weren&apos;t
+                readable at all. Type those straight off your sheet.
+              </p>
+            )}
+            {flaggedKeys.size > 0 && (
+              <p className="mt-[8px] rounded-[8px] bg-amber-400/15 p-[10px] text-[11px] leading-relaxed text-amber-100">
+                <span className="font-bold">These don&apos;t add up.</span> Weight, body fat and
+                lean mass should agree with each other, and here they don&apos;t, so one is
+                probably misread. Your sheet is the only way to tell which.
+              </p>
+            )}
+
+            <h2 className="mt-[24px] text-[16px] font-bold">Needs a check</h2>
+            <div className="mt-[8px]">{attentionFields.map(renderRow)}</div>
+
+            <div className="my-[18px] h-px bg-[#fcfcfc]/30" />
+
+            <button
+              type="button"
+              onClick={() => setShowWholeSheet((v) => !v)}
+              aria-expanded={showWholeSheet}
+              className="flex w-full items-center justify-between text-[12px] font-bold text-[#7ee0cf]"
+            >
+              <span>
+                {showWholeSheet ? "Hide" : "Show"} the other {otherFields.length} values
+              </span>
+              <span aria-hidden="true">{showWholeSheet ? "−" : "+"}</span>
+            </button>
+            {showWholeSheet && (
+              <>
+                <p className="mt-1 text-[10px] text-white/60">
+                  These read cleanly. Edit any of them if the sheet says otherwise.
+                </p>
+                <div className="mt-2">{otherFields.map(renderRow)}</div>
+              </>
+            )}
+          </>
+        ) : (
+          <div className="mt-[20px]">{allFields.map(renderRow)}</div>
+        )}
+
+        {/* Errors, gathered in one place above the single submit. */}
+        {showErrors && blank.length > 0 && (
+          <p role="alert" className="mt-4 text-[11px] font-medium text-rose-300">
+            Fill in {blank.join(", ")} before continuing.
+          </p>
+        )}
+        {showErrors && crossFieldError && (
+          <p role="alert" className="mt-2 text-[11px] font-medium text-rose-300">
+            {crossFieldError}
+          </p>
+        )}
+        {outOfRangeFlagged.length > 0 && (
+          <p role="alert" className="mt-2 text-[11px] font-medium text-amber-200">
+            {outOfRangeFlagged.map(getFieldLabel).join(", ")}{" "}
+            {outOfRangeFlagged.length === 1 ? "is" : "are"} outside the range a real measurement
+            can fall in, so {outOfRangeFlagged.length === 1 ? "it has" : "they have"} to be
+            corrected.
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSave}
+          aria-disabled={!canSubmit}
+          className={`${canSubmit ? btn.primary : btn.secondary} mt-[40px]`}
+        >
+          <Icon name="save" size={16} />
+          Save
+        </button>
+        {attentionFields.length > 0 && reviewedUnchanged.length > 0 && (
+          <p className="mt-2 text-center text-[10px] leading-relaxed text-white/60">
+            Saving records {reviewedUnchanged.map(getFieldLabel).join(", ")} as checked by you
+            and left as measured.
+          </p>
+        )}
+      </div>
+
+      <Modal open={viewingPhoto} onClose={() => setViewingPhoto(false)} title="Your sheet" widthClass="max-w-[370px]">
+        {photo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="The InBody sheet these numbers were read from" src={photo} className="mt-3 w-full rounded-[8px]" />
+        )}
+        <button type="button" onClick={() => setViewingPhoto(false)} className={`${btn.secondary} mt-4`}>
+          <Icon name="close" size={16} />
+          Close
+        </button>
+      </Modal>
     </PhoneFrame>
   );
 }

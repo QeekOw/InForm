@@ -64,3 +64,16 @@ export function createPdfDataUrl(fileName: string): string {
   </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
+
+/** True only for base64 image data URLs the read endpoint can actually decode.
+ *
+ * The session photo is not always image data. A live read on a Sample sheet
+ * stores the server's `/samples/{id}/image` URL there so Analyzing and Preview
+ * can show the sheet, and a URL base64-decodes to garbage — which the backend
+ * can only report as an unreadable photo. That is how a pristine sample sheet
+ * used to come back as "too blurry" (Requirement 1.5). Anything that isn't
+ * decodable image data must never be POSTed as `image_data`.
+ */
+export function isSubmittableImageData(value: string | null | undefined): boolean {
+  return typeof value === "string" && /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
+}

@@ -16,6 +16,7 @@ from inform.inbody import (
     PartialInBody,
     PartialSegmentalLean,
     SegmentalLean,
+    partial_field_value,
 )
 
 
@@ -138,6 +139,29 @@ class CrossCheckFlaggedError(ValueError):
 class UnresolvedFlaggedFieldsError(CrossCheckFlaggedError):
     """Raised when building a plan while one or more flagged fields remain unresolved."""
     pass
+
+
+class ImplausibleConfirmationError(ValueError):
+    """Raised when a person confirms a measured value outside its plausible range.
+
+    Confirming records that a person checked what the machine read; it is not a
+    bypass of the plausibility validation a typed value gets. Without this, an
+    impossible reading — a 7 kg lean body mass on an 86.9 kg person, which the
+    real_270_clean sample sheet actually contains — could be confirmed straight
+    into a plan, while typing that same 7 would be rejected as out of range.
+    A value this far off has to be corrected, not confirmed.
+    """
+
+    def __init__(self, field: str, value: float, reason: str):
+        self.field = field
+        self.value = value
+        self.reason = reason
+        label = FIELD_LABELS.get(field, field)
+        super().__init__(
+            f"{label} reads {value} on this sheet, which is not physiologically "
+            f"plausible ({reason}). Please correct it to the value printed on your "
+            f"sheet rather than confirming it."
+        )
 
 
 def coerce_correction(val: float | int | CorrectionValue | dict[str, Any]) -> CorrectionValue:
@@ -270,6 +294,24 @@ def apply_corrections(
                 all_flags.add(f)
 
     confirmed_set = set(confirmations or [])
+
+    # A confirmed value must still be physiologically plausible: confirmation is
+    # a person saying the machine read this correctly, not a way around the
+    # range check a typed value gets (see ImplausibleConfirmationError).
+    for confirmed_field in sorted(confirmed_set):
+        if confirmed_field in corrected_keys:
+            continue  # corrections were already validated above
+        if confirmed_field not in FIELD_SPECS:
+            continue
+        confirmed_value = partial_field_value(effective_partial, confirmed_field)
+        if confirmed_value is None:
+            continue
+        try:
+            validate_correction(confirmed_field, CorrectionValue(value=float(confirmed_value)))
+        except ValueError as exc:
+            raise ImplausibleConfirmationError(
+                confirmed_field, float(confirmed_value), str(exc)
+            ) from exc
 
     # Any flagged field not corrected and not confirmed is unresolved
     unresolved_flags = sorted(

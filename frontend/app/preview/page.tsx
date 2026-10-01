@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/BackButton";
+import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
-import ReportPhoto from "@/components/ReportPhoto";
+import { btn, cardClass, Modal, Tag } from "@/components/ui";
 import { API_URL } from "@/lib/config";
 import { getFieldLabel, getUnresolvedFlagged, normalizeFieldKey } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
@@ -16,92 +18,88 @@ import {
   type InBodyPayload,
   type SampleExtraction,
 } from "@/lib/inbody";
-import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, SESSION_KEYS } from "@/lib/session";
 
-const imgBack = "/icons/preview/back-arrow.svg";
-const imgCamera = "/icons/preview/camera-icon.svg";
-const imgEdit = "/icons/preview/edit-icon.svg";
+type RowStatus = "unread" | "flagged" | "confirmed" | "corrected" | null;
 
-function Row({
-  label,
-  value,
-  unit,
-  isFlagged = false,
-  isUnread = false,
-  isCorrected = false,
-  isConfirmed = false,
-  requiresConfirmation = false,
-  onConfirm,
-}: {
-  label: string;
-  value: string | number | null;
-  unit: string;
-  isFlagged?: boolean;
-  isUnread?: boolean;
-  isCorrected?: boolean;
-  isConfirmed?: boolean;
-  requiresConfirmation?: boolean;
-  onConfirm?: () => void;
-}) {
-  let containerBg = "";
-  if (isUnread) containerBg = "bg-rose-50 -mx-2 px-2 rounded border border-rose-200";
-  else if (isFlagged && !isCorrected && !isConfirmed) containerBg = "bg-amber-50 -mx-2 px-2 rounded border border-amber-200";
-  else if (isConfirmed && !isCorrected) containerBg = "bg-emerald-50 -mx-2 px-2 rounded border border-emerald-200";
-  else if (isCorrected) containerBg = "bg-sky-50 -mx-2 px-2 rounded border border-sky-200";
+function statusOf(opts: {
+  isUnread: boolean;
+  isFlagged: boolean;
+  isCorrected: boolean;
+  isConfirmed: boolean;
+}): RowStatus {
+  if (opts.isCorrected) return "corrected";
+  if (opts.isUnread) return "unread";
+  if (opts.isFlagged && !opts.isConfirmed) return "flagged";
+  if (opts.isFlagged && opts.isConfirmed) return "confirmed";
+  return null;
+}
+
+/**
+ * One extracted value on the dark review screen, labelled with how much to
+ * trust it. Read-only: a single Edit action deals with every flagged and unread
+ * value at once (the fail-closed gate is satisfied by one submit there).
+ */
+function Row({ label, value, unit, status }: { label: string; value: string | number | null; unit: string; status: RowStatus }) {
+  const tag =
+    status === "unread" ? (
+      <Tag tone="rose">Couldn&apos;t read</Tag>
+    ) : status === "flagged" ? (
+      <Tag tone="amber">
+        <Icon name="alert" size={9} className="mr-[2px]" />
+        Check this
+      </Tag>
+    ) : status === "confirmed" ? (
+      <Tag tone="teal">Checked</Tag>
+    ) : status === "corrected" ? (
+      <Tag tone="sky">Edited</Tag>
+    ) : null;
 
   return (
-    <div className={`flex items-baseline justify-between py-1 text-[12px] ${containerBg}`}>
-      <span className="flex items-center gap-1.5">
-        <span>{label}</span>
-        {isUnread && (
-          <span className="rounded bg-rose-200 px-1 py-0.5 text-[8px] font-bold text-rose-800">
-            Unread
-          </span>
-        )}
-        {(isFlagged || requiresConfirmation) && !isCorrected && !isConfirmed && (
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800">
-              {isFlagged ? "Flagged Check" : "Check sheet"}
-            </span>
-            {onConfirm && (
-              <button
-                type="button"
-                onClick={onConfirm}
-                aria-label={`Confirm ${label} matches your InBody sheet`}
-                className="min-h-6 min-w-6 rounded bg-[#117d69] px-1.5 py-0.5 text-[8px] font-bold text-white shadow-xs hover:bg-[#0e6353]"
-              >
-                Confirm
-              </button>
-            )}
-          </span>
-        )}
-        {isConfirmed && !isCorrected && (
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-emerald-200 px-1 py-0.5 text-[8px] font-bold text-emerald-800">
-              ✓ Confirmed
-            </span>
-            {onConfirm && (
-              <button
-                type="button"
-                onClick={onConfirm}
-                className="min-h-6 min-w-6 text-[8px] font-medium text-zinc-500 hover:text-zinc-700 underline"
-                title="Undo confirmation"
-              >
-                Undo
-              </button>
-            )}
-          </span>
-        )}
-        {isCorrected && (
-          <span className="rounded bg-sky-200 px-1 py-0.5 text-[8px] font-bold text-sky-800">
-            Corrected
-          </span>
-        )}
+    <div
+      className={`flex items-center justify-between gap-2 py-[4px] text-[12px] ${
+        status === "flagged" || status === "unread" ? "-mx-[8px] rounded-[6px] bg-amber-400/10 px-[8px]" : ""
+      }`}
+    >
+      <span className="flex min-w-0 items-center gap-[6px]">
+        <span className="truncate">{label}</span>
+        {tag}
       </span>
-      <span className="font-bold">
-        {value ?? "—"}{" "}
-        {value != null && unit && <span className="text-[8px] font-medium">{unit}</span>}
+      <span className="shrink-0 font-bold">
+        {value ?? "—"}
+        {value != null && unit && <span className="ml-[3px] text-[9px] font-medium opacity-80">{unit}</span>}
       </span>
+    </div>
+  );
+}
+
+/** The sheet photo across the top of the screen, faded into the background. */
+function PhotoHeader({ src, height, onView }: { src: string | null; height: number; onView?: () => void }) {
+  return (
+    <div className="relative w-full overflow-hidden" style={{ height }}>
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          src={src}
+          className="size-full object-cover object-top"
+          onError={(e) => {
+            e.currentTarget.style.visibility = "hidden";
+          }}
+        />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-[#3e3e3e]/40 to-[#3e3e3e]" />
+      <BackButton href="/upload" className="absolute left-[31px] top-[48px]" />
+      {src && onView && (
+        <button
+          type="button"
+          onClick={onView}
+          aria-label="View the full sheet photo"
+          className="absolute right-[30px] top-[48px] flex size-[28px] items-center justify-center rounded-full bg-[#117d69] text-white shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+        >
+          <Icon name="eye" size={15} />
+        </button>
+      )}
     </div>
   );
 }
@@ -111,8 +109,10 @@ export default function Preview() {
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<Record<string, unknown>>({});
   const [confirmedFields, setConfirmedFields] = useState<Set<string>>(new Set());
+  const [viewingPhoto, setViewingPhoto] = useState(false);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
@@ -122,9 +122,12 @@ export default function Preview() {
     const storedCorrections = loadJSON<Record<string, unknown>>(SESSION_KEYS.corrections) ?? {};
     const storedConfirmations = loadJSON<string[]>(SESSION_KEYS.confirmations) ?? [];
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setExtraction(loadedExtraction);
     setSampleId(loadedSampleId);
+    setPhoto(
+      loadedSampleId ? `${API_URL}/samples/${loadedSampleId}/image` : loadJSON<string>(SESSION_KEYS.photo),
+    );
     setCorrections(storedCorrections);
     setConfirmedFields(new Set(storedConfirmations.map(normalizeFieldKey)));
 
@@ -133,428 +136,273 @@ export default function Preview() {
       loadedExtraction?.error === "not_an_inbody_sheet" ||
       (loadedExtraction?.status === "refused" && loadedExtraction?.data == null);
 
-    if (isHardRefusalCase) {
-      setReading(null);
-    } else if (storedReading) {
-      setReading(storedReading);
-    } else if (loadedExtraction?.data) {
-      setReading(loadedExtraction.data);
-    } else {
-      setReading(DEFAULT_READING);
-    }
+    if (isHardRefusalCase) setReading(null);
+    else if (storedReading) setReading(storedReading);
+    else if (loadedExtraction?.data) setReading(loadedExtraction.data);
+    else setReading(DEFAULT_READING);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
+  // The model isn't installed on this server (ADR-0010). Checked first so a
+  // server-side fact is never presented as a problem with the person's photo.
+  const isEngineUnavailable = extraction?.error === "engine_unavailable";
   const isNotAnInBodySheet =
-    extraction?.error === "not_an_inbody_sheet" ||
-    (extraction?.message?.toLowerCase().includes("not appear to be an inbody") ?? false);
-
+    !isEngineUnavailable &&
+    (extraction?.error === "not_an_inbody_sheet" ||
+      (extraction?.message?.toLowerCase().includes("not appear to be an inbody") ?? false));
   const isRefusedSheet =
+    !isEngineUnavailable &&
     !isNotAnInBodySheet &&
     (extraction?.status === "refused" ||
       (reading === null && extraction !== null && extraction?.data == null));
 
-  const nonSheetMessage =
-    extraction?.message ??
-    "This image does not appear to be an InBody result sheet. Please upload a clear photo of your InBody 270 or 570 sheet.";
   const flaggedFields = new Set((extraction?.flagged ?? []).map(normalizeFieldKey));
   const unreadFromExtraction = new Set((extraction?.unread ?? []).map(normalizeFieldKey));
   const correctedFields = new Set(Object.keys(corrections).map(normalizeFieldKey));
+  const unresolvedFlagged = getUnresolvedFlagged(extraction?.flagged, corrections, confirmedFields);
 
-  // Determine which flagged fields remain unconfirmed and uncorrected
-  const unresolvedFlagged = getUnresolvedFlagged(
-    extraction?.flagged,
-    corrections,
-    confirmedFields,
-  );
-
-  const handleToggleConfirm = (fieldKey: string) => {
-    const norm = normalizeFieldKey(fieldKey);
-    setConfirmedFields((prev) => {
-      const next = new Set(prev);
-      if (next.has(norm)) {
-        next.delete(norm);
-      } else {
-        next.add(norm);
+  const remainingUnread: string[] = [];
+  if (reading) {
+    for (const key of [
+      "weight_kg",
+      "lean_body_mass_kg",
+      "percent_body_fat",
+      "skeletal_muscle_mass_kg",
+      "basal_metabolic_rate_kcal",
+    ] as const) {
+      if (reading[key] == null) remainingUnread.push(key);
+    }
+    if (reading.segmental_lean) {
+      for (const key of ["left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg"] as const) {
+        if (reading.segmental_lean[key] == null) remainingUnread.push(`segmental_lean.${key}`);
       }
-      saveJSON(SESSION_KEYS.confirmations, Array.from(next));
-      return next;
-    });
-  };
+    }
+  }
+
+  // Everything still needing a person, counted once.
+  const reviewCount = remainingUnread.length + unresolvedFlagged.length;
+  const needsReview = reviewCount > 0;
+  const isDemoReading =
+    !sampleId && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
 
   const handleConfirm = () => {
-    if (reading && remainingUnread.length === 0 && unresolvedFlagged.length === 0) {
+    if (reading && !needsReview) {
       router.push(
-        confirmReading(
-          reading,
-          corrections as Record<string, number>,
-          extraction?.data,
-          Array.from(confirmedFields),
-        ),
+        confirmReading(reading, corrections as Record<string, number>, extraction?.data, Array.from(confirmedFields)),
       );
     }
   };
 
-  // Determine which required fields are still missing / unread
-  const remainingUnread: string[] = [];
-  if (reading) {
-    if (reading.weight_kg == null) remainingUnread.push("weight_kg");
-    if (reading.lean_body_mass_kg == null) remainingUnread.push("lean_body_mass_kg");
-    if (reading.percent_body_fat == null) remainingUnread.push("percent_body_fat");
-    if (reading.skeletal_muscle_mass_kg == null) remainingUnread.push("skeletal_muscle_mass_kg");
-    if (reading.basal_metabolic_rate_kcal == null) remainingUnread.push("basal_metabolic_rate_kcal");
-    if (reading.segmental_lean) {
-      if (reading.segmental_lean.left_arm_kg == null) remainingUnread.push("segmental_lean.left_arm_kg");
-      if (reading.segmental_lean.right_arm_kg == null) remainingUnread.push("segmental_lean.right_arm_kg");
-      if (reading.segmental_lean.left_leg_kg == null) remainingUnread.push("segmental_lean.left_leg_kg");
-      if (reading.segmental_lean.right_leg_kg == null) remainingUnread.push("segmental_lean.right_leg_kg");
-      if (reading.segmental_lean.trunk_kg == null) remainingUnread.push("segmental_lean.trunk_kg");
-    }
-  }
+  const status = (key: string, value: unknown) =>
+    statusOf({
+      isUnread: value == null || unreadFromExtraction.has(key),
+      isFlagged: flaggedFields.has(key),
+      isCorrected: correctedFields.has(key),
+      isConfirmed: confirmedFields.has(key),
+    });
 
-  const isDemoReading =
-    !sampleId && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
+  const photoModal = (
+    <Modal open={viewingPhoto} onClose={() => setViewingPhoto(false)} title="Your sheet" widthClass="max-w-[370px]">
+      {photo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt="The InBody sheet these numbers were read from" src={photo} className="mt-3 w-full rounded-[8px]" />
+      )}
+      <button type="button" onClick={() => setViewingPhoto(false)} className={`${btn.secondary} mt-4`}>
+        <Icon name="close" size={16} />
+        Close
+      </button>
+    </Modal>
+  );
 
-  return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="max-h-screen overflow-y-auto pb-10">
-        <div className="flex items-center gap-3 px-[30px] pt-[62px]">
-          <Link
-            href="/upload"
-            className="flex size-8 items-center justify-center rounded-full bg-white shadow-md"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="Back" className="size-[18px]" src={imgBack} />
-          </Link>
-          <h1 className="text-[24px] font-bold text-[#fcfcfc]">Preview</h1>
-        </div>
+  // --- Couldn't read (three honest variants) --------------------------------
+  if (isEngineUnavailable || isNotAnInBodySheet || isRefusedSheet) {
+    const title = isEngineUnavailable
+      ? "Reading isn't available right now"
+      : isNotAnInBodySheet
+        ? "This doesn't look like an InBody report"
+        : "We failed to read your report";
+    const body = isEngineUnavailable
+      ? "The part of InForm that reads sheets isn't installed on this server. This isn't a problem with your photo, and retaking it won't help. The sample sheets still work."
+      : isNotAnInBodySheet
+        ? "We couldn't find InBody results in this image. Please use a clear photo of an InBody 270 sheet."
+        : sampleId
+          ? "We couldn't read the numbers on this sheet clearly enough. Rather than guess, we'd like you to pick another one."
+          : "Something went wrong while reading your InBody report. Please make sure the photo is clear, complete, and easy to read, then try again.";
 
-        {/* Report Photo Preview */}
-        <div className="relative mx-[30px] mt-[25px] h-[201px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
-          {sampleId ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt="Sample report"
-              className="size-full object-cover opacity-90"
-              src={`${API_URL}/samples/${sampleId}/image`}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-          ) : (
-            <ReportPhoto />
+    return (
+      <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+        <PhotoHeader src={photo} height={433} />
+        <div className="relative -mt-[0px] px-[30px] pb-[48px] text-[#fcfcfc]">
+          <h1 className="text-[24px] font-bold leading-tight tracking-[0.02em]">{title}</h1>
+          <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">{body}</p>
+
+          {!isEngineUnavailable && !sampleId && (
+            <div className={`${cardClass} mt-[32px] p-[16px] text-[12px]`}>
+              <p className="flex items-center gap-[7px] font-bold text-[#117d69]">
+                <Icon name="bulb" size={16} />
+                Tips for a better scan
+              </p>
+              <ul className="mt-[6px] list-disc space-y-[2px] pl-[22px] text-[11px] text-black/75">
+                <li>Make sure all text and numbers are visible</li>
+                <li>Avoid blurry or dark photos</li>
+                <li>Keep the report flat and fully inside the frame</li>
+              </ul>
+            </div>
           )}
 
-          {/* A picked Sample sheet is swapped from the gallery; your own photo is retaken. */}
-          <Link
-            href={sampleId ? "/upload" : "/upload/capture"}
-            className="absolute right-4 top-4 flex h-8 items-center gap-[10px] rounded-lg bg-[#117d69] px-[10px] text-[12px] font-bold text-white shadow"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-[14px]" src={imgCamera} />
-            {sampleId ? "Change Sheet" : "Retake"}
-          </Link>
-        </div>
-
-        {/* State 1: Not an InBody Sheet State */}
-        {isNotAnInBodySheet ? (
-          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
-                Unrecognized document
-              </span>
-            </div>
-            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">Not an InBody sheet</h2>
-            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
-              {nonSheetMessage}
-            </p>
-            <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
-              <p className="font-bold text-zinc-800">Why was this sheet declined?</p>
-              <p className="mt-1">
-                InForm calculates nutrition and exercise recommendations directly from the body composition measurements printed on an InBody 270 or 570 sheet. This image wasn&apos;t recognized as an InBody sheet, so no clinical metrics could be read.
-              </p>
-            </div>
-            {sampleId ? (
-              <>
-                <Link
-                  href="/upload"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  ← Choose another sample sheet
+          <div className="mt-[42px] space-y-[15px]">
+            {!isEngineUnavailable && !sampleId && (
+              <div className="flex gap-[15px]">
+                <Link href="/upload/capture" className={`${btn.light} text-black`}>
+                  <Icon name="camera" size={16} className="text-[#117d69]" />
+                  Retake
                 </Link>
-                <Link
-                  href="/upload/capture"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Take or upload another photo
+                <Link href="/upload" className={`${btn.light} text-black`}>
+                  <Icon name="image" size={16} className="text-[#117d69]" />
+                  Open Files
                 </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/upload/capture"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  Take or upload an InBody sheet
-                </Link>
-                <Link
-                  href="/upload"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  ← Or try a sample sheet from the gallery
-                </Link>
-              </>
-            )}
-          </div>
-        ) : isRefusedSheet ? (
-          /* State 2: Whole-sheet refusal / engine refuses entirely */
-          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-black shadow-sm border border-black/5">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[10px] font-semibold text-zinc-600">
-                {sampleId ? "Careful verification" : "Photo unreadable"}
-              </span>
-            </div>
-            <h2 className="mt-2 text-[16px] font-bold text-zinc-900">
-              {sampleId ? "Unable to read this sheet" : "Photo too blurry to read"}
-            </h2>
-            <p className="mt-2 text-[12px] leading-relaxed text-zinc-700">
-              {sampleId
-                ? "We couldn't read the measurements on this sheet clearly enough to build an accurate plan. Rather than guess or fabricate missing numbers, InForm declines sheets where values cannot be verified with confidence."
-                : "The numbers on this photo couldn't be read clearly enough to build your plan. Rather than guess or fabricate missing numbers, InForm asks for a retake so you know the fix is on your side."}
-            </p>
-            <div className="mt-4 rounded-xl bg-zinc-50 border border-zinc-100 p-3 text-[11px] leading-relaxed text-zinc-600">
-              <p className="font-bold text-zinc-800">
-                {sampleId ? "Why was this sheet declined?" : "Tips for a clear scan"}
-              </p>
-              <p className="mt-1">
-                {sampleId
-                  ? "Every calorie target, macronutrient breakdown, and corrective movement depends on verified body composition numbers. If lighting, blur, or glare prevents a confident read, we decline the sheet to protect your plan."
-                  : "Lay your sheet flat, ensure good overhead lighting without glare or dark shadows, and hold your camera steady so all table rows and numbers are sharp and in focus."}
-              </p>
-            </div>
-            {sampleId ? (
-              <>
-                <Link
-                  href="/upload"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  ← Choose another sample sheet
-                </Link>
-                <Link
-                  href="/upload/capture"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Retake with clearer lighting
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/upload/capture"
-                  className="mt-5 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6857] transition-colors"
-                >
-                  Retake Photo
-                </Link>
-                <Link
-                  href="/upload"
-                  className="mt-2 flex h-[38px] w-full items-center justify-center rounded-lg border border-zinc-200 bg-white text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
-                >
-                  Upload another file or try a sample sheet
-                </Link>
-              </>
-            )}
-          </div>
-        ) : reading && reading.segmental_lean ? (
-          /* Normal / Partial / Flagged Extraction View */
-          <>
-            {isDemoReading && (
-              <div className="mx-[30px] mt-3 flex items-center justify-between rounded-lg bg-white/10 px-3 py-1.5 text-[11px] text-white/90">
-                <span className="font-medium">Demo baseline values</span>
-                <span className="text-[10px] text-white/60">Pending OCR extraction · edit below</span>
               </div>
             )}
-
-            <div
-              className={`mx-[30px] rounded-[15px] bg-white p-[25px] text-black ${
-                isDemoReading ? "mt-[14px]" : "mt-[18px]"
-              }`}
-            >
-              {/* Unread Fields Notice (AC: Unread fields are named individually, not reported as a whole-sheet failure) */}
-              {remainingUnread.length > 0 && (
-                <div className="mb-4 rounded-lg border border-rose-300 bg-rose-50 p-2.5 text-[11px] text-rose-900">
-                  <span className="font-bold">Unread fields:</span> The model could not read{" "}
-                  <span className="font-semibold">
-                    {remainingUnread.map(getFieldLabel).join(", ")}
-                  </span>
-                  . Type the values off your sheet below before building your plan.
-                </div>
-              )}
-
-              {/* Flagged Fields Notice */}
-              {unresolvedFlagged.length > 0 ? (
-                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900">
-                  <span className="font-bold">Flagged fields:</span> The model read values that triggered physiological cross-checks for{" "}
-                  <span className="font-semibold">
-                    {unresolvedFlagged.map(getFieldLabel).join(", ")}
-                  </span>
-                  . Compare with your sheet and tap <strong>Confirm</strong> if correct, or <strong>Edit</strong> to correct.
-                </div>
-              ) : flaggedFields.size > 0 ? (
-                <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-[11px] text-emerald-900">
-                  <span className="font-bold">All flagged fields verified:</span> You have confirmed or corrected all flagged values.
-                </div>
-              ) : null}
-
-              <h2 className="text-[14px] font-bold">Body Composition</h2>
-              <div className="mt-3">
-                {BODY_COMPOSITION_FIELDS.map((field) => {
-                  const value = reading[field.key];
-                  const isUnread = value == null || unreadFromExtraction.has(field.key);
-                  const isCorrected = correctedFields.has(field.key);
-                  const isConfirmed = confirmedFields.has(field.key);
-                  const unit = field.key === "visceral_fat_level" ? "level" : field.unit;
-
-                  return (
-                    <Row
-                      key={field.key}
-                      label={field.label}
-                      value={value != null && field.formatValue ? field.formatValue(value) : value}
-                      unit={unit}
-                      isUnread={isUnread && !isCorrected}
-                      isFlagged={flaggedFields.has(field.key)}
-                      isCorrected={isCorrected}
-                      isConfirmed={isConfirmed}
-                      onConfirm={() => handleToggleConfirm(field.key)}
-                    />
-                  );
-                })}
-              </div>
-
-              <div className="my-4 h-px bg-black/10" />
-
-              <h2 className="text-[14px] font-bold">Segmental Lean Analysis</h2>
-              <p className="mt-1 text-[10px] text-zinc-600">
-                Check both arm and leg readings against your sheet. Unconfirmed pairs won’t be assessed for imbalance.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-x-6">
-                {SEGMENTAL_LEAN_COLUMNS.map((column) => (
-                  <div key={column[0].key}>
-                    {column.map((field) => {
-                      const dottedKey = `segmental_lean.${field.key}`;
-                      const value = reading.segmental_lean[field.key];
-                      const isUnread = value == null || unreadFromExtraction.has(dottedKey);
-                      const isCorrected = correctedFields.has(dottedKey);
-                      const isConfirmed = confirmedFields.has(dottedKey);
-
-                      return (
-                        <Row
-                          key={field.key}
-                          label={field.label}
-                          value={value}
-                          unit={field.unit}
-                          isUnread={isUnread && !isCorrected}
-                          isFlagged={flaggedFields.has(dottedKey)}
-                          isCorrected={isCorrected}
-                          isConfirmed={isConfirmed}
-                          requiresConfirmation={field.key !== "trunk_kg"}
-                          onConfirm={() => handleToggleConfirm(dottedKey)}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-
-              <div className="my-4 h-px bg-black/10" />
-
-              {(() => {
-                const isUnread = reading[BMR_FIELD.key] == null || unreadFromExtraction.has(BMR_FIELD.key);
-                const isCorrected = correctedFields.has(BMR_FIELD.key);
-                const isConfirmed = confirmedFields.has(BMR_FIELD.key);
-                return (
-                  <Row
-                    label={BMR_FIELD.label}
-                    value={reading[BMR_FIELD.key]}
-                    unit={BMR_FIELD.unit}
-                    isUnread={isUnread && !isCorrected}
-                    isFlagged={flaggedFields.has(BMR_FIELD.key)}
-                    isCorrected={isCorrected}
-                    isConfirmed={isConfirmed}
-                    onConfirm={() => handleToggleConfirm(BMR_FIELD.key)}
-                  />
-                );
-              })()}
-
-              <Link
-                href="/preview/edit"
-                className={`mt-6 flex h-[40px] w-full items-center justify-center gap-[10px] rounded-lg text-[14px] font-bold ${
-                  remainingUnread.length > 0
-                    ? "bg-[#117d69] text-white shadow-sm"
-                    : "border-[1.5px] border-[#117d69] text-[#117d69]"
-                }`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  alt=""
-                  className={`size-3 ${remainingUnread.length > 0 ? "invert brightness-0" : ""}`}
-                  src={imgEdit}
-                />
-                {remainingUnread.length > 0
-                  ? `Type unread fields (${remainingUnread.length})`
-                  : "Edit"}
-              </Link>
-
-              {/* Building a plan is impossible while a required field remains unread or flagged field is unresolved */}
-              {remainingUnread.length > 0 ? (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    disabled
-                    aria-disabled="true"
-                    className="flex h-[40px] w-full items-center justify-center rounded-lg bg-zinc-200 text-[14px] font-bold text-zinc-400 cursor-not-allowed"
-                  >
-                    Confirm (fill unread fields first)
-                  </button>
-                  <p className="mt-1.5 text-center text-[11px] text-rose-600 font-medium">
-                    Building a plan is impossible while required fields remain unread.
-                  </p>
-                </div>
-              ) : unresolvedFlagged.length > 0 ? (
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    disabled
-                    aria-disabled="true"
-                    className="flex h-[40px] w-full items-center justify-center rounded-lg bg-zinc-200 text-[14px] font-bold text-zinc-400 cursor-not-allowed"
-                  >
-                    Confirm ({unresolvedFlagged.length} flagged {unresolvedFlagged.length === 1 ? "field" : "fields"} to verify)
-                  </button>
-                  <p className="mt-1.5 text-center text-[11px] text-amber-700 font-medium">
-                    Building a plan is impossible while a flagged field is unresolved.
-                  </p>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  className="mt-2 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm hover:bg-[#0e6353]"
-                >
-                  Confirm
-                </button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="mx-[30px] mt-[18px] rounded-[15px] bg-white p-[25px] text-center text-zinc-600 shadow-sm border border-black/5">
-            <p className="text-[13px]">No InBody reading data available.</p>
-            <Link
-              href="/upload"
-              className="mt-4 flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold text-white shadow-sm"
-            >
-              ← Return to Gallery
+            <Link href="/upload" className={btn.primary}>
+              {isEngineUnavailable ? "Use a sample sheet instead" : sampleId ? "Choose another sheet" : "Try Again"}
+              <Icon name="arrowRight" size={16} />
             </Link>
           </div>
+        </div>
+      </PhoneFrame>
+    );
+  }
+
+  if (!reading || !reading.segmental_lean) {
+    return (
+      <PhoneFrame bg="bg-[#3e3e3e]">
+        <PhotoHeader src={null} height={175} />
+        <div className="px-[30px] text-center text-[#fcfcfc]">
+          <p className="text-[13px]">No InBody reading to show.</p>
+          <Link href="/upload" className={`${btn.primary} mt-4`}>
+            Pick a sheet
+          </Link>
+        </div>
+      </PhoneFrame>
+    );
+  }
+
+  // --- Review -----------------------------------------------------------------
+  return (
+    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+      <PhotoHeader src={photo} height={275} onView={() => setViewingPhoto(true)} />
+
+      <div className="relative -mt-[90px] px-[30px] pb-[48px] text-[#fcfcfc]">
+        <h1 className="text-[24px] font-bold tracking-[0.02em]">Report scanned successfully</h1>
+        <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">
+          Please review the extracted information below and make sure all details are correct
+          before continuing.
+        </p>
+
+        {isDemoReading && (
+          <p className="mt-3 rounded-[8px] bg-white/10 px-3 py-1.5 text-[11px] text-white/80">
+            These are demo baseline values, not a reading of a sheet. Edit them before continuing.
+          </p>
+        )}
+
+        {needsReview ? (
+          <div role="status" className="mt-[16px] rounded-[8px] border border-amber-300/50 bg-amber-400/15 p-[10px] text-[11px] leading-relaxed text-amber-100">
+            <p className="flex items-center gap-[6px] font-bold">
+              <Icon name="alert" size={13} />
+              {reviewCount === 1 ? "One number needs a quick check" : `${reviewCount} numbers need a quick check`}
+            </p>
+            {remainingUnread.length > 0 && (
+              <p className="mt-1">
+                <span className="font-semibold">We couldn&apos;t read:</span>{" "}
+                {remainingUnread.map(getFieldLabel).join(", ")}. Type these in from your sheet.
+              </p>
+            )}
+            {unresolvedFlagged.length > 0 && (
+              <p className="mt-1">
+                <span className="font-semibold">These don&apos;t quite add up:</span>{" "}
+                {unresolvedFlagged.map(getFieldLabel).join(", ")}. One of them was probably misread.
+                Compare them with your sheet.
+              </p>
+            )}
+          </div>
+        ) : flaggedFields.size > 0 || correctedFields.size > 0 ? (
+          <p role="status" className="mt-[16px] rounded-[8px] bg-[#117d69]/25 p-[10px] text-[11px] text-[#d6f5ef]">
+            <span className="font-bold">All checked.</span> Everything doubtful has been edited or
+            confirmed against your sheet.
+          </p>
+        ) : null}
+
+        <h2 className="mt-[28px] text-[16px] font-bold">Body Composition</h2>
+        <div className="mt-[8px]">
+          {BODY_COMPOSITION_FIELDS.map((field) => {
+            const value = reading[field.key];
+            return (
+              <Row
+                key={field.key}
+                label={field.label}
+                value={value != null && field.formatValue ? field.formatValue(value) : value}
+                unit={field.key === "visceral_fat_level" ? "level" : field.unit}
+                status={status(field.key, value)}
+              />
+            );
+          })}
+        </div>
+
+        <div className="my-[22px] h-px bg-[#fcfcfc]/30" />
+
+        <h2 className="text-[16px] font-bold">Segmental Lean Analysis</h2>
+        <div className="mt-[8px] grid grid-cols-2 gap-x-[24px]">
+          {SEGMENTAL_LEAN_COLUMNS.map((column) => (
+            <div key={column[0].key}>
+              {column.map((field) => {
+                const dottedKey = `segmental_lean.${field.key}`;
+                const value = reading.segmental_lean[field.key];
+                return (
+                  <Row key={field.key} label={field.label} value={value} unit={field.unit} status={status(dottedKey, value)} />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        <div className="my-[22px] h-px bg-[#fcfcfc]/30" />
+
+        <Row
+          label={BMR_FIELD.label}
+          value={reading[BMR_FIELD.key]}
+          unit={BMR_FIELD.unit}
+          status={status(BMR_FIELD.key, reading[BMR_FIELD.key])}
+        />
+
+        {/* One action resolves every flagged and unread field on one page. */}
+        <Link
+          href="/preview/edit"
+          className={`${needsReview ? btn.primary : `${btn.light} text-black`} mt-[48px]`}
+        >
+          <Icon name="pencil" size={14} className={needsReview ? "" : "text-[#117d69]"} />
+          {needsReview ? `Check & fix (${reviewCount})` : "Edit"}
+        </Link>
+
+        {/* The fail-closed gate (issue #39, ADR-0008): a flagged or unread
+            value still blocks the plan outright. */}
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={needsReview}
+          aria-describedby={needsReview ? "confirm-blocked" : undefined}
+          className={`${needsReview ? btn.secondary : btn.primary} mt-[15px]`}
+        >
+          Confirm
+        </button>
+        {needsReview && (
+          <p id="confirm-blocked" className="mt-[6px] text-center text-[11px] font-medium text-amber-200">
+            {remainingUnread.length > 0
+              ? "Your plan needs every number, so fill in the missing ones first."
+              : "Check the flagged numbers first, so your plan isn't built on a misread."}
+          </p>
         )}
       </div>
+      {photoModal}
     </PhoneFrame>
   );
 }

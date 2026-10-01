@@ -25,7 +25,7 @@ _BMR_TOLERANCE_KCAL = 100.0
 # download works without extra config. (Hub-id support is a future option; it
 # needs the loader to stop Path-wrapping, which mangles "org/name" on Windows.)
 _DONUT_CKPT_ENV = "INFORM_DONUT_CKPT"
-_DEFAULT_DONUT_CKPT = "models/donut-both-v3"
+_DEFAULT_DONUT_CKPT = "models/donut-270-v9"
 
 
 def _looks_like_hub_id(raw: str) -> bool:
@@ -54,7 +54,14 @@ def default_engine(checkpoint: str | Path | None = None) -> Engine:
     if checkpoint is not None:
         ckpt_raw = str(checkpoint)
     else:
-        ckpt_raw = os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
+        ckpt_raw = os.environ.get(_DONUT_CKPT_ENV)
+        if not ckpt_raw:
+            if Path(_DEFAULT_DONUT_CKPT).exists():
+                ckpt_raw = _DEFAULT_DONUT_CKPT
+            elif Path("models/donut-both-v5").exists():
+                ckpt_raw = "models/donut-both-v5"
+            else:
+                ckpt_raw = _DEFAULT_DONUT_CKPT
     ckpt_path = Path(ckpt_raw)
     if ckpt_path.exists():
         ckpt: Path | str = ckpt_path

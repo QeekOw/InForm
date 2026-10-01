@@ -23,6 +23,26 @@ export const SESSION_KEYS = {
   // Set when a guest confirms a reading before filling in a Profile, so
   // Profile continues to the plan instead of back to upload.
   nextAfterProfile: "inform:nextAfterProfile",
+  // A one-shot message handed to the next screen, so a redirect can explain
+  // itself instead of dumping someone back at the gallery with no reason.
+  // Read and removed by whoever displays it.
+  notice: "inform:notice",
+  // In-app routes visited this session, so the Back control can tell whether
+  // going back would land inside the app or outside it (components/BackButton).
+  backTrail: "inform:backTrail",
+  // The written plan and its provenance, handed from Result to its own Summary
+  // view so reading the prose doesn't mean recomputing the plan (or paying for a
+  // second LLM call) to get it.
+  narrative: "inform:narrative",
+  // Redirect target after sign-in or sign-up (e.g. returning to /result to save a scan)
+  nextAfterAuth: "inform:nextAfterAuth",
+  // Bearer authentication token for cross-origin and persistent API calls
+  authToken: "inform:authToken",
+  // Cached account session data
+  account: "inform:account",
+  // Set once the Student Project & Privacy Notice has been acknowledged this
+  // session, so it is shown before the first upload or camera use only.
+  privacyAck: "inform:privacyAck",
 } as const;
 
 export function saveJSON(key: string, value: unknown): void {
@@ -63,7 +83,21 @@ export function clearSheet(): void {
     SESSION_KEYS.corrections,
     SESSION_KEYS.confirmations,
     SESSION_KEYS.readId,
+    SESSION_KEYS.nextAfterProfile,
+    SESSION_KEYS.nextAfterAuth,
+    // The plan's prose belongs to the reading that produced it, so it goes too.
+    SESSION_KEYS.narrative,
   ]) {
     removeSessionItem(key);
   }
+}
+
+/** Complete state cleanup across both sessionStorage and localStorage (e.g. on signOut or guest reset) */
+export function clearAllSession(): void {
+  try {
+    sessionStorage.clear();
+  } catch {}
+  try {
+    localStorage.clear();
+  } catch {}
 }

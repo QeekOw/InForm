@@ -19,6 +19,7 @@ from typing import Any, Callable, Literal
 import uuid
 
 from inform.errors import (
+    DonutCheckpointError,
     InBodyExtractionError,
     MissingRequiredFieldsError,
     NotAnInBodySheetError,
@@ -34,6 +35,44 @@ from inform.samples import (
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _EXPECTED_CPU_INFERENCE_SECONDS = 45.0
+
+# Three read failures with three distinct causes, kept distinguishable so the
+# frontend can attribute each one honestly:
+#
+#   engine_unavailable   the extraction model could not be constructed on this
+#                        server (the Donut checkpoint is absent, ADR-0010). A
+#                        server-side configuration fact.
+#   unreadable_photo     the image reached the engine and could not be read.
+#                        The person's photo.
+#   not_an_inbody_sheet  the image is a document, just not an InBody sheet.
+#
+# Collapsing the first into the second is the bug this fixes: it blamed a
+# person's photo for a missing checkpoint, and told them to retake a photo
+# that no retake could ever make readable.
+ENGINE_UNAVAILABLE_ERROR = "engine_unavailable"
+ENGINE_UNAVAILABLE_MESSAGE = (
+    "Live reading is unavailable on this server: the extraction model is not "
+    "installed here. This is not a problem with your photo. Pick a sheet from "
+    "the sample gallery to see a stored read instead."
+)
+
+
+def _engine_unavailable_extraction() -> ExtractionItem:
+    """The refusal for a read that never reached the model (ADR-0010)."""
+    return ExtractionItem(
+        status="refused",
+        error=ENGINE_UNAVAILABLE_ERROR,
+        message=ENGINE_UNAVAILABLE_MESSAGE,
+    )
+
+
+def _mark_engine_unavailable(job: ReadJob) -> None:
+    """Settle a job as refused because the model could not be built here."""
+    job.status = "refused"
+    job.progress = 1.0
+    job.error = ENGINE_UNAVAILABLE_ERROR
+    job.message = ENGINE_UNAVAILABLE_MESSAGE
+    job.extraction = _engine_unavailable_extraction()
 
 # Honest progress milestones for live Donut execution
 _STAGES: list[tuple[float, float, str]] = [
@@ -164,7 +203,16 @@ class ReadManager:
             if not img_path.is_absolute():
                 img_path = repo_root / img_path
 
-            engine = engine_factory() if engine_factory else None
+            # A factory that builds the engine eagerly (rather than deferring to
+            # extract_inbody's default_engine()) fails here, on the request
+            # thread, before any worker starts. Same cause, same answer.
+            try:
+                engine = engine_factory() if engine_factory else None
+            except DonutCheckpointError:
+                _mark_engine_unavailable(job)
+                job.completed_at = datetime.now(timezone.utc)
+                job._event.set()
+                return job
 
             def _sample_worker():
                 try:
@@ -180,6 +228,12 @@ class ReadManager:
                     else:
                         job.message = extraction.message or "Sheet was refused."
                         job.error = extraction.error
+                except DonutCheckpointError:
+                    # The model was never built, so nothing about this sheet was
+                    # judged. Report the server, not the sheet — and do NOT fall
+                    # back to the stored extraction, which is the only thing the
+                    # live read exists to be checked against (issue #29).
+                    _mark_engine_unavailable(job)
                 except Exception as exc:
                     job.status = "refused"
                     job.progress = 1.0
@@ -240,7 +294,13 @@ class ReadManager:
         with self._lock:
             self._jobs[read_id] = job
 
-        engine = engine_factory() if engine_factory else None
+        try:
+            engine = engine_factory() if engine_factory else None
+        except DonutCheckpointError:
+            _mark_engine_unavailable(job)
+            job.completed_at = datetime.now(timezone.utc)
+            job._event.set()
+            return job
 
         def _upload_worker():
             try:
@@ -255,6 +315,13 @@ class ReadManager:
                 job.status = "complete"
                 job.progress = 1.0
                 job.message = "Sheet analysis completed successfully."
+            except DonutCheckpointError:
+                # Raised by extract_inbody's default_engine() before the image is
+                # looked at, so this says nothing about the photo's quality. It
+                # used to land in the broad handler below and come back as
+                # "too blurry", sending people off to retake a photo that was
+                # never the problem.
+                _mark_engine_unavailable(job)
             except MissingRequiredFieldsError as exc:
                 job.status = "refused"
                 job.progress = 1.0

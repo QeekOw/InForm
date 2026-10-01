@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import BackButton from "@/components/BackButton";
+import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
-import ReportPhoto from "@/components/ReportPhoto";
+import { btn, cardClass, ConfirmDialog, Modal } from "@/components/ui";
+import { ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 import { API_URL } from "@/lib/config";
 import { type ExercisePlan, type MovementType } from "@/lib/exercise";
 import {
@@ -15,19 +19,21 @@ import {
   type PartialInBody,
   type SampleExtraction,
 } from "@/lib/inbody";
-import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
-import { ACTIVITY_LABELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
+import { GOAL_LABELS } from "@/lib/profileOptions";
+import {
+  computeScanFingerprint,
+  listScans,
+  saveScan,
+  type SaveScanRequest,
+  type ScanSummary,
+} from "@/lib/scans";
+import { clearSheet, loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
+import { ACTIVITY_LABELS, ageFromDob, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
 
-const imgBack = "/icons/result/back-arrow.svg";
-const imgPerson = "/icons/result/person.svg";
-const imgGenderMale = "/icons/result/gender-male.svg";
-const imgTarget = "/icons/result/target.svg";
-const imgDumbbell = "/icons/result/dumbbell.svg";
-
-const MOVEMENT_TYPES: Record<MovementType, { label: string; className: string }> = {
-  corrective_unilateral: { label: "Corrective", className: "bg-amber-100 text-amber-900" },
-  bilateral_compound: { label: "Compound", className: "bg-[#117d6926] text-[#117d69]" },
-  cardio_hiit: { label: "Cardio", className: "bg-sky-100 text-sky-900" },
+const MOVEMENT_TYPES: Record<MovementType, string> = {
+  corrective_unilateral: "Corrective Unilateral",
+  bilateral_compound: "Compound",
+  cardio_hiit: "Cardio HIIT",
 };
 
 type NutritionTargets = {
@@ -48,17 +54,6 @@ type PlanResponse = {
   corrected_fields?: string[];
   confirmed_fields?: string[];
   measured?: PartialInBody | null;
-};
-
-const NARRATIVE_SOURCES: Record<PlanResponse["narrative_source"], { label: string; note: string }> = {
-  generated: {
-    label: "Written plan",
-    note: "Written by AI around the figures above. The figures themselves are computed, not generated.",
-  },
-  fallback: {
-    label: "Plain plan",
-    note: "The written plan couldn't be generated, so this is a plain summary of the same computed figures.",
-  },
 };
 
 type ApiErrorKind = "network" | "validation";
@@ -85,29 +80,42 @@ function describeApiError(detail: unknown, status: number): string {
   return `API returned ${status}`;
 }
 
-// The narrative may carry light markdown (the fallback plan always does);
-// show it as plain lines rather than raw asterisks and hashes.
-function NarrativeText({ text }: { text: string }) {
-  return (
-    <>
-      {text.split("\n").map((line, i) => {
-        const plain = line.replace(/\*\*/g, "").trim();
-        if (!plain) return null;
-        const heading = plain.match(/^#+\s*(.*)$/);
-        return heading ? (
-          <p key={i} className="pt-2 font-bold first:pt-0">
-            {heading[1]}
-          </p>
-        ) : (
-          <p key={i}>{plain}</p>
-        );
-      })}
-    </>
-  );
+type SaveState = "idle" | "saving" | "saved" | "error";
+
+const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
+
+/** The plan as plain text, for "Copy to clipboard" in the Summary. */
+function planAsText(plan: PlanResponse, profile: UserProfile): string {
+  const n = plan.nutrition;
+  const lines = [
+    `Daily Fitness and Nutrition Plan (${GOAL_LABELS[profile.fitness_goal]})`,
+    "",
+    "Nutritional Targets",
+    `Daily Energy Target: ${fmt(n.target_calories_kcal)} kcal`,
+    `BMR: ${fmt(n.bmr_kcal)} kcal, TDEE: ${fmt(n.tdee_kcal)} kcal`,
+    `Protein: ${fmt(n.protein_g)} g`,
+    `Carbohydrates: ${fmt(n.carbs_g)} g`,
+    `Fats: ${fmt(n.fats_g)} g`,
+    `Fiber: ${fmt(n.fiber_g)} g`,
+    "",
+    "Recommended Workout Program",
+    ...(plan.exercises.detected_imbalances.length > 0
+      ? ["Detected imbalances:", ...plan.exercises.detected_imbalances.map((i) => `- ${i}`), ""]
+      : []),
+    ...plan.exercises.exercises.map(
+      (ex) => `- ${ex.name} (${MOVEMENT_TYPES[ex.movement_type]}): targets ${ex.target}${ex.equipment ? `, ${ex.equipment}` : ""}`,
+    ),
+    "",
+    "General fitness information, not medical advice. — InForm",
+  ];
+  return lines.join("\n");
 }
 
-export default function Result() {
+function ResultContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const shouldAutoSave = searchParams.get("save") === "1";
+  const { account } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [reading, setReading] = useState<InBodyPayload | null>(null);
   const [sampleId, setSampleId] = useState<string | null>(null);
@@ -116,6 +124,16 @@ export default function Result() {
   const [fromSample, setFromSample] = useState(true);
   const [name, setName] = useState(DEFAULT_USER_NAME);
   const [state, setState] = useState<State>({ status: "loading" });
+  const [planRequestBody, setPlanRequestBody] = useState<SaveScanRequest | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [duplicateScan, setDuplicateScan] = useState<ScanSummary | null>(null);
+  // Which popup is open, if any.
+  const [dialog, setDialog] = useState<
+    null | "summary" | "discard" | "saved" | "guestSave" | "duplicate" | "sheet"
+  >(null);
+  const [copied, setCopied] = useState(false);
+  const autoSaveTried = useRef(false);
 
   useEffect(() => {
     // Never plan on invented numbers: without a reading there is nothing to compute.
@@ -124,7 +142,26 @@ export default function Result() {
       router.replace("/upload");
       return;
     }
-    const loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile);
+    let loadedProfile = loadJSON<UserProfile>(SESSION_KEYS.profile);
+    if (!loadedProfile && account) {
+      if (
+        account.date_of_birth &&
+        account.default_biological_sex &&
+        account.default_activity_multiplier &&
+        account.default_fitness_goal
+      ) {
+        const age = ageFromDob(account.date_of_birth);
+        if (age !== null) {
+          loadedProfile = {
+            age,
+            biological_sex: account.default_biological_sex,
+            activity_multiplier: account.default_activity_multiplier,
+            fitness_goal: account.default_fitness_goal,
+          };
+          saveJSON(SESSION_KEYS.profile, loadedProfile);
+        }
+      }
+    }
     if (!loadedProfile) {
       // A guest picked or confirmed a sheet without a Profile: collect it, then come back.
       saveJSON(SESSION_KEYS.nextAfterProfile, "/result");
@@ -139,15 +176,16 @@ export default function Result() {
     const loadedMeasured =
       loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data;
     // sessionStorage is a browser-only external store, unreadable during SSR.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setProfile(loadedProfile);
     setReading(loadedReading);
     setSampleId(loadedSampleId);
     setCorrections(loadedCorrections);
     setConfirmations(loadedConfirmations);
     setName(loadJSON<string>(SESSION_KEYS.name) ?? DEFAULT_USER_NAME);
+    /* eslint-enable react-hooks/set-state-in-effect */
 
-    // ADR-0011: The photo is never persisted anywhere after the scan is saved/planned
+    // ADR-0011: the photo is never kept once a plan has been built from it.
     removeSessionItem(SESSION_KEYS.photo);
 
     const hasCorrections = Object.keys(loadedCorrections).length > 0;
@@ -164,35 +202,23 @@ export default function Result() {
       JSON.stringify(loadedExtraction.data) === JSON.stringify(loadedReading);
     setFromSample(plannedFromSample);
 
-    const requestBody = loadedReadId
-      ? {
-          user: loadedProfile,
-          read_id: loadedReadId,
-          ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-          ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-        }
+    const extras = {
+      ...(hasCorrections ? { corrections: loadedCorrections } : {}),
+      ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
+    };
+    const flaggedExtra = loadedExtraction?.flagged?.length
+      ? { initial_flagged: loadedExtraction.flagged }
+      : {};
+    const requestBody: SaveScanRequest = loadedReadId
+      ? { user: loadedProfile, read_id: loadedReadId, ...extras }
       : loadedSampleId
-        ? {
-            user: loadedProfile,
-            sample_id: loadedSampleId,
-            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-          }
-      : loadedMeasured
-        ? {
-            user: loadedProfile,
-            measured: loadedMeasured,
-            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
-          }
-        : {
-            user: loadedProfile,
-            inbody: loadedReading,
-            ...(hasCorrections ? { corrections: loadedCorrections } : {}),
-            ...(hasConfirmations ? { confirmations: loadedConfirmations } : {}),
-            ...(loadedExtraction?.flagged?.length ? { initial_flagged: loadedExtraction.flagged } : {}),
-          };
+        ? { user: loadedProfile, sample_id: loadedSampleId, ...extras }
+        : loadedMeasured
+          ? { user: loadedProfile, measured: loadedMeasured, ...extras, ...flaggedExtra }
+          : { user: loadedProfile, inbody: loadedReading, ...extras, ...flaggedExtra };
+
+    // Kept so Save sends exactly what produced these results.
+    setPlanRequestBody(requestBody);
 
     fetch(`${API_URL}/plan`, {
       method: "POST",
@@ -201,265 +227,556 @@ export default function Result() {
     })
       .then(async (res) => {
         if (!res.ok) {
-          // A 4xx here means the request itself was rejected (e.g. a typed
-          // value out of range) — a different problem from not reaching the
-          // API at all, and worth telling apart in the UI.
           const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
-          const kind: ApiErrorKind =
-            res.status >= 400 && res.status < 500 ? "validation" : "network";
+          const kind: ApiErrorKind = res.status >= 400 && res.status < 500 ? "validation" : "network";
           const error = new Error(describeApiError(body?.detail, res.status));
           Object.assign(error, { kind });
           throw error;
         }
         const plan = (await res.json()) as PlanResponse;
+        // Also readable on /result/summary without recomputing the plan.
+        saveJSON(SESSION_KEYS.narrative, { text: plan.narrative_text, source: plan.narrative_source });
         setState({ status: "ready", plan });
       })
       .catch((err: Error & { kind?: ApiErrorKind }) => {
         setState({ status: "error", message: err.message, kind: err.kind ?? "network" });
       });
+    // Runs once per visit; `account` is read for a pre-fill fallback only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   const isDemoReading =
     !fromSample && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
 
+  /** Drop the in-progress reading without saving. A Scan already saved is untouched. */
+  const handleDiscard = () => {
+    clearSheet();
+    router.push(account ? "/dashboard" : "/upload");
+  };
+
+  const doSave = useCallback(async () => {
+    if (!planRequestBody) return;
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      await saveScan(planRequestBody);
+      setSaveState("saved");
+      setDuplicateScan(null);
+      setDialog("saved");
+    } catch (err) {
+      setSaveState("error");
+      setSaveError(err instanceof ApiError ? String(err.message) : "Couldn't save this scan. Try again.");
+    }
+  }, [planRequestBody]);
+
+  /** Save: guests are asked to sign in; signed-in people get a duplicate check first. */
+  const handleSave = useCallback(async () => {
+    if (!account) {
+      setDialog("guestSave");
+      return;
+    }
+    if (saveState === "saved") {
+      setDialog("saved");
+      return;
+    }
+    const currentFingerprint = computeScanFingerprint({
+      sampleId,
+      weight_kg: reading?.weight_kg,
+      skeletal_muscle_mass_kg: reading?.skeletal_muscle_mass_kg,
+      percent_body_fat: reading?.percent_body_fat,
+      lean_body_mass_kg: reading?.lean_body_mass_kg,
+      source_device: reading?.source_device,
+    });
+    setSaveState("saving");
+    try {
+      const scans = await listScans();
+      const match = scans.find((s) => {
+        if (s.scan_fingerprint && s.scan_fingerprint === currentFingerprint) return true;
+        return (
+          computeScanFingerprint({
+            sampleId: s.sample_id,
+            weight_kg: s.weight_kg,
+            skeletal_muscle_mass_kg: s.skeletal_muscle_mass_kg,
+            percent_body_fat: s.percent_body_fat,
+            lean_body_mass_kg: s.lean_body_mass_kg,
+          }) === currentFingerprint
+        );
+      });
+      if (match) {
+        setSaveState("idle");
+        setDuplicateScan(match);
+        setDialog("duplicate");
+        return;
+      }
+    } catch (err) {
+      // The duplicate check is a courtesy; failing it shouldn't block saving.
+      console.error("Failed to check duplicate scans:", err);
+    }
+    await doSave();
+  }, [account, saveState, sampleId, reading, doSave]);
+
+  // Coming back from sign-in/sign-up with ?save=1 finishes the save they asked for.
+  useEffect(() => {
+    if (!shouldAutoSave || !account || state.status !== "ready" || !planRequestBody) return;
+    if (autoSaveTried.current) return;
+    autoSaveTried.current = true;
+    void handleSave();
+  }, [shouldAutoSave, account, state.status, planRequestBody, handleSave]);
+
+  const handleCopy = async () => {
+    if (state.status !== "ready" || !profile) return;
+    try {
+      await navigator.clipboard.writeText(planAsText(state.plan, profile));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const correctedSet = new Set<string>([
+    ...(state.status === "ready" ? state.plan.corrected_fields ?? [] : []),
+    ...Object.keys(corrections),
+  ]);
+  const confirmedSet = new Set<string>([
+    ...(state.status === "ready" ? state.plan.confirmed_fields ?? [] : []),
+    ...confirmations,
+  ]);
+  const sheetImage = sampleId ? `${API_URL}/samples/${sampleId}/image` : null;
+
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="flex items-center gap-3 px-[30px] pt-[62px]">
-        <Link
-          href={fromSample ? "/upload" : "/preview"}
-          className="flex size-8 items-center justify-center rounded-full bg-white shadow-md"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="Back" className="size-[18px]" src={imgBack} />
-        </Link>
-        <h1 className="text-[24px] font-bold text-[#fcfcfc]">Result</h1>
+    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+      {/* Header photo */}
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[218px] overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt="" src="/bg/result.jpg" className="size-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-[#3e3e3e]/50 to-[#3e3e3e]" />
       </div>
 
-      {profile && (
-        <div className="mx-[24px] mt-[31px] grid grid-cols-2 gap-x-4 gap-y-3 rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-          <div className="flex items-center gap-2 text-[13px] font-bold">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-4" src={imgPerson} />
-            {name}
-          </div>
-          <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-4" src={imgTarget} />
-            {profile.fitness_goal.replace("_", " ")}
-          </div>
-          <div className="flex items-center gap-2 text-[13px] font-bold capitalize">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-4" src={imgGenderMale} />
-            {profile.biological_sex}
-          </div>
-          <div className="flex items-center gap-2 text-[13px] font-bold">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="size-4" src={imgDumbbell} />
-            {ACTIVITY_LABELS[profile.activity_multiplier] ?? `${profile.activity_multiplier}x`}
-          </div>
-        </div>
-      )}
+      <div className="relative px-[30px] pb-[48px] pt-[48px] text-[#fcfcfc]">
+        <BackButton href="/preview" label="Back to reading preview" />
+        <h1 className="mt-[57px] text-[24px] font-bold tracking-[0.02em]">Your InBody Results</h1>
 
-      {isDemoReading && (
-        <p className="mx-[24px] mt-2 text-[10px] text-white/70">
-          Computed from the demo baseline values, not a reading of your sheet.
-        </p>
-      )}
-
-      {/* Screen 4: the extracted numbers beside the sheet they came from */}
-      {profile && reading && (
-        <section className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[14px] text-black">
-          <h2 className="text-[13px] font-bold">
-            {fromSample ? "Read from your sheet" : "Your values, including any you edited"}
-          </h2>
-          <div className="mt-2 grid grid-cols-[110px_1fr] gap-3">
-            {sampleId ? (
-              <a
-                href={`${API_URL}/samples/${sampleId}/image`}
-                target="_blank"
-                rel="noreferrer"
-                className="block h-[210px] overflow-hidden rounded-lg bg-[#1f1f1f]"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  alt="The InBody sheet these values were read from"
-                  className="size-full object-contain object-top"
-                  src={`${API_URL}/samples/${sampleId}/image`}
-                />
-              </a>
-            ) : (
-              <div className="h-[210px] overflow-hidden rounded-lg bg-[#1f1f1f]">
-                <ReportPhoto emptyLabel="Photos aren't kept after you confirm" />
-              </div>
-            )}
-            <dl className="text-[10px]">
-              {(() => {
-                const correctedSet = new Set<string>([
-                  ...(state.status === "ready" && state.plan.corrected_fields
-                    ? state.plan.corrected_fields
-                    : []),
-                  ...Object.keys(corrections),
-                ]);
-                const confirmedSet = new Set<string>([
-                  ...(state.status === "ready" && state.plan.confirmed_fields
-                    ? state.plan.confirmed_fields
-                    : []),
-                  ...confirmations,
-                ]);
-                return READING_ROWS.map((row) => {
-                  const isHumanSupplied =
-                    correctedSet.has(row.key) ||
-                    correctedSet.has(row.key.replace("segmental_lean.", ""));
-                  const isConfirmed =
-                    !isHumanSupplied &&
-                    (confirmedSet.has(row.key) ||
-                      confirmedSet.has(row.key.replace("segmental_lean.", "")));
-                  return (
-                    <div
-                      key={row.label}
-                      className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0"
-                    >
-                      <dt className="flex items-center gap-1.5">
-                        <span className="opacity-70">{row.label}</span>
-                        {isHumanSupplied && (
-                          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
-                            Human-supplied
-                          </span>
-                        )}
-                        {isConfirmed && (
-                          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-bold text-emerald-800">
-                            Verified
-                          </span>
-                        )}
-                      </dt>
-                      <dd className="whitespace-nowrap font-bold">
-                        {row.value(reading) ?? "—"}{" "}
-                        <span className="text-[8px] font-medium opacity-60">{row.unit}</span>
-                      </dd>
-                    </div>
-                  );
-                });
-              })()}
-            </dl>
+        {profile && (
+          <div className={`${cardClass} mt-[20px] grid grid-cols-2 gap-x-[20px] gap-y-[10px] px-[20px] py-[20px] text-[12px] font-bold`}>
+            <span className="flex items-center gap-[10px]">
+              <Icon name="person" size={16} />
+              <span className="truncate">{name}</span>
+            </span>
+            <span className="flex items-center gap-[10px]">
+              <Icon name="scale" size={16} />
+              {GOAL_LABELS[profile.fitness_goal]}
+            </span>
+            <span className="flex items-center gap-[10px]">
+              <Icon name={profile.biological_sex === "female" ? "genderFemale" : "genderMale"} size={16} />
+              {profile.biological_sex === "female" ? "Female" : "Male"}
+            </span>
+            <span className="flex items-center gap-[10px]">
+              <Icon name="target" size={16} />
+              {ACTIVITY_LABELS[profile.activity_multiplier] ?? `${profile.activity_multiplier}x`}
+            </span>
           </div>
-        </section>
-      )}
+        )}
 
-      {state.status === "loading" && (
-        <div className="mx-[24px] mt-[15px] flex h-[120px] items-center justify-center rounded-[15px] border-[3px] border-[#f5f5f5] bg-white">
-          <p className="text-[12px] text-black/50">Computing your plan…</p>
-        </div>
-      )}
-
-      {state.status === "error" && state.kind === "validation" && (
-        <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-center text-[12px] text-black">
-          <p className="font-bold text-red-600">The API rejected one of the values</p>
-          <p className="mt-1 whitespace-pre-wrap opacity-70">{state.message}</p>
-          <p className="mt-2 opacity-70">Go back and check the edited fields.</p>
-        </div>
-      )}
-
-      {state.status === "error" && state.kind === "network" && (
-        <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-center text-[12px] text-black">
-          <p className="font-bold text-red-600">Couldn&apos;t reach the API</p>
-          <p className="mt-1 opacity-70">{state.message}</p>
-          <p className="mt-2 opacity-70">
-            Is the backend running at <code>{API_URL}</code>?
+        {isDemoReading && (
+          <p className="mt-2 text-[10px] text-white/70">
+            Computed from the demo baseline values, not a reading of your sheet.
           </p>
-        </div>
-      )}
+        )}
 
-      {state.status === "ready" && (
-        <>
-          {/* Screen 5: nutrition */}
-          <div className="mx-[24px] mt-[15px] flex flex-col items-center rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-            <p className="text-[11px] opacity-60">Daily Energy Target</p>
-            <p className="text-[32px] font-bold text-[#117d69]">
-              {Math.round(state.plan.nutrition.target_calories_kcal)}
-            </p>
-            <p className="text-[11px] opacity-60">kcal</p>
-            <p className="mt-2 text-[10px] opacity-70">
-              BMR {Math.round(state.plan.nutrition.bmr_kcal)} kcal · TDEE{" "}
-              {Math.round(state.plan.nutrition.tdee_kcal)} kcal
-            </p>
-          </div>
-
-          <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-            <p className="text-[13px] font-bold">Macros</p>
-            <div className="mt-2 grid grid-cols-4 gap-2 text-center">
-              {(
-                [
-                  ["Protein", state.plan.nutrition.protein_g],
-                  ["Carbs", state.plan.nutrition.carbs_g],
-                  ["Fats", state.plan.nutrition.fats_g],
-                  ["Fiber", state.plan.nutrition.fiber_g],
-                ] as const
-              ).map(([label, grams]) => (
-                <div key={label}>
-                  <p className="text-[14px] font-bold text-[#117d69]">{Math.round(grams)}g</p>
-                  <p className="text-[9px] opacity-60">{label}</p>
+        {/* The numbers beside the sheet they came from */}
+        {profile && reading && (
+          <section aria-label="Your readings" className="mt-[20px] grid grid-cols-[164px_1fr] gap-[15px]">
+            <div className="relative h-[227px] overflow-hidden rounded-[15px] bg-[#1f1f1f]">
+              {sheetImage ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img alt="" src={sheetImage} className="size-full object-cover object-top" />
+                  <button
+                    type="button"
+                    onClick={() => setDialog("sheet")}
+                    aria-label="View the full sheet"
+                    className="absolute right-[15px] top-[15px] flex size-[24px] items-center justify-center rounded-full bg-[#117d69] text-white shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    <Icon name="eye" size={14} />
+                  </button>
+                </>
+              ) : (
+                <div className="flex size-full flex-col items-center justify-center gap-2 p-3 text-center text-[10px] text-white/60">
+                  <Icon name="image" size={24} />
+                  Your photo isn&apos;t kept once your plan is built.
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* Screen 6: imbalances */}
-          <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-            <p className="text-[13px] font-bold">Left/right balance</p>
-            {state.plan.exercises.detected_imbalances.length === 0 &&
-            state.plan.exercises.unconfirmed_imbalance_pairs.length === 0 ? (
-              <p className="mt-1 text-[11px] text-[#117d69]">
-                Your left and right sides are within 5% of each other. No imbalance to correct.
-              </p>
-            ) : state.plan.exercises.detected_imbalances.length > 0 ? (
-              state.plan.exercises.detected_imbalances.map((imbalance) => (
-                <p key={imbalance} className="mt-1 text-[11px]">
-                  {imbalance}
-                </p>
-              ))
-            ) : null}
-            {state.plan.exercises.unconfirmed_imbalance_pairs.length > 0 && (
-              <p className="mt-2 text-[11px] text-amber-800">
-                Balance wasn’t assessed for the {state.plan.exercises.unconfirmed_imbalance_pairs.join(" and ")} because those readings weren’t confirmed. {" "}
-                <Link className="font-bold underline" href="/preview">Review readings</Link>
-                {" "}to check them against your sheet and see recommendations.
-              </p>
-            )}
-          </div>
-
-          {/* Screen 7: exercises */}
-          <div className="mx-[24px] mt-[15px] rounded-[15px] border-[3px] border-[#f5f5f5] bg-white p-[18px] text-black">
-            <p className="text-[13px] font-bold">Recommended Workout</p>
-            <ul className="mt-2 space-y-2">
-              {state.plan.exercises.exercises.map((ex) => {
-                const type = MOVEMENT_TYPES[ex.movement_type];
+            <dl className="text-[11px]">
+              {READING_ROWS.map((row) => {
+                const short = row.key.replace("segmental_lean.", "");
+                const edited = correctedSet.has(row.key) || correctedSet.has(short);
+                const checked = !edited && (confirmedSet.has(row.key) || confirmedSet.has(short));
                 return (
-                  <li key={ex.name} className="border-b border-black/5 pb-2 text-[11px] last:border-0">
-                    <span className="font-bold">{ex.name}</span>
-                    <span className={`ml-1 rounded px-1.5 py-0.5 text-[8px] font-bold ${type.className}`}>
-                      {type.label}
-                    </span>
-                    <span className="block text-[10px] opacity-60">Target muscle: {ex.target}</span>
-                  </li>
+                  <div key={row.label} className="flex items-baseline justify-between gap-1 py-[2px]">
+                    <dt className="flex min-w-0 items-center gap-1 truncate">
+                      {row.label}
+                      {edited && <span className="text-[8px] text-sky-300" title="Edited by you">●</span>}
+                      {checked && <span className="text-[8px] text-[#7ee0cf]" title="Checked by you">●</span>}
+                    </dt>
+                    <dd className="whitespace-nowrap font-bold">
+                      {row.value(reading) ?? "—"}
+                      <span className="ml-[2px] text-[8px] font-medium opacity-70">{row.unit}</span>
+                    </dd>
+                  </div>
                 );
               })}
-            </ul>
-          </div>
-
-          {/* The narrative, set apart from the audited number blocks above */}
-          <section className="mx-[24px] mb-6 mt-[15px] rounded-[15px] border-l-4 border-[#2dd4bf] bg-[#2a2a2a] p-[18px] text-[#fcfcfc]">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#2dd4bf]">
-              {NARRATIVE_SOURCES[state.plan.narrative_source].label}
-            </p>
-            <p className="mt-1 text-[10px] text-white/60">
-              {NARRATIVE_SOURCES[state.plan.narrative_source].note}
-            </p>
-            <div className="mt-3 space-y-1 font-serif text-[13px] leading-relaxed">
-              <NarrativeText text={state.plan.narrative_text} />
-            </div>
+              {(correctedSet.size > 0 || confirmedSet.size > 0) && (
+                <p className="mt-1 text-[8px] text-white/60">
+                  <span className="text-sky-300">●</span> edited by you{"  "}
+                  <span className="text-[#7ee0cf]">●</span> checked by you
+                </p>
+              )}
+            </dl>
           </section>
-        </>
+        )}
+
+        {state.status === "loading" && (
+          <div className={`${cardClass} mt-[15px] flex h-[120px] items-center justify-center`} role="status">
+            <p className="text-[12px] text-black/50">Building your plan…</p>
+          </div>
+        )}
+
+        {state.status === "error" && (
+          <div className={`${cardClass} mt-[15px] p-[18px] text-center text-[12px]`} role="alert">
+            <p className="font-bold text-rose-700">
+              {state.kind === "validation" ? "One of the values was rejected" : "Couldn't reach the server"}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-black/70">{state.message}</p>
+            {state.kind === "validation" ? (
+              <Link href="/preview/edit" className={`${btn.primary} mt-3`}>
+                Check the values
+              </Link>
+            ) : (
+              <button type="button" onClick={() => router.refresh()} className={`${btn.primary} mt-3`}>
+                Try again
+              </button>
+            )}
+          </div>
+        )}
+
+        {state.status === "ready" && profile && (
+          <>
+            <div className="mt-[15px] grid grid-cols-2 gap-[15px]">
+              {/* Energy */}
+              <div className={`${cardClass} flex flex-col p-[20px]`}>
+                <p className="text-center text-[10px] font-bold">Daily Energy Target</p>
+                <p className="mt-[8px] text-center text-[24px] font-bold leading-none text-[#117d69]">
+                  {fmt(state.plan.nutrition.target_calories_kcal)}
+                </p>
+                <p className="mt-[2px] text-center text-[8px] text-black/60">kilocalories / day</p>
+                <div className="my-[14px] h-px bg-black/15" />
+                <div className="space-y-[4px] text-[8px]">
+                  <p className="flex justify-between">
+                    <span>BMR Basis</span>
+                    <span>
+                      <strong className="text-[9px]">{fmt(state.plan.nutrition.bmr_kcal)}</strong> kcal
+                    </span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span>TDEE</span>
+                    <span>
+                      <strong className="text-[9px]">{fmt(state.plan.nutrition.tdee_kcal)}</strong> kcal
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Macros */}
+              <div className={`${cardClass} p-[20px]`}>
+                <p className="text-[10px] font-bold">Macros</p>
+                <dl className="mt-[12px] space-y-[8px] text-[9px]">
+                  {(
+                    [
+                      ["Protein", state.plan.nutrition.protein_g, "bg-rose-400"],
+                      ["Carbohydrates", state.plan.nutrition.carbs_g, "bg-amber-400"],
+                      ["Fats", state.plan.nutrition.fats_g, "bg-lime-500"],
+                      ["Fiber", state.plan.nutrition.fiber_g, "bg-emerald-600"],
+                    ] as const
+                  ).map(([label, grams, dot]) => (
+                    <div key={label} className="flex items-center justify-between gap-1">
+                      <dt className="flex items-center gap-[6px]">
+                        <span aria-hidden="true" className={`size-[8px] rounded-full ${dot}`} />
+                        {label}
+                      </dt>
+                      <dd>
+                        <strong className="text-[14px] text-[#117d69]">{fmt(grams)}</strong> g
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </div>
+
+            {/* Left / Right Balance */}
+            <section className={`${cardClass} mt-[15px] p-[20px]`}>
+              <h2 className="text-[10px] font-bold">Left / Right Balance</h2>
+              {state.plan.exercises.detected_imbalances.length === 0 &&
+              state.plan.exercises.unconfirmed_imbalance_pairs.length === 0 ? (
+                <>
+                  <p className="mt-[10px] inline-block rounded-[8px] bg-[#117d69]/20 px-[10px] py-[3px] text-[12px] font-bold text-[#0b5e4f]">
+                    Your Muscles Are Well Balanced!
+                  </p>
+                  <p className="mt-[8px] text-[10px] leading-[1.5] text-black/75">
+                    No significant muscle imbalances were found. Your left and right sides read
+                    within 5% of each other, so no extra corrective exercises are needed right now.
+                    Keep up your current routine.
+                  </p>
+                </>
+              ) : (
+                <>
+                  {state.plan.exercises.detected_imbalances.length > 0 && (
+                    <>
+                      <p className="mt-[10px] inline-block rounded-[8px] bg-amber-200 px-[10px] py-[3px] text-[12px] font-bold text-amber-900">
+                        Imbalance Detected
+                      </p>
+                      <ul className="mt-[8px] list-disc space-y-[2px] pl-4 text-[10px] text-black/75">
+                        {state.plan.exercises.detected_imbalances.map((i) => (
+                          <li key={i}>{i}</li>
+                        ))}
+                      </ul>
+                      <p className="mt-[6px] text-[10px] text-black/60">
+                        Your workout below includes single-side exercises to even this out.
+                      </p>
+                    </>
+                  )}
+                  {state.plan.exercises.unconfirmed_imbalance_pairs.length > 0 && (
+                    <p className="mt-[8px] text-[10px] leading-[1.5] text-amber-800">
+                      We didn&apos;t check balance for your{" "}
+                      {state.plan.exercises.unconfirmed_imbalance_pairs.join(" and ")} because those
+                      numbers weren&apos;t confirmed.{" "}
+                      <Link className="font-bold underline" href="/preview">
+                        Check them
+                      </Link>{" "}
+                      to get balance advice.
+                    </p>
+                  )}
+                </>
+              )}
+            </section>
+
+            {/* Recommended Workout */}
+            <section className={`${cardClass} mt-[15px] p-[20px]`}>
+              <h2 className="text-[10px] font-bold">Recommended Workout</h2>
+              <ul className="mt-[16px] space-y-[8px]">
+                {state.plan.exercises.exercises.map((ex) => (
+                  <li
+                    key={ex.name}
+                    className="rounded-[8px] border border-[#d9d9d9] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] px-[15px] py-[9px] shadow-sm"
+                  >
+                    <p className="flex flex-wrap items-center gap-[8px] text-[12px] font-bold">
+                      {ex.name}
+                      <span className="rounded-[4px] bg-[#117d69]/20 px-[5px] py-[2px] text-[8px] font-bold text-[#0b5e4f]">
+                        {MOVEMENT_TYPES[ex.movement_type]}
+                      </span>
+                    </p>
+                    <p className="mt-[1px] text-[10px] text-black/70">
+                      Target: {ex.target}
+                      {ex.equipment ? ` (${ex.equipment})` : ""}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            {/* Actions */}
+            <div className="mt-[32px] space-y-[15px]">
+              <button type="button" onClick={() => setDialog("summary")} className={btn.primary}>
+                Simplify
+              </button>
+              <div className="flex gap-[15px]">
+                <button type="button" onClick={() => setDialog("discard")} className={`${btn.light} text-[#117d69]`}>
+                  <Icon name="trash" size={14} />
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={saveState === "saving"}
+                  className={btn.primary}
+                >
+                  <Icon name={saveState === "saved" ? "check" : "save"} size={16} />
+                  {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save"}
+                </button>
+              </div>
+              {saveState === "error" && saveError && (
+                <p role="alert" className="text-center text-[11px] text-rose-300">
+                  {saveError}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* --- Popups ------------------------------------------------------------ */}
+
+      {state.status === "ready" && profile && (
+        <Modal open={dialog === "summary"} onClose={() => setDialog(null)} title="Summary" widthClass="max-w-[317px]">
+          <div className="mt-[14px] text-[11px] leading-[1.5]">
+            <p className="inline-block rounded-[6px] bg-[#117d69]/20 px-[8px] py-[2px] text-[12px] font-bold text-[#0b5e4f]">
+              Daily Fitness and Nutrition Plan ({GOAL_LABELS[profile.fitness_goal]})
+            </p>
+            <h3 className="mt-[8px] font-bold">Nutritional Targets</h3>
+            <ul className="text-black/80">
+              <li>Daily Energy Target: {fmt(state.plan.nutrition.target_calories_kcal)} kcal</li>
+              <li>
+                BMR: {fmt(state.plan.nutrition.bmr_kcal)} kcal, TDEE: {fmt(state.plan.nutrition.tdee_kcal)} kcal
+              </li>
+              <li>Protein: {fmt(state.plan.nutrition.protein_g)} g</li>
+              <li>Carbohydrates: {fmt(state.plan.nutrition.carbs_g)} g</li>
+              <li>Fats: {fmt(state.plan.nutrition.fats_g)} g</li>
+              <li>Fiber: {fmt(state.plan.nutrition.fiber_g)} g</li>
+            </ul>
+
+            <p className="mt-[12px] inline-block rounded-[6px] bg-[#117d69]/20 px-[8px] py-[2px] text-[12px] font-bold text-[#0b5e4f]">
+              Recommended Workout Program
+            </p>
+            {state.plan.exercises.detected_imbalances.length > 0 && (
+              <>
+                <h3 className="mt-[8px] font-bold">Detected Imbalances and Focus Areas</h3>
+                <ul className="text-black/80">
+                  {state.plan.exercises.detected_imbalances.map((i) => (
+                    <li key={i}>{i}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <h3 className="mt-[8px] font-bold">Exercise Routine</h3>
+            <ul className="space-y-[4px] text-black/80">
+              {state.plan.exercises.exercises.map((ex) => (
+                <li key={ex.name}>
+                  <span className="font-bold text-black">{ex.name}</span>{" "}
+                  <span className="rounded-[4px] bg-[#117d69]/20 px-[4px] text-[8px] font-bold text-[#0b5e4f]">
+                    {MOVEMENT_TYPES[ex.movement_type]}
+                  </span>
+                  <br />
+                  Target: {ex.target}
+                  {ex.equipment ? ` (${ex.equipment})` : ""}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-[10px] text-[9px] text-black/50">
+              General fitness information, not medical advice.
+            </p>
+          </div>
+          <button type="button" onClick={handleCopy} className={`${btn.primary} mt-[18px]`}>
+            <Icon name={copied ? "check" : "copy"} size={16} />
+            {copied ? "Copied" : "Copy to clipboard"}
+          </button>
+          <button type="button" onClick={() => setDialog(null)} className={`${btn.secondary} mt-[8px]`}>
+            <Icon name="close" size={14} />
+            Close
+          </button>
+          <span className="sr-only" aria-live="polite">
+            {copied ? "Summary copied to clipboard" : ""}
+          </span>
+        </Modal>
       )}
+
+      <ConfirmDialog
+        open={dialog === "discard"}
+        title="Discard this report?"
+        body={
+          saveState === "saved"
+            ? "The copy you saved stays on your dashboard. This only clears what's on screen."
+            : "Are you sure you want to discard this InBody report? Your analysis results will be lost and cannot be recovered."
+        }
+        confirmLabel="Discard"
+        confirmIcon="trash"
+        onCancel={() => setDialog(null)}
+        onConfirm={handleDiscard}
+      />
+
+      <Modal open={dialog === "saved"} onClose={() => setDialog(null)} title="Saved!">
+        <p className="mt-3 text-center text-[12px] leading-relaxed text-black/70">
+          Your scan and plan are saved to your account. You can see them, and how your numbers
+          change over time, on your dashboard.
+        </p>
+        <Link href="/dashboard" className={`${btn.primary} mt-5`}>
+          Go to Dashboard
+        </Link>
+        <button type="button" onClick={() => setDialog(null)} className={`${btn.secondary} mt-[8px]`}>
+          Stay here
+        </button>
+      </Modal>
+
+      <Modal open={dialog === "guestSave"} onClose={() => setDialog(null)} title="Save your scan">
+        <p className="mt-3 text-center text-[12px] leading-relaxed text-black/70">
+          Log in or create a free account to keep this scan and track your progress over time.
+          Your results stay on screen while you do.
+        </p>
+        <Link href="/sign-up?redirect=/result%3Fsave%3D1" className={`${btn.primary} mt-5`}>
+          Sign Up to Save
+        </Link>
+        <Link href="/sign-in?redirect=/result%3Fsave%3D1" className={`${btn.secondary} mt-[8px]`}>
+          Log In
+        </Link>
+      </Modal>
+
+      <Modal
+        open={dialog === "duplicate" && duplicateScan !== null}
+        onClose={() => setDialog(null)}
+        title="Already saved"
+        icon={<Icon name="alert" size={20} className="mt-[2px] text-amber-600" />}
+      >
+        <p className="mt-3 text-center text-[12px] leading-relaxed text-black/70">
+          This scan matches one already in your history
+          {duplicateScan?.created_at
+            ? ` (saved ${new Date(duplicateScan.created_at).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })})`
+            : ""}
+          . View that one, or save this as a new entry?
+        </p>
+        {duplicateScan && (
+          <Link href={`/history/${duplicateScan.id}`} className={`${btn.primary} mt-5`}>
+            View saved scan
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={() => void doSave()}
+          disabled={saveState === "saving"}
+          className={`${btn.secondary} mt-[8px]`}
+        >
+          {saveState === "saving" ? "Saving…" : "Save as new entry"}
+        </button>
+      </Modal>
+
+      <Modal open={dialog === "sheet"} onClose={() => setDialog(null)} title="Your sheet" widthClass="max-w-[370px]">
+        {sheetImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="The InBody sheet these values were read from" src={sheetImage} className="mt-3 w-full rounded-[8px]" />
+        )}
+        <button type="button" onClick={() => setDialog(null)} className={`${btn.secondary} mt-4`}>
+          Close
+        </button>
+      </Modal>
     </PhoneFrame>
+  );
+}
+
+export default function Result() {
+  return (
+    <Suspense
+      fallback={
+        <PhoneFrame bg="bg-[#3e3e3e]">
+          <div className="flex h-full items-center justify-center text-[14px] text-white">
+            Loading results…
+          </div>
+        </PhoneFrame>
+      }
+    >
+      <ResultContent />
+    </Suspense>
   );
 }
