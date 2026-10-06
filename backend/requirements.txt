@@ -1,3 +1,36 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2
+# inform.reads opens an uploaded photo with PIL to validate it before running
+# extraction (issue #45). Pillow is declared in pyproject.toml for the inform
+# package, but backend/requirements.txt is what the Dockerfile and Render
+# actually install — without it here, every valid upload is refused as an
+# "unreadable photo", because reads.py's broad `except Exception` swallows the
+# ImportError and reports it as a bad photo.
+Pillow>=10
+
+# Accounts & History (issues #41-#44)
+sqlalchemy==2.0.36
+alembic==1.13.3
+psycopg[binary]==3.2.3
+python-dotenv==1.2.3
+bcrypt==4.2.1
+pyjwt==2.9.0
+google-auth[requests]>=2.35,<3
+
+# Module 4's optional LLM narrative (ADR-0005). Declared in pyproject.toml for the
+# inform package, but this file is what the Dockerfile and Render actually
+# install — so without it here, `from openai import OpenAI` fails,
+# synthesize_plan falls through to generate_fallback_plan, and the deployed app
+# can only ever produce the "Plain plan".
+#
+# Installing it does NOT turn the LLM on. With OPENAI_API_KEY unset, constructing
+# the client raises and Module 4 still returns the deterministic fallback, which
+# is the shipped behaviour. Enabling it is an explicit act: set the key, and
+# accept that body-composition figures then leave this host for a third party
+# (see backend/.env.example, and ADR-0005 for the limits on that).
+#
+# Pinned to the release this repo has actually run against; 3.16.2 is current at
+# the time of writing, so treat an upgrade as a deliberate change rather than a
+# free one.
+openai==3.3.1

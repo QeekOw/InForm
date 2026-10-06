@@ -53,7 +53,14 @@ def default_engine(checkpoint: str | Path | None = None) -> Engine:
     if checkpoint is not None:
         ckpt_raw = str(checkpoint)
     else:
-        ckpt_raw = os.environ.get(_DONUT_CKPT_ENV, _DEFAULT_DONUT_CKPT)
+        ckpt_raw = os.environ.get(_DONUT_CKPT_ENV)
+        if not ckpt_raw:
+            if Path(_DEFAULT_DONUT_CKPT).exists():
+                ckpt_raw = _DEFAULT_DONUT_CKPT
+            elif Path("models/donut-both-v5").exists():
+                ckpt_raw = "models/donut-both-v5"
+            else:
+                ckpt_raw = _DEFAULT_DONUT_CKPT
     ckpt_path = Path(ckpt_raw)
     if ckpt_path.exists():
         ckpt: Path | str = ckpt_path

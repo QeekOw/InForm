@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://in-form-chi.vercel.app"><img src="https://img.shields.io/badge/Live_demo-Vercel-000000?logo=vercel&logoColor=white" alt="Open the InForm demo"></a>
+  <a href="https://try-inform.vercel.app"><img src="https://img.shields.io/badge/Live_demo-Vercel-000000?logo=vercel&logoColor=white" alt="Open the InForm demo"></a>
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5">
   <img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js 16">
@@ -16,7 +16,7 @@
 
 ## Try it
 
-**[Open the live demo →](https://in-form-chi.vercel.app)**
+**[Open the live demo →](https://try-inform.vercel.app)**
 
 InForm is a web prototype for turning reviewed body-composition readings from **InBody 270** result sheets, a fitness goal, and an activity profile into daily calorie and macro targets plus a corrective exercise plan.
 

@@ -32,12 +32,7 @@ def test_create_read_live_starts_pending_job():
     # Stub engine that takes a short time
     def slow_stub(path: Path) -> PartialInBody:
         time.sleep(0.5)
-        return PartialInBody(
-            weight_kg=60.0,
-            lean_body_mass_kg=45.0,
-            percent_body_fat=25.0,
-            source_device="inbody_270",
-        )
+        return PartialInBody(weight_kg=60.0, lean_body_mass_kg=45.0, percent_body_fat=25.0)
 
     app.dependency_overrides[get_engine] = lambda: slow_stub
     try:
@@ -58,12 +53,7 @@ def test_poll_read_long_polling_waits_and_returns_complete():
     """AC: Long polling survives past client waits and returns complete when engine finishes."""
     def stub_engine(path: Path) -> PartialInBody:
         time.sleep(0.2)
-        return PartialInBody(
-            weight_kg=70.0,
-            lean_body_mass_kg=55.0,
-            percent_body_fat=21.4,
-            source_device="inbody_270",
-        )
+        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
 
     app.dependency_overrides[get_engine] = lambda: stub_engine
     try:
@@ -87,12 +77,7 @@ def test_poll_read_times_out_and_returns_pending_surviving_timeout():
     """AC: The read survives past a host request timeout (returns pending with progress)."""
     def very_slow_stub(path: Path) -> PartialInBody:
         time.sleep(1.0)
-        return PartialInBody(
-            weight_kg=70.0,
-            lean_body_mass_kg=55.0,
-            percent_body_fat=21.4,
-            source_device="inbody_270",
-        )
+        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
 
     app.dependency_overrides[get_engine] = lambda: very_slow_stub
     try:
@@ -198,12 +183,7 @@ def test_plan_with_completed_read_id():
 def test_plan_with_pending_read_id_returns_409():
     def hanging_stub(path: Path) -> PartialInBody:
         time.sleep(2.0)
-        return PartialInBody(
-            weight_kg=70.0,
-            lean_body_mass_kg=55.0,
-            percent_body_fat=21.4,
-            source_device="inbody_270",
-        )
+        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
 
     app.dependency_overrides[get_engine] = lambda: hanging_stub
     try:
@@ -432,202 +412,178 @@ def test_plan_with_uploaded_sheet_read_id():
 
 
 
-
-# --- Source-aware refusal copy (issue #83) ---------------------------------
+# --- Honest failure attribution (issue #45 follow-up, ADR-0010) --------------
 #
-# A PDF upload renders page 1 in the browser and submits it like any photo
-# (issue #81), so every refusal below used to tell PDF uploaders to retake a
-# photo in good lighting. `source` carries what the person actually picked.
+# Three read failures, three causes, three messages. A missing Donut checkpoint
+# is a fact about this server; it must never come back as a claim about the
+# person's photo, because no retake can fix it.
 
 
-def _png_data_url() -> str:
+def _tiny_png_data_url() -> str:
+    """A valid, decodable 10x10 PNG — so any refusal is about the engine, not the bytes."""
     import base64
     import io
+
     from PIL import Image
 
-    img = Image.new("RGB", (10, 10), color=(200, 200, 200))
+    img = Image.new("RGB", (10, 10), color=(255, 255, 255))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
 
-def _refused_message(payload: dict) -> str:
-    start_resp = client.post("/reads", json=payload)
-    assert start_resp.status_code == 200
-    read_id = start_resp.json()["read_id"]
-    poll_resp = client.get(f"/reads/{read_id}?timeout=1.0")
-    assert poll_resp.status_code == 200
-    poll_data = poll_resp.json()
-    assert poll_data["status"] == "refused"
-    return poll_data["extraction"]["message"].lower()
+def test_live_sample_read_without_checkpoint_reports_engine_unavailable():
+    """A live read with no Donut checkpoint blames the server, not the sheet."""
+    from inform.errors import DonutCheckpointError
 
+    def no_checkpoint(path):
+        raise DonutCheckpointError("models/donut-both-v3")
 
-def _blurry_engine():
-    from inform.errors import MissingRequiredFieldsError
-
-    def blurry_stub(img_input) -> PartialInBody:
-        raise MissingRequiredFieldsError(["weight_kg", "lean_body_mass_kg"])
-
-    return blurry_stub
-
-
-def test_pdf_read_missing_fields_does_not_ask_for_a_retake():
-    """AC1: a refused PDF read never mentions retaking a photo or lighting."""
-    app.dependency_overrides[get_engine] = _blurry_engine
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
     try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
-        )
+        start_resp = client.post("/reads", json={"sample_id": "synthetic_270_clean", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["error"] == "engine_unavailable"
+
+        msg = poll_data["extraction"]["message"].lower()
+        assert "unavailable" in msg
+        # Never attributed to the image (Requirement 1.2)
+        assert "blurry" not in msg
         assert "retake" not in msg
-        assert "lighting" not in msg
     finally:
         app.dependency_overrides.clear()
 
 
-def test_pdf_read_missing_fields_says_which_page_to_supply():
-    """AC2: a refused PDF read says what the person can actually do."""
-    app.dependency_overrides[get_engine] = _blurry_engine
+def test_live_sample_read_failure_does_not_substitute_stored_extraction():
+    """A failed live read returns no numbers at all (issue #29 stories 23-25).
+
+    The live read exists to prove the gallery numbers were not typed in by the
+    developers. Serving the stored extraction when the model could not run would
+    destroy the only reason the action exists.
+    """
+    from inform.errors import DonutCheckpointError
+
+    stored = load_extractions().extractions["synthetic_270_clean"]
+    assert stored.data is not None, "fixture guard: this sample has stored numbers"
+
+    def no_checkpoint(path):
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
     try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
-        )
-        assert "pdf" in msg
-        assert "page" in msg
-        assert "results" in msg
+        start_resp = client.post("/reads", json={"sample_id": "synthetic_270_clean", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["data"] is None
+        assert poll_data["extraction"]["unread"] == []
+        assert poll_data["extraction"]["flagged"] == []
     finally:
         app.dependency_overrides.clear()
 
 
-def test_pdf_read_unexpected_failure_does_not_ask_for_a_retake():
-    """AC1 on the catch-all path, which any engine error lands in."""
+def test_uploaded_photo_without_checkpoint_reports_engine_unavailable():
+    """A readable photo plus a missing checkpoint is an engine fault, not a photo fault."""
+    from inform.errors import DonutCheckpointError
 
-    def exploding_stub(img_input) -> PartialInBody:
-        raise RuntimeError("decoder blew up")
+    def no_checkpoint(img_input):
+        raise DonutCheckpointError("models/donut-both-v3")
 
-    app.dependency_overrides[get_engine] = lambda: exploding_stub
-    try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
-        )
-        assert "retake" not in msg
-        assert "lighting" not in msg
-        assert "pdf" in msg
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_pdf_read_with_undecodable_data_blames_the_pdf():
-    """AC1 on the branch that never reaches an engine at all."""
-    start_resp = client.post(
-        "/reads", json={"image_data": "not-a-valid-base64-image", "live": True, "source": "pdf"}
-    )
-    assert start_resp.status_code == 200
-    msg = start_resp.json()["extraction"]["message"].lower()
-    assert "retake" not in msg
-    assert "pdf" in msg
-
-
-def test_photo_source_keeps_the_retake_prompt():
-    """AC3: an explicit photo source still prompts a retake."""
-    app.dependency_overrides[get_engine] = _blurry_engine
-    try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "photo"}
-        )
-        assert "retake" in msg
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_absent_source_keeps_the_photo_wording():
-    """The field is additive: an older client that omits it is unaffected."""
-    app.dependency_overrides[get_engine] = _blurry_engine
-    try:
-        msg = _refused_message({"image_data": _png_data_url(), "live": True})
-        assert "retake" in msg
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_unknown_source_is_rejected():
-    """The contract is closed, so a typo fails loudly instead of silently."""
-    resp = client.post(
-        "/reads", json={"image_data": _png_data_url(), "live": True, "source": "fax"}
-    )
-    assert resp.status_code == 422
-
-
-def test_pdf_read_in_progress_is_not_called_a_photo():
-    """AC4 on the backend half: the job's own wording while it runs."""
-    from inform.reads import read_manager
-
-    def slow_stub(img_input) -> PartialInBody:
-        time.sleep(0.5)
-        return PartialInBody(
-            weight_kg=60.0,
-            lean_body_mass_kg=45.0,
-            percent_body_fat=25.0,
-            source_device="inbody_270",
-        )
-
-    app.dependency_overrides[get_engine] = lambda: slow_stub
-    try:
-        resp = client.post(
-            "/reads", json={"image_data": _png_data_url(), "live": True, "source": "pdf"}
-        )
-        assert resp.status_code == 200
-        job = read_manager.get(resp.json()["read_id"])
-        assert job is not None
-        assert "photo" not in job.message.lower()
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_pdf_cover_page_is_not_blamed_on_a_photo():
-    """AC1/AC2 on the likely path: an emailed InBody PDF leading with a cover
-    page is not an InBody sheet, so it refuses here rather than as a blurry read."""
-    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
-    try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "pdf"}
-        )
-        assert "retake" not in msg
-        assert "photo of your inbody" not in msg
-        assert "pdf" in msg
-        assert "results" in msg
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_photo_cover_page_keeps_the_sheet_upload_prompt():
-    """AC3: the photo wording on this path is the error's own and is unchanged."""
-    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
-    try:
-        msg = _refused_message(
-            {"image_data": _png_data_url(), "live": True, "source": "photo"}
-        )
-        assert "does not appear to be an inbody result sheet" in msg
-    finally:
-        app.dependency_overrides.clear()
-
-
-def _non_sheet_engine():
-    def non_sheet_stub(img_input) -> PartialInBody:
-        raise NotAnInBodySheetError()
-
-    return non_sheet_stub
-
-
-def test_pdf_cover_page_still_reports_the_not_an_inbody_sheet_code():
-    """The error code is untouched by this change, so Preview still routes the
-    refusal to its "Not an InBody sheet" panel."""
-    app.dependency_overrides[get_engine] = lambda: _non_sheet_engine()
+    app.dependency_overrides[get_engine] = lambda: no_checkpoint
     try:
         start_resp = client.post(
-            "/reads", json={"image_data": _png_data_url(), "live": True, "source": "pdf"}
+            "/reads", json={"image_data": _tiny_png_data_url(), "live": True}
         )
         read_id = start_resp.json()["read_id"]
-        poll_data = client.get(f"/reads/{read_id}?timeout=1.0").json()
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["status"] == "refused"
+        assert poll_data["extraction"]["error"] == "engine_unavailable"
+        assert "blurry" not in poll_data["extraction"]["message"].lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_engine_construction_failure_reports_engine_unavailable():
+    """The engine failing to *build* is engine_unavailable too, not just failing to read.
+
+    An eager engine_factory raises on the request thread, before any worker
+    starts, so it needs its own guard. Driven through the manager directly
+    because a raising FastAPI dependency never reaches the manager at all.
+    """
+    from inform.errors import DonutCheckpointError
+    from inform.reads import read_manager
+
+    def failing_factory():
+        raise DonutCheckpointError("models/donut-both-v3")
+
+    upload_job = read_manager.create_read(
+        image_data=_tiny_png_data_url(), live=True, engine_factory=failing_factory
+    )
+    assert upload_job.status == "refused"
+    assert upload_job.error == "engine_unavailable"
+    assert upload_job.extraction is not None
+    assert upload_job.extraction.error == "engine_unavailable"
+
+    sample_job = read_manager.create_read(
+        sample_id="synthetic_270_clean", live=True, engine_factory=failing_factory
+    )
+    assert sample_job.status == "refused"
+    assert sample_job.error == "engine_unavailable"
+    assert sample_job.extraction is not None
+    assert sample_job.extraction.data is None
+
+
+def test_unreadable_photo_is_not_reported_as_engine_unavailable():
+    """The reverse direction of Property 5: a real photo fault stays a photo fault."""
+    from inform.errors import MissingRequiredFieldsError
+
+    def blurry(img_input):
+        raise MissingRequiredFieldsError(["weight_kg", "lean_body_mass_kg"])
+
+    app.dependency_overrides[get_engine] = lambda: blurry
+    try:
+        start_resp = client.post(
+            "/reads", json={"image_data": _tiny_png_data_url(), "live": True}
+        )
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
+        assert poll_data["extraction"]["error"] == "unreadable_photo"
+        assert poll_data["extraction"]["error"] != "engine_unavailable"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_non_sheet_is_not_reported_as_engine_unavailable():
+    """The third mode stays distinct from the other two."""
+    def refusing(path):
+        raise NotAnInBodySheetError()
+
+    app.dependency_overrides[get_engine] = lambda: refusing
+    try:
+        start_resp = client.post("/reads", json={"sample_id": "refused_non_sheet", "live": True})
+        read_id = start_resp.json()["read_id"]
+
+        poll_data = client.get(f"/reads/{read_id}?timeout=2.0").json()
         assert poll_data["extraction"]["error"] == "not_an_inbody_sheet"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_instant_sample_path_completes_with_no_checkpoint_present():
+    """Requirement 1.1: the gallery works without the Donut checkpoint.
+
+    No engine override is installed, so this exercises the real default engine
+    resolution path — which the instant path must never reach.
+    """
+    for sample_id in ("synthetic_270_clean", "synthetic_570_clean", "real_270_clean"):
+        data = client.post("/reads", json={"sample_id": sample_id, "live": False}).json()
+        assert data["status"] == "complete", f"{sample_id} did not complete instantly"
+        assert data["progress"] == 1.0
+        assert data["extraction"]["data"] is not None
+        assert data["extraction"]["error"] is None

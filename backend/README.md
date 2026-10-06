@@ -8,7 +8,7 @@ any of that logic, it imports it directly.
 
 ## What it actually does
 
-Three endpoints:
+Endpoints:
 
 - `GET /` — service metadata (status, docs URL, health endpoint).
 - `GET /health` — liveness check, returns `{"status": "ok", "service": "inform-api"}`.
@@ -27,7 +27,69 @@ Three endpoints:
   directly rather than trusting them only as restated inside generated prose,
   which is the whole point of "deterministic numbers, generative prose only."
 
-That's it. No OCR (Module 1), no accounts, no database, no persistence.
+### Accounts & History (issues #41–#44)
+
+Phase 2 added a Postgres-backed account and Scan history layer:
+
+- `POST /auth/signup`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` —
+  email + password, hashed with bcrypt. The session is a signed JWT carried in an
+  `httpOnly` cookie, valid 30 days, so a signed-in person stays signed in on
+  their next visit.
+- `GET /auth/google/start`, `GET /auth/google/callback` — optional Google OAuth.
+  Identity tokens are verified before matching accounts by Google's stable
+  subject identifier; verified emails may link an existing password account.
+- `POST /scans` — saves a completed read as an **immutable Scan**: the Profile
+  that produced it is frozen onto the Scan as a JSON snapshot (never a foreign
+  key to a mutable row), alongside the effective InBody reading, the
+  corrected/confirmed field lists, and the produced plan. Scanning again
+  appends; Scans are never edited.
+- `GET /scans` — History, newest first, with headline numbers and a
+  corrected-fields marker.
+- `GET /scans/{scan_id}` — one past Scan's full stored results. A Scan belonging
+  to another account returns 404, never 403, so the response can't confirm the
+  id exists.
+- `GET /scans/current` — the most recent Scan plus `age_days` and `is_stale`.
+  Staleness is decided **server-side** against `STALENESS_DAYS` (30) and is never
+  computed by the frontend. A stale plan is returned in full: never hidden,
+  expired, or recomputed.
+- `DELETE /account` — permanently removes the account and, by FK cascade, every
+  Scan belonging to it. No soft delete, no retained analytics copy (ADR-0011).
+
+Still no OCR (Module 1) in this service, and still **no image is ever persisted**
+(ADR-0011) — only the structured numeric extraction, the frozen Profile, and the
+plan are stored.
+
+## Environment variables
+
+Copy `.env.example` to `.env` for local development. `.env` is gitignored;
+`.env.example` is not, so never put real values in it.
+
+| variable | purpose |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection string. On Neon, use the **direct** hostname (no `-pooler`) — the pooled endpoint runs PgBouncer in transaction mode, which is incompatible with holding one transaction open across several statements, as both request-scoped sessions and the test suite's rolled-back-transaction fixture do. |
+| `SESSION_SECRET` | Signing secret for session JWTs. Rotating it invalidates every existing session. |
+| `ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to send credentials. No wildcard is possible once `allow_credentials=True`; browsers reject that pairing. Defaults to `http://localhost:3000`. |
+| `ALLOW_INSECURE_COOKIES` | Set `true` **only** for local http development. Production leaves it unset so the session cookie is sent `Secure` + `SameSite=None` for cross-site use. |
+| `GOOGLE_CLIENT_ID` | Optional Google OAuth Web client ID. Set together with the secret and redirect URI to enable Google sign-in (issue #82). |
+| `GOOGLE_CLIENT_SECRET` | Optional Google OAuth Web client secret. Keep it only in the backend environment, never in the frontend or source control. |
+| `GOOGLE_REDIRECT_URI` | Exact backend callback URL registered with the Google OAuth client, ending in `/auth/google/callback`. |
+| `FRONTEND_URL` | Frontend origin to return users to after Google sign-in. Defaults to the first configured `ALLOWED_ORIGINS` entry. |
+
+Google sign-in is disabled unless all three Google OAuth variables are set. Create
+a Google Cloud OAuth client of type **Web application**, add the frontend origin
+as an authorized JavaScript origin, register the exact backend callback URL as
+an authorized redirect URI, and add intended users as test users while the
+consent screen is in testing. The sign-in and sign-up screens return a clear
+unavailable message until the backend is configured.
+Google identities are matched by the stable `sub`; an existing email account is
+linked only when Google's verified ID token marks its email as verified.
+
+Database schema is managed with Alembic from the `backend/` directory:
+
+```bash
+alembic upgrade head          # apply migrations
+alembic revision --autogenerate -m "..."   # after changing db/models.py
+```
 
 ## How it reaches the `inform` package
 
@@ -71,10 +133,15 @@ own URL.
   synthetic or consented data. Real patient health data must never be
   transmitted to external cloud APIs. Without `OPENAI_API_KEY`, the service
   relies on the deterministic template synthesizer completely locally.
-- **CORS is wide open** (`allow_origins=["*"]`) — fine for an initial deploy,
-  worth scoping down to the Vercel origin once that URL is known.
-- **No auth, no persistence** — every `/plan` call is stateless; nothing is
-  saved.
+- **CORS is now restricted** to the origins in `ALLOWED_ORIGINS`, because a
+  cross-site session cookie requires `allow_credentials=True`, which browsers
+  refuse to pair with a wildcard origin. A deployment that forgets to set
+  `ALLOWED_ORIGINS` will block its own frontend.
+- **`/plan` is still stateless** — it computes and returns without saving.
+  Persistence is opt-in via `POST /scans`, which requires a signed-in account.
+  The whole anonymous flow still works with no account at all.
+- **No password reset flow.** Deliberate scope choice for the smallest credible
+  sign-in (issue #41); a forgotten password currently means a new account.
 
 ## Running locally
 

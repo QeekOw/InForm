@@ -1,59 +1,142 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/BackButton";
 import PhoneFrame from "@/components/PhoneFrame";
+import { btn, Card, OptionCards, PhotoBackdrop, RadioGroup, SelectField, TextField } from "@/components/ui";
+import { ACTIVITY_OPTIONS, GOAL_OPTIONS, SEX_OPTIONS } from "@/lib/profileOptions";
+import { useAuth } from "@/lib/AuthProvider";
 import { isFinishingGuestPlan, nextAfterProfile } from "@/lib/flow";
-import { saveJSON, SESSION_KEYS } from "@/lib/session";
-import { ACTIVITY_LEVELS, DEFAULT_USER_NAME, type UserProfile } from "@/lib/user";
+import { getCurrentScan } from "@/lib/scans";
+import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
+import {
+  ACTIVITY_LEVELS,
+  DEFAULT_USER_NAME,
+  todayIso,
+  validateDateOfBirth,
+  type UserProfile,
+} from "@/lib/user";
 
-const imgRadioSelected = "/icons/form/radio-selected.svg";
-const imgRadioUnselected = "/icons/form/radio-unselected.svg";
 
-// Issue #34 AC: "an implausible age is rejected before a plan is computed."
-const MIN_AGE = 13;
-const MAX_AGE = 100;
-const TODAY = new Date().toISOString().slice(0, 10);
+/** Where the form's starting values came from, so the screen can say so rather
+ * than silently presenting numbers the person didn't type this time. */
+type PrefillSource = "none" | "account" | "last-scan";
 
-function ageFromDob(dob: string): number | null {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (Number.isNaN(birth.getTime())) return null;
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  const hasHadBirthdayThisYear =
-    now.getMonth() > birth.getMonth() ||
-    (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate());
-  if (!hasHadBirthdayThisYear) age -= 1;
-  return age;
-}
+const DEFAULT_ACTIVITY_MULTIPLIER = ACTIVITY_LEVELS[2].multiplier;
 
 export default function Profile() {
   const router = useRouter();
+  const { account } = useAuth();
   const [finishingGuestPlan, setFinishingGuestPlan] = useState(false);
   const [name, setName] = useState("");
-  const [dob, setDob] = useState("");
   const [ageError, setAgeError] = useState<string | null>(null);
-  const [sex, setSex] = useState<UserProfile["biological_sex"]>("male");
-  const [activityMultiplier, setActivityMultiplier] = useState<number>(
-    ACTIVITY_LEVELS[2].multiplier,
-  );
-  const [goal, setGoal] = useState<UserProfile["fitness_goal"]>("fat_loss");
+
+  // The most recent Scan's frozen profile snapshot, read *only* to pre-fill this
+  // form. Never written back: editing anything here cannot change that Scan
+  // (issue #42).
+  const [lastScanProfile, setLastScanProfile] = useState<UserProfile | null>(null);
+
+  // What the person has typed or picked this visit. `null` means "untouched, use
+  // whatever we know about them" â€” so the form's values are *derived* from the
+  // account rather than copied into state when it loads, which would mean
+  // reacting to our own data as though it were an external system.
+  const [dobEdit, setDobEdit] = useState<string | null>(null);
+  const [sexEdit, setSexEdit] = useState<UserProfile["biological_sex"] | null>(null);
+  const [activityEdit, setActivityEdit] = useState<number | null>(null);
+  const [goalEdit, setGoalEdit] = useState<UserProfile["fitness_goal"] | null>(null);
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
+    const isFinishing = isFinishingGuestPlan();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFinishingGuestPlan(isFinishingGuestPlan());
-  }, []);
+    setFinishingGuestPlan(isFinishing);
+    if (!account && !isFinishing) {
+      clearSheet();
+    }
+  }, [account]);
+
+  // If an authenticated user already completed profile defaults, do not prompt again.
+  useEffect(() => {
+    if (
+      account &&
+      account.date_of_birth &&
+      account.default_biological_sex &&
+      account.default_activity_multiplier &&
+      account.default_fitness_goal
+    ) {
+      const { age, error } = validateDateOfBirth(account.date_of_birth);
+      if (error === null && age !== null) {
+        const profile: UserProfile = {
+          age,
+          biological_sex: account.default_biological_sex,
+          activity_multiplier: account.default_activity_multiplier,
+          fitness_goal: account.default_fitness_goal,
+        };
+        saveJSON(SESSION_KEYS.profile, profile);
+        saveJSON(SESSION_KEYS.name, account.name || account.email.split("@")[0] || DEFAULT_USER_NAME);
+        router.replace(nextAfterProfile());
+      }
+    }
+  }, [account, router]);
+
+  // A signed-in person shouldn't retype what they already told us
+  // (Requirement 3.8). Two sources, preferred in this order:
+  //
+  //   1. The Account's own defaults, given at sign-up. The person's current
+  //      answers, and the only source that can supply a date of birth.
+  //   2. Failing that, the most recent Scan's frozen profile.
+  //
+  // A guest has neither and gets the form's plain defaults, so the anonymous
+  // flow is untouched (Requirement 3.9).
+  const hasAccountDefaults = Boolean(
+    account &&
+      (account.default_biological_sex !== null ||
+        account.default_activity_multiplier !== null ||
+        account.default_fitness_goal !== null ||
+        account.date_of_birth !== null),
+  );
+
+  // Only worth asking for a Scan when the account has no defaults of its own.
+  useEffect(() => {
+    if (!account || hasAccountDefaults) return;
+    let active = true;
+    getCurrentScan()
+      .then((plan) => {
+        if (active) setLastScanProfile(plan.profile);
+      })
+      .catch(() => {
+        // No previous Scan (or not reachable): keep the form's defaults.
+      });
+    return () => {
+      active = false;
+    };
+  }, [account, hasAccountDefaults]);
+
+  const prefillSource: PrefillSource = hasAccountDefaults
+    ? "account"
+    : lastScanProfile
+      ? "last-scan"
+      : "none";
+
+  // A Scan freezes the age it was taken at, never a birth date, so only an
+  // account default can pre-fill this. Working a birth date back from an age
+  // would be inventing a value the person never gave.
+  const dob = dobEdit ?? account?.date_of_birth ?? "";
+  const sex =
+    sexEdit ?? account?.default_biological_sex ?? lastScanProfile?.biological_sex ?? "male";
+  const activityMultiplier =
+    activityEdit ??
+    account?.default_activity_multiplier ??
+    lastScanProfile?.activity_multiplier ??
+    DEFAULT_ACTIVITY_MULTIPLIER;
+  const goal =
+    goalEdit ?? account?.default_fitness_goal ?? lastScanProfile?.fitness_goal ?? "fat_loss";
 
   const handleContinue = () => {
-    const age = ageFromDob(dob);
-    if (age === null) {
-      setAgeError("Enter your date of birth.");
-      return;
-    }
-    if (age < MIN_AGE || age > MAX_AGE) {
-      setAgeError(`Enter a date of birth that makes you between ${MIN_AGE} and ${MAX_AGE}.`);
+    const { age, error } = validateDateOfBirth(dob);
+    if (error !== null) {
+      setAgeError(error);
       return;
     }
 
@@ -70,128 +153,67 @@ export default function Profile() {
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      <h1 className="mt-[57px] text-center text-[32px] font-bold tracking-[0.02em] text-[#fcfcfc]">
-        {finishingGuestPlan ? "Your Profile" : "Sign Up"}
-      </h1>
-      {finishingGuestPlan && (
-        <p className="mt-2 px-[30px] text-center text-[12px] text-[#fcfcfc]">
-          Your plan needs these details. Fill them in to see it.
-        </p>
-      )}
+      <PhotoBackdrop src="/bg/signup.jpg" className="absolute inset-0 min-h-full" />
 
-      <div className="mx-auto mt-8 w-[342px] rounded-[15px] bg-[#fcfcfc] p-[30px]">
-        <label className="block text-[12px] text-black" htmlFor="name">
-          Name
-        </label>
-        <input
-          id="name"
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="mt-[9px] h-[35px] w-full rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] px-3 text-[13px] text-black"
-        />
+      <div className="relative px-[30px] pb-[40px] pt-[48px]">
+        {/* Reached from the gallery, sign-in and a guest's results, so it walks
+            the in-app trail instead of guessing. */}
+        <BackButton fallbackHref="/upload" />
 
-        <label className="mt-6 block text-[12px] text-black" htmlFor="dob">
-          Date of Birth
-        </label>
-        <input
-          id="dob"
-          type="date"
-          max={TODAY}
-          value={dob}
-          onChange={(e) => {
-            setDob(e.target.value);
-            setAgeError(null);
-          }}
-          aria-invalid={ageError !== null}
-          className={`mt-[9px] h-[35px] w-full rounded-lg border bg-[#d9d9d980] px-3 text-[13px] text-black ${
-            ageError ? "border-red-500" : "border-[#d9d9d9]"
-          }`}
-        />
-        {ageError && <p className="mt-1 text-[10px] text-red-600">{ageError}</p>}
+        <h1 className="mt-[72px] text-center text-[40px] font-bold tracking-[0.02em] text-[#fcfcfc]">
+          About You
+        </h1>
+        {(finishingGuestPlan || prefillSource !== "none") && (
+          <p className="mt-1 text-center text-[12px] text-[#fcfcfc]/90">
+            {finishingGuestPlan
+              ? "Your plan needs these details. Fill them in to see it."
+              : prefillSource === "account"
+                ? "Filled in from your account. Change anything that's moved on."
+                : "Pre-filled from your last scan. Please re-enter your date of birth."}
+          </p>
+        )}
 
-        <p className="mt-6 text-[12px] text-black">Biological Sex</p>
-        <div className="mt-[9px] flex gap-[42px]">
-          {(["male", "female"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setSex(value)}
-              className="flex items-center gap-2 text-[12px] font-bold text-black capitalize"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt=""
-                className="size-4"
-                src={sex === value ? imgRadioSelected : imgRadioUnselected}
-              />
-              {value}
-            </button>
-          ))}
-        </div>
-
-        <label className="mt-6 block text-[12px] text-black" htmlFor="activity">
-          Activity Level
-        </label>
-        <div className="relative mt-[9px]">
-          <select
-            id="activity"
-            value={activityMultiplier}
-            onChange={(e) => setActivityMultiplier(Number(e.target.value))}
-            className="h-[35px] w-full cursor-pointer appearance-none rounded-lg border border-[#d9d9d9] bg-[#d9d9d980] pl-3 pr-10 text-[13px] text-black"
+        <Card as="form" className="mt-[36px] space-y-[15px] p-[30px]">
+          <TextField
+            label="Name"
+            icon="person"
+            autoComplete="name"
+            placeholder="Enter your name (optional)"
+            maxLength={80}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <TextField
+            label="Date of Birth"
+            icon="calendar"
+            type="date"
+            max={todayIso()}
+            value={dob}
+            error={ageError}
+            onChange={(e) => {
+              setDobEdit(e.target.value);
+              setAgeError(null);
+            }}
+          />
+          <RadioGroup label="Biological Sex" name="sex" value={sex} onChange={setSexEdit} options={SEX_OPTIONS} />
+          <SelectField
+            label="Activity Level"
+            value={String(activityMultiplier)}
+            onChange={(v) => setActivityEdit(Number(v))}
+            options={ACTIVITY_OPTIONS}
+          />
+          <OptionCards label="Goals" name="goal" value={goal} onChange={setGoalEdit} options={GOAL_OPTIONS} />
+          <button
+            type="submit"
+            className={`${btn.primary} !mt-[30px]`}
+            onClick={(e) => {
+              e.preventDefault();
+              handleContinue();
+            }}
           >
-            {ACTIVITY_LEVELS.map((level) => (
-              <option key={level.multiplier} value={level.multiplier}>
-                {level.label} ({level.hint})
-              </option>
-            ))}
-          </select>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-[#117d69] text-white"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="size-4">
-              <path
-                fillRule="evenodd"
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </span>
-        </div>
-
-        <p className="mt-6 text-[12px] text-black">Goals</p>
-        <div className="mt-[9px] flex flex-col gap-[8px]">
-          {(
-            [
-              { value: "fat_loss", label: "Fat Loss" },
-              { value: "hypertrophy", label: "Build Muscle" },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setGoal(option.value)}
-              className={`h-[35px] rounded-lg border px-4 text-left text-[12px] font-bold ${
-                goal === option.value
-                  ? "border-[#117d69] bg-[#117d6926] text-[#117d69]"
-                  : "border-[#d9d9d9] bg-[#d9d9d980] text-black"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-6 flex justify-center px-[30px]">
-        <button
-          type="button"
-          onClick={handleContinue}
-          className="flex h-[40px] w-full items-center justify-center rounded-lg bg-[#117d69] text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]"
-        >
-          Continue
-        </button>
+            Continue
+          </button>
+        </Card>
       </div>
     </PhoneFrame>
   );
