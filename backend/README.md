@@ -35,6 +35,9 @@ Phase 2 added a Postgres-backed account and Scan history layer:
   email + password, hashed with bcrypt. The session is a signed JWT carried in an
   `httpOnly` cookie, valid 30 days, so a signed-in person stays signed in on
   their next visit.
+- `GET /auth/google/start`, `GET /auth/google/callback` — optional Google OAuth.
+  Identity tokens are verified before matching accounts by Google's stable
+  subject identifier; verified emails may link an existing password account.
 - `POST /scans` — saves a completed read as an **immutable Scan**: the Profile
   that produced it is frozen onto the Scan as a JSON snapshot (never a foreign
   key to a mutable row), alongside the effective InBody reading, the
@@ -67,6 +70,19 @@ Copy `.env.example` to `.env` for local development. `.env` is gitignored;
 | `SESSION_SECRET` | Signing secret for session JWTs. Rotating it invalidates every existing session. |
 | `ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to send credentials. No wildcard is possible once `allow_credentials=True`; browsers reject that pairing. Defaults to `http://localhost:3000`. |
 | `ALLOW_INSECURE_COOKIES` | Set `true` **only** for local http development. Production leaves it unset so the session cookie is sent `Secure` + `SameSite=None` for cross-site use. |
+| `GOOGLE_CLIENT_ID` | Optional Google OAuth Web client ID. Set together with the secret and redirect URI to enable Google sign-in (issue #82). |
+| `GOOGLE_CLIENT_SECRET` | Optional Google OAuth Web client secret. Keep it only in the backend environment, never in the frontend or source control. |
+| `GOOGLE_REDIRECT_URI` | Exact backend callback URL registered with the Google OAuth client, ending in `/auth/google/callback`. |
+| `FRONTEND_URL` | Frontend origin to return users to after Google sign-in. Defaults to the first configured `ALLOWED_ORIGINS` entry. |
+
+Google sign-in is disabled unless all three Google OAuth variables are set. Create
+a Google Cloud OAuth client of type **Web application**, add the frontend origin
+as an authorized JavaScript origin, register the exact backend callback URL as
+an authorized redirect URI, and add intended users as test users while the
+consent screen is in testing. The sign-in and sign-up screens return a clear
+unavailable message until the backend is configured.
+Google identities are matched by the stable `sub`; an existing email account is
+linked only when Google's verified ID token marks its email as verified.
 
 Database schema is managed with Alembic from the `backend/` directory:
 

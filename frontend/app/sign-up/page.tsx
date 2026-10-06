@@ -9,7 +9,9 @@ import PhoneFrame from "@/components/PhoneFrame";
 import {
   btn,
   Card,
+  GoogleLogo,
   OptionCards,
+  OrDivider,
   PasswordField,
   PhotoBackdrop,
   RadioGroup,
@@ -18,6 +20,7 @@ import {
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
+import { googleSignInStatusMessage, googleSignInUrl } from "@/lib/googleAuth";
 import { ACTIVITY_OPTIONS, GOAL_OPTIONS, SEX_OPTIONS } from "@/lib/profileOptions";
 import { loadJSON, removeSessionItem, SESSION_KEYS } from "@/lib/session";
 import {
@@ -40,6 +43,7 @@ function SignUpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
+  const googleStatus = searchParams.get("google");
   const { signUp } = useAuth();
 
   // Two screens, one request: credentials first, then "About You". Nothing is
@@ -56,8 +60,17 @@ function SignUpContent() {
   const [goal, setGoal] = useState<FitnessGoal>("fat_loss");
 
   const [errors, setErrors] = useState<Errors>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    googleSignInStatusMessage(googleStatus),
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (googleStatus !== "success") return;
+    const target = redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth) || "/dashboard";
+    removeSessionItem(SESSION_KEYS.nextAfterAuth);
+    router.replace(target);
+  }, [googleStatus, redirectParam, router]);
 
   // A guest who already finished a plan shouldn't retype what they told us.
   useEffect(() => {
@@ -169,46 +182,60 @@ function SignUpContent() {
 
         <Card className="mt-[36px] p-[30px]">
           {step === "account" ? (
-            <form noValidate onSubmit={handleNext} className="space-y-[15px]">
-              <TextField
-                label="Email Address"
-                icon="email"
-                type="email"
-                autoComplete="email"
-                placeholder="Enter your email address"
-                value={email}
-                error={errors.email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  clear("email");
-                }}
-              />
-              <PasswordField
-                label="Password"
-                autoComplete="new-password"
-                placeholder="Create a password"
-                value={password}
-                error={errors.password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  clear("password");
-                }}
-              />
-              <PasswordField
-                label="Confirm Password"
-                autoComplete="new-password"
-                placeholder="Confirm your password"
-                value={confirmPassword}
-                error={errors.confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value);
-                  clear("confirmPassword");
-                }}
-              />
-              <button type="submit" className={`${btn.primary} !mt-[40px]`}>
-                Next
-              </button>
-            </form>
+            <>
+              <a
+                href={googleSignInUrl(
+                  redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth),
+                )}
+                className={`${btn.secondary} font-medium`}
+              >
+                <GoogleLogo />
+                Continue with Google
+              </a>
+              <div className="my-[24px] text-black">
+                <OrDivider />
+              </div>
+              <form noValidate onSubmit={handleNext} className="space-y-[15px]">
+                <TextField
+                  label="Email Address"
+                  icon="email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="Enter your email address"
+                  value={email}
+                  error={errors.email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    clear("email");
+                  }}
+                />
+                <PasswordField
+                  label="Password"
+                  autoComplete="new-password"
+                  placeholder="Create a password"
+                  value={password}
+                  error={errors.password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clear("password");
+                  }}
+                />
+                <PasswordField
+                  label="Confirm Password"
+                  autoComplete="new-password"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  error={errors.confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    clear("confirmPassword");
+                  }}
+                />
+                <button type="submit" className={`${btn.primary} !mt-[40px]`}>
+                  Next
+                </button>
+              </form>
+            </>
           ) : (
             <form noValidate onSubmit={handleSignUp} className="space-y-[15px]">
               <TextField

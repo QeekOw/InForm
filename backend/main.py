@@ -1,6 +1,9 @@
+import hmac
 import os
+import secrets
 import sys
 from pathlib import Path
+from urllib.parse import urlencode, urlsplit
 
 # The inform package lives in the repository root (src/inform).
 # Modules 2 & 3 are pure Pydantic models and deterministic calculations
@@ -19,9 +22,9 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -47,6 +50,13 @@ try:
     )
     from .db.models import Account, Scan
     from .db.session import get_db
+    from .google_oauth import (
+        GOOGLE_AUTHORIZATION_ENDPOINT,
+        GoogleOAuthError,
+        GoogleOAuthSettings,
+        exchange_authorization_code,
+        verify_identity_token,
+    )
 except ImportError:
     from auth import (
         SESSION_COOKIE_NAME,
@@ -57,6 +67,13 @@ except ImportError:
     )
     from db.models import Account, Scan
     from db.session import get_db
+    from google_oauth import (
+        GOOGLE_AUTHORIZATION_ENDPOINT,
+        GoogleOAuthError,
+        GoogleOAuthSettings,
+        exchange_authorization_code,
+        verify_identity_token,
+    )
 
 from inform.corrections import (
     CrossCheckFlaggedError,
@@ -279,6 +296,9 @@ class AccountResponse(BaseModel):
 # Cookie lifetime mirrors the session token's own expiry (backend/auth.py) so
 # the browser doesn't keep sending a cookie the server would reject anyway.
 _SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+_GOOGLE_FLOW_COOKIE_MAX_AGE_SECONDS = 10 * 60
+_GOOGLE_STATE_COOKIE = "inform_google_state"
+_GOOGLE_REDIRECT_COOKIE = "inform_google_redirect"
 
 # Secure + SameSite=None is required for the cross-site cookie to work at all
 # once the frontend (Vercel) and backend (Render) are on different origins in
@@ -300,6 +320,188 @@ def _set_session_cookie(response: Response, token: str) -> None:
         samesite="lax" if _COOKIES_OVER_HTTP else "none",
         path="/",
     )
+
+
+def _google_frontend_url(status: str, redirect_path: str) -> str:
+    configured_frontend = os.environ.get("FRONTEND_URL")
+    if configured_frontend:
+        frontend_origin = configured_frontend.rstrip("/")
+    elif _allowed_origins:
+        frontend_origin = next(
+            (
+                origin.rstrip("/")
+                for origin in _allowed_origins
+                if urlsplit(origin).hostname not in {"localhost", "127.0.0.1"}
+            ),
+            _allowed_origins[0].rstrip("/"),
+        )
+    else:
+        frontend_origin = "http://localhost:3000"
+    return f"{frontend_origin}/sign-in?{urlencode({'google': status, 'redirect': redirect_path})}"
+
+
+def _safe_google_redirect(value: str | None) -> str | None:
+    if value is None:
+        return "/dashboard"
+    parsed = urlsplit(value)
+    if (
+        not value.startswith("/")
+        or value.startswith("//")
+        or "\\" in value
+        or parsed.scheme
+        or parsed.netloc
+        or any(ord(character) < 32 for character in value)
+    ):
+        return None
+    return value
+
+
+def _clear_google_flow_cookies(response: Response) -> None:
+    for cookie_name in (_GOOGLE_STATE_COOKIE, _GOOGLE_REDIRECT_COOKIE):
+        response.delete_cookie(
+            key=cookie_name,
+            path="/auth/google",
+            secure=not _COOKIES_OVER_HTTP,
+            httponly=True,
+            samesite="lax",
+        )
+
+
+def _google_result_redirect(status: str, redirect_path: str) -> RedirectResponse:
+    response = RedirectResponse(
+        _google_frontend_url(status, redirect_path),
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
+    _clear_google_flow_cookies(response)
+    return response
+
+
+@app.get("/auth/google/start")
+def google_sign_in_start(redirect: str | None = Query(default=None)) -> Response:
+    """Start Google OAuth, or return to sign-in with a clear setup message."""
+    redirect_path = _safe_google_redirect(redirect)
+    if redirect_path is None:
+        raise HTTPException(status_code=400, detail="Invalid sign-in redirect.")
+
+    settings = GoogleOAuthSettings.from_environment()
+    if settings is None:
+        return _google_result_redirect("unavailable", redirect_path)
+
+    state = secrets.token_urlsafe(32)
+    authorization_params = {
+        "client_id": settings.client_id,
+        "redirect_uri": settings.redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "prompt": "select_account",
+    }
+    authorization_url = f"{GOOGLE_AUTHORIZATION_ENDPOINT}?{urlencode(authorization_params)}"
+    response = RedirectResponse(authorization_url, status_code=302)
+    for cookie_name, value in (
+        (_GOOGLE_STATE_COOKIE, state),
+        (_GOOGLE_REDIRECT_COOKIE, redirect_path),
+    ):
+        response.set_cookie(
+            key=cookie_name,
+            value=value,
+            max_age=_GOOGLE_FLOW_COOKIE_MAX_AGE_SECONDS,
+            httponly=True,
+            secure=not _COOKIES_OVER_HTTP,
+            samesite="lax",
+            path="/auth/google",
+        )
+    return response
+
+
+@app.get("/auth/google/callback")
+def google_sign_in_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+) -> Response:
+    """Verify Google's response, resolve the account, and issue a normal session."""
+    redirect_path = _safe_google_redirect(request.cookies.get(_GOOGLE_REDIRECT_COOKIE))
+    if redirect_path is None:
+        redirect_path = "/dashboard"
+    cookie_state = request.cookies.get(_GOOGLE_STATE_COOKIE)
+    if (
+        not state
+        or not state.isascii()
+        or not cookie_state
+        or not hmac.compare_digest(state, cookie_state)
+    ):
+        return _google_result_redirect("error", redirect_path)
+
+    if error:
+        return _google_result_redirect(
+            "cancelled" if error == "access_denied" else "error",
+            redirect_path,
+        )
+    if not code:
+        return _google_result_redirect("error", redirect_path)
+
+    settings = GoogleOAuthSettings.from_environment()
+    if settings is None:
+        return _google_result_redirect("unavailable", redirect_path)
+
+    try:
+        identity_token = exchange_authorization_code(code, settings)
+        claims = verify_identity_token(identity_token, settings.client_id)
+    except GoogleOAuthError:
+        return _google_result_redirect("error", redirect_path)
+
+    google_sub = claims.get("sub")
+    email = claims.get("email")
+    if (
+        not isinstance(google_sub, str)
+        or not google_sub
+        or not isinstance(email, str)
+        or not email.strip()
+        or claims.get("email_verified") is not True
+    ):
+        return _google_result_redirect("error", redirect_path)
+
+    normalized_email = email.strip().lower()
+    account_by_google = db.query(Account).filter_by(google_sub=google_sub).one_or_none()
+    account_by_email = db.query(Account).filter_by(email=normalized_email).one_or_none()
+    if account_by_google is not None:
+        if account_by_email is not None and account_by_email.id != account_by_google.id:
+            return _google_result_redirect("error", redirect_path)
+        account = account_by_google
+        account.email = normalized_email
+    elif account_by_email is not None:
+        if account_by_email.google_sub not in (None, google_sub):
+            return _google_result_redirect("error", redirect_path)
+        account = account_by_email
+        account.google_sub = google_sub
+    else:
+        account = Account(email=normalized_email, google_sub=google_sub)
+        db.add(account)
+
+    google_name = claims.get("name")
+    if account.name is None and isinstance(google_name, str):
+        normalized_name = " ".join(google_name.split())
+        if normalized_name and len(normalized_name) <= _MAX_NAME_LENGTH:
+            account.name = normalized_name
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return _google_result_redirect("error", redirect_path)
+
+    token = create_session_token(account.id)
+    response = RedirectResponse(
+        _google_frontend_url("success", redirect_path),
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
+    )
+    _set_session_cookie(response, token)
+    _clear_google_flow_cookies(response)
+    return response
 
 
 @app.post("/auth/signup", response_model=AccountResponse, status_code=201)
@@ -344,7 +546,11 @@ _INVALID_CREDENTIALS_MESSAGE = "Incorrect email or password."
 def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)) -> AccountResponse:
     """Sign in an existing Account (issue #41)."""
     account = db.query(Account).filter_by(email=request.email).one_or_none()
-    if account is None or not verify_password(request.password, account.password_hash):
+    if (
+        account is None
+        or account.password_hash is None
+        or not verify_password(request.password, account.password_hash)
+    ):
         raise HTTPException(status_code=401, detail=_INVALID_CREDENTIALS_MESSAGE)
 
     token = create_session_token(account.id)

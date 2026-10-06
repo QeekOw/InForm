@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, type FormEvent } from "react";
+import { useEffect, useState, Suspense, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BackButton from "@/components/BackButton";
@@ -8,11 +8,9 @@ import PhoneFrame from "@/components/PhoneFrame";
 import { btn, Card, GoogleLogo, OrDivider, PasswordField, PhotoBackdrop, TextField } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
+import { googleSignInStatusMessage, googleSignInUrl } from "@/lib/googleAuth";
 import { loadJSON, removeSessionItem, SESSION_KEYS } from "@/lib/session";
 
-// Shown but not built yet: both say so plainly instead of doing nothing.
-const GOOGLE_UNAVAILABLE =
-  "Google sign-in isn't available yet. Use your email and password, or continue as a guest.";
 const RESET_UNAVAILABLE =
   "Password reset isn't available yet. If you're stuck, continue as a guest — no account is needed to get a plan.";
 
@@ -22,14 +20,24 @@ function SignInContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
+  const googleStatus = searchParams.get("google");
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() =>
+    googleSignInStatusMessage(googleStatus),
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const isSavingScan = redirectParam?.includes("/result") ?? false;
+
+  useEffect(() => {
+    if (googleStatus !== "success") return;
+    const target = redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth) || "/dashboard";
+    removeSessionItem(SESSION_KEYS.nextAfterAuth);
+    router.replace(target);
+  }, [googleStatus, redirectParam, router]);
 
   const handleLogIn = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -130,17 +138,15 @@ function SignInContent() {
             <OrDivider />
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setErrors({});
-              setNotice(GOOGLE_UNAVAILABLE);
-            }}
+          <a
+            href={googleSignInUrl(
+              redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth),
+            )}
             className={`${btn.secondary} font-medium`}
           >
             <GoogleLogo />
             Continue with Google
-          </button>
+          </a>
 
           <Link
             href={redirectParam || "/upload"}
