@@ -144,12 +144,9 @@ function SignInContent() {
 
           <Link
             href={redirectParam || "/upload"}
-            className={`${btn.soft} mt-[8px] h-auto flex-col gap-[3px] py-[10px]`}
+            className={`${btn.soft} mt-[8px]`}
           >
             {redirectParam ? "Return to your scan" : "Continue as a Guest"}
-            <span className="max-w-[160px] text-center text-[9px] font-medium leading-tight">
-              No account needed to get a plan. An account only saves your scans.
-            </span>
           </Link>
         </Card>
 
