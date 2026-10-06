@@ -408,7 +408,13 @@ def test_a_corrected_value_is_what_the_chart_plots(signed_in_client: TestClient)
             "user": PROFILE,
             "sample_id": "real_270_flagged",
             "corrections": {"lean_body_mass_kg": 62.5},
-            "confirmations": ["weight_kg", "percent_body_fat", "basal_metabolic_rate_kcal"],
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
         },
     )
     assert corrected.status_code == 201
