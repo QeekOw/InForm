@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { EditedMarker } from "./FieldStatus";
 
 export type TrendPoint = {
   /** Milliseconds, so points sit on a real time axis rather than evenly spaced. */
@@ -72,9 +73,7 @@ export default function TrendChart({
         <div className="flex items-baseline justify-between">
           <p className="text-[12px] font-bold">{title}</p>
           {latest.corrected && (
-            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[8px] font-bold text-sky-800">
-              Edited
-            </span>
+            <EditedMarker />
           )}
         </div>
         <p className="mt-1 text-[26px] font-bold text-[#117d69]">

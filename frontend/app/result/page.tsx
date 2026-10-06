@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BackButton from "@/components/BackButton";
+import { CheckedMarker, EditedMarker, MarkerLegend } from "@/components/FieldStatus";
 import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
 import { btn, cardClass, ConfirmDialog, Modal } from "@/components/ui";
@@ -415,10 +416,10 @@ function ResultContent() {
                 const checked = !edited && (confirmedSet.has(row.key) || confirmedSet.has(short));
                 return (
                   <div key={row.label} className="flex items-baseline justify-between gap-1 py-[2px]">
-                    <dt className="flex min-w-0 items-center gap-1 truncate">
-                      {row.label}
-                      {edited && <span className="text-[8px] text-sky-300" title="Edited by you">●</span>}
-                      {checked && <span className="text-[8px] text-[#7ee0cf]" title="Checked by you">●</span>}
+                    <dt className="flex min-w-0 items-center gap-[4px]">
+                      <span className="truncate">{row.label}</span>
+                      {edited && <EditedMarker />}
+                      {checked && <CheckedMarker />}
                     </dt>
                     <dd className="whitespace-nowrap font-bold">
                       {row.value(reading) ?? "—"}
@@ -427,15 +428,11 @@ function ResultContent() {
                   </div>
                 );
               })}
-              {(correctedSet.size > 0 || confirmedSet.size > 0) && (
-                <p className="mt-1 text-[8px] text-white/60">
-                  <span className="text-sky-300">●</span> edited by you{"  "}
-                  <span className="text-[#7ee0cf]">●</span> checked by you
-                </p>
-              )}
+
             </dl>
           </section>
         )}
+        {profile && reading && <MarkerLegend edited={correctedSet.size > 0} checked={confirmedSet.size > 0} />}
 
         {state.status === "loading" && (
           <div className={`${cardClass} mt-[15px] flex h-[120px] items-center justify-center`} role="status">

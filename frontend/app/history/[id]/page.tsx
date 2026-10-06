@@ -5,7 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import BackButton from "@/components/BackButton";
 import { NarrativeProvenance, NarrativeText } from "@/components/Narrative";
 import PhoneFrame from "@/components/PhoneFrame";
-import { cardClass, Tag } from "@/components/ui";
+import { CheckedMarker, EditedMarker } from "@/components/FieldStatus";
+import { cardClass } from "@/components/ui";
 import { useAuth } from "@/lib/AuthProvider";
 import { ApiError } from "@/lib/api";
 import { type MovementType } from "@/lib/exercise";
@@ -89,8 +90,8 @@ export default function ScanDetailPage() {
                     <div key={row.label} className="flex items-baseline justify-between gap-2 border-b border-black/5 py-[3px] last:border-0">
                       <dt className="flex items-center gap-1.5">
                         <span className="text-black/75">{row.label}</span>
-                        {edited && <Tag tone="sky">Edited</Tag>}
-                        {checked && <Tag tone="teal">Checked</Tag>}
+                        {edited && <EditedMarker />}
+                        {checked && <CheckedMarker />}
                       </dt>
                       <dd className="whitespace-nowrap font-bold">
                         {row.value(state.scan.effective_inbody) ?? "—"}
