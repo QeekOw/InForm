@@ -122,6 +122,24 @@ export function normalizeFieldKey(key: string): string {
   return key;
 }
 
+/** Only values differing from the original reading count as corrections. */
+export function updateFieldCorrection(
+  corrections: Record<string, { value: number; unit?: string }>,
+  key: string,
+  value: number | null,
+  originalValue: number | null | undefined,
+  unit?: string,
+): Record<string, { value: number; unit?: string }> {
+  const normKey = normalizeFieldKey(key);
+  const next = { ...corrections };
+  delete next[key];
+  delete next[normKey];
+  if (value !== null && value !== originalValue) {
+    next[normKey] = { value, ...(unit ? { unit } : {}) };
+  }
+  return next;
+}
+
 /** Human-friendly label for any field key. */
 export function getFieldLabel(key: string): string {
   const norm = normalizeFieldKey(key);

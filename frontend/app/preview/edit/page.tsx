@@ -12,6 +12,7 @@ import {
   getUnresolvedFlagged,
   normalizeFieldKey,
   parseAndValidateFieldInput,
+  updateFieldCorrection,
   validateFieldValue,
 } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
@@ -23,6 +24,7 @@ import {
   blankRequiredFields,
   type InBodyDraft,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
   type ScalarInBodyField,
   type SegmentalLeanField,
@@ -180,6 +182,7 @@ function Row({
 export default function PreviewEdit() {
   const router = useRouter();
   const [draft, setDraft] = useState<InBodyDraft>(DEFAULT_READING);
+  const [originalReading, setOriginalReading] = useState<PartialInBody | InBodyDraft>(DEFAULT_READING);
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [corrections, setCorrections] = useState<Record<string, { value: number; unit?: string }>>({});
   const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(new Set());
@@ -264,6 +267,14 @@ export default function PreviewEdit() {
       }
     }
 
+    // Keep the original values separate from the corrected draft, including on reopen.
+    setOriginalReading(
+      loadedExtraction?.data ?? loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? {
+        ...base,
+        segmental_lean: { ...base.segmental_lean },
+      },
+    );
+
     // Apply any previously stored corrections to the base draft
     for (const [rawKey, corr] of Object.entries(storedCorrections)) {
       const normKey = normalizeFieldKey(rawKey);
@@ -308,11 +319,14 @@ export default function PreviewEdit() {
       setFieldErrors((prev) => ({ ...prev, [normKey]: error }));
     }
 
-    if (value !== null) {
-      setCorrections((prev) => ({
-        ...prev,
-        [normKey]: { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) },
-      }));
+    const originalValue = isSegmentField(key)
+      ? originalReading.segmental_lean?.[key]
+      : originalReading[key as ScalarInBodyField];
+    setCorrections((prev) =>
+      updateFieldCorrection(prev, key, value, originalValue, resolvedUnit),
+    );
+
+    if (value !== null && value !== originalValue) {
       // AC: Correcting a flagged value records a corrected field, not confirmed.
       setConfirmedKeys((prev) => {
         const next = new Set(prev);
@@ -320,13 +334,6 @@ export default function PreviewEdit() {
           next.delete(normKey);
           saveJSON(SESSION_KEYS.confirmations, Array.from(next));
         }
-        return next;
-      });
-    } else {
-      setCorrections((prev) => {
-        const next = { ...prev };
-        delete next[normKey];
-        delete next[key];
         return next;
       });
     }
