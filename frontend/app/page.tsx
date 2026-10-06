@@ -48,11 +48,6 @@ export default function Home() {
             <img alt="InForm" src={imgLogo} className="h-[46px] w-auto" />
           </div>
 
-          <div className="mx-auto mt-[14px] rounded-[8px] bg-[#117d69]/90 px-[12px] py-[6px] text-center text-[#fcfcfc] shadow">
-            <p className="text-[11px] font-bold">⚠️ Please note</p>
-            <p className="text-[9px]">Currently compatible with InBody 270 reports only</p>
-          </div>
-
           <div className="mt-auto">
             <h1 className="text-[32px] font-bold leading-[1.18] tracking-[0.02em] text-[#fcfcfc]">
               Know Your Body. Move With Purpose.
