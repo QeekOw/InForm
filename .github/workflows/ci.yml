@@ -25,6 +25,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/inform_test
       SESSION_SECRET: ci-only-session-secret-not-for-production
+      ALLOW_INSECURE_COOKIES: "true"
     steps:
       - uses: actions/checkout@v4
 
