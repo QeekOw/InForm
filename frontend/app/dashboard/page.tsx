@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
+import { EditedMarker } from "@/components/FieldStatus";
 import TrendChart, { type TrendPoint } from "@/components/TrendChart";
 import { btn, cardClass } from "@/components/ui";
 import { ApiError } from "@/lib/api";
@@ -178,8 +179,8 @@ export default function Dashboard() {
             </div>
             {anyCorrected && (
               <p className="mt-3 text-[10px] leading-relaxed text-white/60">
-                Scans marked <span className="font-bold text-sky-300">Edited</span> include a value
-                you typed in from your sheet.
+                <span className="inline-flex translate-y-[3px]"><EditedMarker /></span> marks a scan
+                that includes a value you typed in from your sheet.
               </p>
             )}
             <Link href="/history" className="mt-[20px] block text-center text-[12px] font-bold text-[#7ee0cf] underline">

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import BackButton from "@/components/BackButton";
 import PhoneFrame from "@/components/PhoneFrame";
-import { btn, cardClass, Tag } from "@/components/ui";
+import { EditedMarker } from "@/components/FieldStatus";
+import { btn, cardClass } from "@/components/ui";
 import { useAuth } from "@/lib/AuthProvider";
 import { ApiError } from "@/lib/api";
 import { listScans, type ScanSummary } from "@/lib/scans";
@@ -81,7 +82,11 @@ export default function History() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[12px] font-bold">{formatDate(scan.created_at)}</p>
-                    {scan.has_corrections && <Tag tone="sky">Includes edited values</Tag>}
+                    {scan.has_corrections && (
+                      <span className="flex items-center gap-[5px] text-[9px] text-black/60">
+                        <EditedMarker /> Includes edited values
+                      </span>
+                    )}
                   </div>
                   <div className="my-[10px] h-px bg-black/15" />
                   <dl className="grid grid-cols-4 gap-1 text-center">

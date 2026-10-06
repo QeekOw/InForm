@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import BackButton from "@/components/BackButton";
 import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
-import { btn, cardClass, Modal, Tag } from "@/components/ui";
+import { CheckedMarker, EditedMarker, FlagMarker, MarkerLegend } from "@/components/FieldStatus";
+import { btn, cardClass, Modal } from "@/components/ui";
 import { API_URL } from "@/lib/config";
 import { getFieldLabel, getUnresolvedFlagged, normalizeFieldKey } from "@/lib/corrections";
 import { confirmReading } from "@/lib/flow";
@@ -21,6 +22,8 @@ import {
 import { loadJSON, SESSION_KEYS } from "@/lib/session";
 
 type RowStatus = "unread" | "flagged" | "confirmed" | "corrected" | null;
+
+const UNREAD_MESSAGE = "We couldn't read this number. Tap Edit and type it in from your InBody report.";
 
 function statusOf(opts: {
   isUnread: boolean;
@@ -40,34 +43,39 @@ function statusOf(opts: {
  * trust it. Read-only: a single Edit action deals with every flagged and unread
  * value at once (the fail-closed gate is satisfied by one submit there).
  */
-function Row({ label, value, unit, status }: { label: string; value: string | number | null; unit: string; status: RowStatus }) {
-  const tag =
+/** Figma "Preview Result" row: label left, value right, and only a green
+ * status circle between them when something about the value is notable. */
+function Row({
+  label,
+  value,
+  unit,
+  status,
+  align = "right",
+}: {
+  label: string;
+  value: string | number | null;
+  unit: string;
+  status: RowStatus;
+  align?: "left" | "right";
+}) {
+  const marker =
     status === "unread" ? (
-      <Tag tone="rose">Couldn&apos;t read</Tag>
+      <FlagMarker label={label} message={UNREAD_MESSAGE} align={align} />
     ) : status === "flagged" ? (
-      <Tag tone="amber">
-        <Icon name="alert" size={9} className="mr-[2px]" />
-        Check this
-      </Tag>
+      <FlagMarker label={label} align={align} />
     ) : status === "confirmed" ? (
-      <Tag tone="teal">Checked</Tag>
+      <CheckedMarker />
     ) : status === "corrected" ? (
-      <Tag tone="sky">Edited</Tag>
+      <EditedMarker />
     ) : null;
 
   return (
-    <div
-      className={`flex items-center justify-between gap-2 py-[4px] text-[12px] ${
-        status === "flagged" || status === "unread" ? "-mx-[8px] rounded-[6px] bg-amber-400/10 px-[8px]" : ""
-      }`}
-    >
-      <span className="flex min-w-0 items-center gap-[6px]">
-        <span className="truncate">{label}</span>
-        {tag}
-      </span>
-      <span className="shrink-0 font-bold">
-        {value ?? "—"}
-        {value != null && unit && <span className="ml-[3px] text-[9px] font-medium opacity-80">{unit}</span>}
+    <div className="flex h-[24px] items-center gap-[8px] text-[12px]">
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="flex w-[16px] shrink-0 justify-center">{marker}</span>
+      <span className="flex w-[64px] shrink-0 items-baseline justify-end gap-[3px] font-bold">
+        {value ?? "â€”"}
+        {value != null && unit && <span className="text-[8px] font-medium">{unit}</span>}
       </span>
     </div>
   );
@@ -131,7 +139,7 @@ export default function Preview() {
     setCorrections(storedCorrections);
     setConfirmedFields(new Set(storedConfirmations.map(normalizeFieldKey)));
 
-    // Hard refuse on non-InBody documents or zero-read floor cases (ADR-0008 Amendment §3)
+    // Hard refuse on non-InBody documents or zero-read floor cases (ADR-0008 Amendment Â§3)
     const isHardRefusalCase =
       loadedExtraction?.error === "not_an_inbody_sheet" ||
       (loadedExtraction?.status === "refused" && loadedExtraction?.data == null);
@@ -230,7 +238,7 @@ export default function Preview() {
           : "Something went wrong while reading your InBody report. Please make sure the photo is clear, complete, and easy to read, then try again.";
 
     return (
-      <PhoneFrame bg="bg-[#3e3e3e]">
+      <PhoneFrame bg="bg-gradient-to-b from-[#3e3e3e] to-[#222]">
         <PhotoHeader src={photo} height={433} />
         <div className="relative -mt-[0px] px-[30px] pb-[48px] text-[#fcfcfc]">
           <h1 className="text-[24px] font-bold leading-tight tracking-[0.02em]">{title}</h1>
@@ -275,7 +283,7 @@ export default function Preview() {
 
   if (!reading || !reading.segmental_lean) {
     return (
-      <PhoneFrame bg="bg-[#3e3e3e]">
+      <PhoneFrame bg="bg-gradient-to-b from-[#3e3e3e] to-[#222]">
         <PhotoHeader src={null} height={175} />
         <div className="px-[30px] text-center text-[#fcfcfc]">
           <p className="text-[13px]">No InBody reading to show.</p>
@@ -289,7 +297,7 @@ export default function Preview() {
 
   // --- Review -----------------------------------------------------------------
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
+    <PhoneFrame bg="bg-gradient-to-b from-[#3e3e3e] to-[#222]">
       <PhotoHeader src={photo} height={275} onView={() => setViewingPhoto(true)} />
 
       <div className="relative -mt-[90px] px-[30px] pb-[48px] text-[#fcfcfc]">
@@ -305,34 +313,7 @@ export default function Preview() {
           </p>
         )}
 
-        {needsReview ? (
-          <div role="status" className="mt-[16px] rounded-[8px] border border-amber-300/50 bg-amber-400/15 p-[10px] text-[11px] leading-relaxed text-amber-100">
-            <p className="flex items-center gap-[6px] font-bold">
-              <Icon name="alert" size={13} />
-              {reviewCount === 1 ? "One number needs a quick check" : `${reviewCount} numbers need a quick check`}
-            </p>
-            {remainingUnread.length > 0 && (
-              <p className="mt-1">
-                <span className="font-semibold">We couldn&apos;t read:</span>{" "}
-                {remainingUnread.map(getFieldLabel).join(", ")}. Type these in from your sheet.
-              </p>
-            )}
-            {unresolvedFlagged.length > 0 && (
-              <p className="mt-1">
-                <span className="font-semibold">These don&apos;t quite add up:</span>{" "}
-                {unresolvedFlagged.map(getFieldLabel).join(", ")}. One of them was probably misread.
-                Compare them with your sheet.
-              </p>
-            )}
-          </div>
-        ) : flaggedFields.size > 0 || correctedFields.size > 0 ? (
-          <p role="status" className="mt-[16px] rounded-[8px] bg-[#117d69]/25 p-[10px] text-[11px] text-[#d6f5ef]">
-            <span className="font-bold">All checked.</span> Everything doubtful has been edited or
-            confirmed against your sheet.
-          </p>
-        ) : null}
-
-        <h2 className="mt-[28px] text-[16px] font-bold">Body Composition</h2>
+        <h2 className="mt-[32px] text-[16px] font-bold">Body Composition</h2>
         <div className="mt-[8px]">
           {BODY_COMPOSITION_FIELDS.map((field) => {
             const value = reading[field.key];
@@ -348,39 +329,50 @@ export default function Preview() {
           })}
         </div>
 
-        <div className="my-[22px] h-px bg-[#fcfcfc]/30" />
+        <div className="my-[24px] border-t border-dotted border-[#fcfcfc]/60" aria-hidden="true" />
 
         <h2 className="text-[16px] font-bold">Segmental Lean Analysis</h2>
-        <div className="mt-[8px] grid grid-cols-2 gap-x-[24px]">
-          {SEGMENTAL_LEAN_COLUMNS.map((column) => (
+        <div className="mt-[8px] grid grid-cols-2 gap-x-[16px]">
+          {SEGMENTAL_LEAN_COLUMNS.map((column, i) => (
             <div key={column[0].key}>
               {column.map((field) => {
                 const dottedKey = `segmental_lean.${field.key}`;
                 const value = reading.segmental_lean[field.key];
                 return (
-                  <Row key={field.key} label={field.label} value={value} unit={field.unit} status={status(dottedKey, value)} />
+                  <Row
+                    key={field.key}
+                    label={field.label}
+                    value={value}
+                    unit={field.unit}
+                    status={status(dottedKey, value)}
+                    align={i === 0 ? "left" : "right"}
+                  />
                 );
               })}
             </div>
           ))}
         </div>
 
-        <div className="my-[22px] h-px bg-[#fcfcfc]/30" />
+        <div className="my-[24px] border-t border-dotted border-[#fcfcfc]/60" aria-hidden="true" />
 
-        <Row
-          label={BMR_FIELD.label}
-          value={reading[BMR_FIELD.key]}
-          unit={BMR_FIELD.unit}
-          status={status(BMR_FIELD.key, reading[BMR_FIELD.key])}
+        <div className="[&>div>span:first-child]:text-[14px] [&>div>span:first-child]:font-bold">
+          <Row
+            label={BMR_FIELD.label}
+            value={reading[BMR_FIELD.key]}
+            unit={BMR_FIELD.unit}
+            status={status(BMR_FIELD.key, reading[BMR_FIELD.key])}
+          />
+        </div>
+
+        <MarkerLegend
+          edited={correctedFields.size > 0}
+          checked={[...confirmedFields].some((k) => flaggedFields.has(k) && !correctedFields.has(k))}
         />
 
         {/* One action resolves every flagged and unread field on one page. */}
-        <Link
-          href="/preview/edit"
-          className={`${needsReview ? btn.primary : `${btn.light} text-black`} mt-[48px]`}
-        >
-          <Icon name="pencil" size={14} className={needsReview ? "" : "text-[#117d69]"} />
-          {needsReview ? `Check & fix (${reviewCount})` : "Edit"}
+        <Link href="/preview/edit" className={`${btn.light} mt-[48px] text-[#117d69]`}>
+          <Icon name="pencil" size={12} />
+          Edit
         </Link>
 
         {/* The fail-closed gate (issue #39, ADR-0008): a flagged or unread
@@ -395,10 +387,10 @@ export default function Preview() {
           Confirm
         </button>
         {needsReview && (
-          <p id="confirm-blocked" className="mt-[6px] text-center text-[11px] font-medium text-amber-200">
+          <p id="confirm-blocked" className="mt-[6px] text-center text-[11px] text-[#fcfcfc]/70">
             {remainingUnread.length > 0
-              ? "Your plan needs every number, so fill in the missing ones first."
-              : "Check the flagged numbers first, so your plan isn't built on a misread."}
+              ? `Tap Edit and fill in: ${remainingUnread.map(getFieldLabel).join(", ")}.`
+              : `Tap Edit and compare with your report: ${unresolvedFlagged.map(getFieldLabel).join(", ")}.`}
           </p>
         )}
       </div>
