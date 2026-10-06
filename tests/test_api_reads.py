@@ -7,10 +7,25 @@ import pytest
 from backend.main import app, get_engine
 from inform.errors import NotAnInBodySheetError
 from inform.inbody import PartialInBody
-from inform.samples import load_extractions
+from inform.samples import load_extractions, load_manifest
 
 
 client = TestClient(app)
+
+
+def _complete_stub_read(
+    weight_kg: float, lean_body_mass_kg: float, percent_body_fat: float
+) -> PartialInBody:
+    data = load_extractions().extractions["synthetic_270_clean"].data
+    assert data is not None
+    return data.model_copy(
+        update={
+            "weight_kg": weight_kg,
+            "lean_body_mass_kg": lean_body_mass_kg,
+            "percent_body_fat": percent_body_fat,
+            "basal_metabolic_rate_kcal": 370 + 21.6 * lean_body_mass_kg,
+        }
+    )
 
 
 def test_create_read_instant_stored_sample():
@@ -32,7 +47,7 @@ def test_create_read_live_starts_pending_job():
     # Stub engine that takes a short time
     def slow_stub(path: Path) -> PartialInBody:
         time.sleep(0.5)
-        return PartialInBody(weight_kg=60.0, lean_body_mass_kg=45.0, percent_body_fat=25.0)
+        return _complete_stub_read(60.0, 45.0, 25.0)
 
     app.dependency_overrides[get_engine] = lambda: slow_stub
     try:
@@ -53,7 +68,7 @@ def test_poll_read_long_polling_waits_and_returns_complete():
     """AC: Long polling survives past client waits and returns complete when engine finishes."""
     def stub_engine(path: Path) -> PartialInBody:
         time.sleep(0.2)
-        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
+        return _complete_stub_read(70.0, 55.0, 21.4)
 
     app.dependency_overrides[get_engine] = lambda: stub_engine
     try:
@@ -77,7 +92,7 @@ def test_poll_read_times_out_and_returns_pending_surviving_timeout():
     """AC: The read survives past a host request timeout (returns pending with progress)."""
     def very_slow_stub(path: Path) -> PartialInBody:
         time.sleep(1.0)
-        return PartialInBody(weight_kg=70.0, lean_body_mass_kg=55.0, percent_body_fat=21.4)
+        return _complete_stub_read(70.0, 55.0, 21.4)
 
     app.dependency_overrides[get_engine] = lambda: very_slow_stub
     try:
@@ -581,7 +596,14 @@ def test_instant_sample_path_completes_with_no_checkpoint_present():
     No engine override is installed, so this exercises the real default engine
     resolution path — which the instant path must never reach.
     """
-    for sample_id in ("synthetic_270_clean", "synthetic_570_clean", "real_270_clean"):
+    extractions = load_extractions().extractions
+    manifest_sample_ids = {sample.id for sample in load_manifest().samples}
+    sample_ids = [
+        sample_id
+        for sample_id, extraction in extractions.items()
+        if sample_id in manifest_sample_ids and extraction.status == "complete"
+    ]
+    for sample_id in sample_ids:
         data = client.post("/reads", json={"sample_id": sample_id, "live": False}).json()
         assert data["status"] == "complete", f"{sample_id} did not complete instantly"
         assert data["progress"] == 1.0

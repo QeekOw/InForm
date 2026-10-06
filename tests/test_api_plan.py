@@ -170,7 +170,7 @@ def test_flagged_sample_is_not_planned_without_a_person(use_llm):
 
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert set(detail["flagged"]) == set(load_extractions().extractions["real_270_flagged"].flagged)
     assert detail["unread"] == []
 
 
@@ -199,16 +199,24 @@ def test_corrections_allow_flagged_or_unread_sample_to_proceed(use_llm):
         json={
             "user": PROFILE,
             "sample_id": "real_270_flagged",
-            "corrections": {"segmental_lean.right_arm_kg": 3.53},
-            "confirmations": [],
+            "corrections": {"lean_body_mass_kg": 62.5},
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+            ],
         },
     )
 
     assert response.status_code == 200
     plan = response.json()
-    assert plan["corrected_fields"] == ["segmental_lean.right_arm_kg"]
-    assert plan["confirmed_fields"] == []
-    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1691.92)
+    assert plan["corrected_fields"] == ["lean_body_mass_kg"]
+    assert plan["confirmed_fields"] == [
+        "basal_metabolic_rate_kcal",
+        "percent_body_fat",
+        "weight_kg",
+    ]
+    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1720.0)
 
 
 def test_out_of_range_correction_returns_422(use_llm):
@@ -307,7 +315,7 @@ def test_plan_with_measured_and_corrections_proceeds(use_llm):
 def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
     """ADR-0008 §2: Unresolved cross-check violations are rejected with 409."""
     use_llm(_llm_raising())
-    # real_270_flagged has single-decimal arm. Correcting only visceral fat leaves it flagged.
+    flagged = load_extractions().extractions["real_270_flagged"].flagged
     response = client.post(
         "/plan",
         json={
@@ -318,13 +326,13 @@ def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
     )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert set(detail["flagged"]) == set(flagged)
 
 
 def test_confirming_unchanged_flagged_sample_lets_plan_proceed(use_llm):
     """AC: Confirming an unchanged flagged value lets the plan proceed; value stays measured."""
     use_llm(_llm_raising())
-    flagged = ["segmental_lean.right_arm_kg"]
+    flagged = load_extractions().extractions["real_270_flagged"].flagged
     response = client.post(
         "/plan",
         json={
@@ -337,8 +345,7 @@ def test_confirming_unchanged_flagged_sample_lets_plan_proceed(use_llm):
     data = response.json()
     assert sorted(data["confirmed_fields"]) == sorted(flagged)
     assert data["corrected_fields"] == []
-    # Value stays measured (3.5 kg)
-    assert data["measured"]["segmental_lean"]["right_arm_kg"] == 3.5
+    assert data["measured"]["lean_body_mass_kg"] == 76.0
 
 
 def test_partially_confirmed_flagged_sample_returns_409(use_llm):
@@ -354,7 +361,7 @@ def test_partially_confirmed_flagged_sample_returns_409(use_llm):
     )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert "lean_body_mass_kg" in detail["flagged"]
 
 
 def test_inbody_with_unresolved_flags_rejected_with_409(use_llm):
