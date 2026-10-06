@@ -469,8 +469,8 @@ export function ConfirmDialog({
   );
 }
 
-/** "or" divider between button groups. */
-export function OrDivider({ label = "or" }: { label?: string }) {
+/** "Or" divider between button groups. */
+export function OrDivider({ label = "Or" }: { label?: string }) {
   return (
     <div className="flex items-center gap-[16px] text-[10px] text-current opacity-60" aria-hidden="true">
       <span className="h-px flex-1 bg-current" />

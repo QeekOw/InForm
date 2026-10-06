@@ -154,7 +154,7 @@ function SignInContent() {
         </Card>
 
         <p className="mt-[26px] text-center text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]">
-          need an account?{" "}
+          Need an account?{" "}
           <Link href={signUpHref} className="underline">
             Sign Up
           </Link>

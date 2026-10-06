@@ -90,8 +90,8 @@ export default function Home() {
         <p className="mt-[10px] text-[13px] leading-[1.5]">
           An InBody machine measures your body composition by passing a small electrical current
           through you and reading how easily it travels. Muscle holds a lot of water and conducts
-          well; fat does not. From that it prints a sheet breaking your total weight down into
-          skeletal muscle, body fat and body water, limb by limb.
+          well; fat does not. From that, it prints a sheet breaking your total weight down into
+          skeletal muscle, body fat, and body water, limb by limb.
         </p>
         <p className="mt-3 text-[13px] leading-[1.5]">
           Those numbers are more useful than weight alone, and they&apos;re what this app works
@@ -152,8 +152,8 @@ export default function Home() {
         </p>
         <p className="mt-2 text-[11px] leading-[1.5] text-black/80">
           Nothing here is a clinical measurement either. The numbers are only as good as the
-          sheet they were read from, and where a reading looks doubtful the app will say so and
-          ask you to check it against your sheet rather than quietly guessing.
+          sheet they were read from. When a reading looks doubtful, the app will say so and ask
+          you to check it against your sheet rather than quietly guessing.
         </p>
       </section>
 

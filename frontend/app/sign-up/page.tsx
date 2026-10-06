@@ -151,7 +151,7 @@ function SignUpContent() {
             className="inline-flex h-[28px] w-[75px] items-center justify-center gap-[5px] rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69]"
           >
             <Icon name="arrowLeft" size={16} />
-            <span aria-hidden="true">back</span>
+            <span aria-hidden="true">Back</span>
           </button>
         )}
 
@@ -250,8 +250,8 @@ function SignUpContent() {
               />
               <OptionCards label="Goals" name="goal" value={goal} onChange={setGoal} options={GOAL_OPTIONS} />
               <p className="text-[10px] leading-relaxed text-black/60">
-                Used to work out your calorie target and pick your exercises. Saved so your next
-                scan starts filled in.
+                These details are used to work out your calorie target and pick your exercises.
+                They&apos;re saved so your next scan starts filled in.
               </p>
               <button type="submit" disabled={submitting} className={`${btn.primary} !mt-[30px]`}>
                 {submitting ? "Creating account…" : "Sign Up"}
@@ -271,7 +271,7 @@ function SignUpContent() {
 
         {step === "account" && (
           <p className="mt-[26px] text-center text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]">
-            already have an account?{" "}
+            Already have an account?{" "}
             <Link href={signInHref} className="underline">
               Log In
             </Link>

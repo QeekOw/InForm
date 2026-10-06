@@ -38,7 +38,7 @@ export default function PhotoConfirm({
         className="inline-flex h-[28px] w-[75px] items-center justify-center gap-[5px] self-start rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69]"
       >
         <Icon name="arrowLeft" size={16} />
-        <span aria-hidden="true">back</span>
+        <span aria-hidden="true">Back</span>
       </button>
 
       <div className="mt-[32px] min-h-0 flex-1 overflow-hidden rounded-[15px] bg-black/30">
