@@ -16,6 +16,7 @@ psycopg[binary]==3.2.3
 python-dotenv==1.2.3
 bcrypt==4.2.1
 pyjwt==2.9.0
+google-auth[requests]>=2.35,<3
 
 # Module 4's optional LLM narrative (ADR-0005). Declared in pyproject.toml for the
 # inform package, but this file is what the Dockerfile and Render actually

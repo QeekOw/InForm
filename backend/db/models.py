@@ -63,7 +63,7 @@ class Account(Base):
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Google's stable subject identifier. Not the email: Google allows an account's
     # email to change while `sub` stays put, so `sub` is what an account is matched
-    # on. Unfilled until real Google sign-in lands (out of scope here).
+    # on. Filled by the Google OAuth callback; never use email as the identity key.
     google_sub: Mapped[str | None] = mapped_column(
         String, unique=True, nullable=True, index=True
     )
