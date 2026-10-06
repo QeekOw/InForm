@@ -103,7 +103,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <AppHeader />
 
       <div className="px-[30px] pb-[24px] text-[#fcfcfc]">

@@ -16,8 +16,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">
+    <html lang="en" className={`${geistSans.variable} h-full overflow-hidden antialiased`}>
+      <body className="flex h-dvh flex-col overflow-hidden">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

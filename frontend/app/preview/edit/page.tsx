@@ -455,7 +455,7 @@ export default function PreviewEdit() {
   );
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       {/* Sheet photo header, so values can be checked against it */}
       <div className="relative h-[275px] w-full overflow-hidden">
         {photo && (

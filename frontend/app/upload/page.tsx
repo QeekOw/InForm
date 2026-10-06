@@ -225,7 +225,7 @@ export default function Upload() {
   const busy = startingLiveRead || loadingSample;
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <div className="px-[30px] pb-[60px] pt-[54px] text-[#fcfcfc]">
         <div className="flex items-center justify-between">
           <BackButton fallbackHref={account ? "/dashboard" : "/"} />

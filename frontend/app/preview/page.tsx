@@ -230,7 +230,7 @@ export default function Preview() {
           : "Something went wrong while reading your InBody report. Please make sure the photo is clear, complete, and easy to read, then try again.";
 
     return (
-      <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+      <PhoneFrame bg="bg-[#3e3e3e]">
         <PhotoHeader src={photo} height={433} />
         <div className="relative -mt-[0px] px-[30px] pb-[48px] text-[#fcfcfc]">
           <h1 className="text-[24px] font-bold leading-tight tracking-[0.02em]">{title}</h1>
@@ -289,7 +289,7 @@ export default function Preview() {
 
   // --- Review -----------------------------------------------------------------
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <PhotoHeader src={photo} height={275} onView={() => setViewingPhoto(true)} />
 
       <div className="relative -mt-[90px] px-[30px] pb-[48px] text-[#fcfcfc]">

@@ -62,7 +62,7 @@ function SignInContent() {
     : "/sign-up";
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0 min-h-full" />
 
       <div className="relative px-[30px] pb-[40px] pt-[48px]">
