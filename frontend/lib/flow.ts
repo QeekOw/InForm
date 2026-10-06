@@ -1,8 +1,7 @@
-// Where the intake flow goes next. Guests start at upload without a Profile,
-// so they fill it in after confirming a reading instead of before.
-
+import type { Account } from "./auth";
 import type { InBodyPayload, PartialInBody } from "./inbody";
 import type { UserProfile } from "./user";
+import { ageFromDob } from "./user";
 import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "./session";
 
 /** Saves the confirmed reading, original measured values, and optional corrections or confirmations, and returns the next route.
@@ -28,9 +27,30 @@ export function confirmReading(
     removeSessionItem(SESSION_KEYS.confirmations);
   }
   removeSessionItem(SESSION_KEYS.photo);
-  removeSessionItem(SESSION_KEYS.sheetPages);
-  removeSessionItem(SESSION_KEYS.sheetSource);
+
   if (loadJSON<UserProfile>(SESSION_KEYS.profile)) return "/result";
+
+  const acc = loadJSON<Account>(SESSION_KEYS.account);
+  if (
+    acc &&
+    acc.date_of_birth &&
+    acc.default_biological_sex &&
+    acc.default_activity_multiplier &&
+    acc.default_fitness_goal
+  ) {
+    const age = ageFromDob(acc.date_of_birth);
+    if (age !== null) {
+      const profile: UserProfile = {
+        age,
+        biological_sex: acc.default_biological_sex,
+        activity_multiplier: acc.default_activity_multiplier,
+        fitness_goal: acc.default_fitness_goal,
+      };
+      saveJSON(SESSION_KEYS.profile, profile);
+      return "/result";
+    }
+  }
+
   saveJSON(SESSION_KEYS.nextAfterProfile, "/result");
   return "/profile";
 }
@@ -43,7 +63,8 @@ export function isFinishingGuestPlan(): boolean {
 /** Returns the route after Profile: the plan for a guest who already confirmed
  * a reading, otherwise upload. */
 export function nextAfterProfile(): string {
-  const next = isFinishingGuestPlan() ? "/result" : "/upload";
+  const reading = loadJSON(SESSION_KEYS.reading);
+  const next = isFinishingGuestPlan() || Boolean(reading) ? "/result" : "/upload";
   removeSessionItem(SESSION_KEYS.nextAfterProfile);
   return next;
 }

@@ -1,19 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import BackButton from "@/components/BackButton";
+import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
+import PhotoConfirm from "@/components/PhotoConfirm";
+import { btn } from "@/components/ui";
 import { API_URL } from "@/lib/config";
 import { type ReadJob } from "@/lib/inbody";
 import { captureFromVideo } from "@/lib/photo";
-import { clearSheet, saveJSON, SESSION_KEYS } from "@/lib/session";
-
-const imgShutterOuter = "/icons/camera/shutter-outer.svg";
-const imgShutterInner = "/icons/camera/shutter-inner.svg";
-const imgFlash = "/icons/camera/flash-button.svg";
-const imgGallery = "/icons/camera/gallery-button.svg";
-const imgBack = "/icons/camera/back-arrow.svg";
+import { clearSheet, loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 type CameraState = "requesting" | "ready" | "denied" | "unsupported";
 
@@ -22,18 +20,49 @@ export default function Capture() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [state, setState] = useState<CameraState>("requesting");
-  const [capturing, setCapturing] = useState(false);
+  const [captured, setCaptured] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  // Reachable directly by URL, so it checks for itself rather than trusting
+  // that whoever linked here already did.
+  const [liveReadAvailable, setLiveReadAvailable] = useState<boolean | null>(null);
+
+  // The Privacy Notice is shown on the upload screen before the camera opens.
+  // Anyone arriving here by URL without having seen it goes back there first.
+  useEffect(() => {
+    if (!loadJSON<boolean>(SESSION_KEYS.privacyAck)) router.replace("/upload");
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
+    fetch(`${API_URL}/capabilities`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Capability probe failed: ${res.statusText}`);
+        return res.json();
+      })
+      .then((caps: { live_read_available?: boolean }) => {
+        if (!cancelled) setLiveReadAvailable(caps.live_read_available === true);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveReadAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  const startCamera = useCallback(() => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      // Feature detection of a browser-only external API, not derived state.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState("unsupported");
-      return;
+      return () => {};
     }
-
+    let cancelled = false;
+    setState("requesting");
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "environment" }, audio: false })
       .then((stream) => {
@@ -45,123 +74,153 @@ export default function Capture() {
         if (videoRef.current) videoRef.current.srcObject = stream;
         setState("ready");
       })
-      .catch(() => setState("denied"));
-
+      .catch(() => {
+        if (!cancelled) setState("denied");
+      });
     return () => {
       cancelled = true;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
-  const handleCapture = async () => {
-    if (state !== "ready" || !videoRef.current || capturing) return;
-    setCapturing(true);
+  useEffect(() => {
+    // Starting a browser-only device stream, not derived state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const cancel = startCamera();
+    return () => {
+      cancel();
+      stopCamera();
+    };
+  }, [startCamera, stopCamera]);
 
-    const dataUrl = captureFromVideo(videoRef.current);
+  const handleCapture = () => {
+    if (state !== "ready" || !videoRef.current || liveReadAvailable !== true) return;
+    setCaptured(captureFromVideo(videoRef.current));
+    setSendError(null);
+    stopCamera();
+  };
+
+  const handleRetake = () => {
+    setCaptured(null);
+    setSendError(null);
+    startCamera();
+  };
+
+  const handleConfirm = async () => {
+    if (!captured) return;
+    setSending(true);
+    setSendError(null);
     clearSheet();
-    saveJSON(SESSION_KEYS.photo, dataUrl);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-
+    saveJSON(SESSION_KEYS.photo, captured);
     try {
       const res = await fetch(`${API_URL}/reads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_data: dataUrl, live: true }),
+        body: JSON.stringify({ image_data: captured, live: true }),
       });
-
-      if (!res.ok) {
-        throw new Error(`Failed to start reading: ${res.statusText}`);
-      }
-
+      if (!res.ok) throw new Error(`Failed to start reading: ${res.statusText}`);
       const job: ReadJob = await res.json();
       saveJSON(SESSION_KEYS.readId, job.read_id);
       router.push(`/upload/analyzing?read_id=${job.read_id}&upload=1`);
     } catch (err) {
       console.error("Error initiating read for captured sheet:", err);
-      // Fall back to analyzing page which can retry
-      router.push("/upload/analyzing?upload=1");
+      setSendError("Couldn't send the photo. Check your connection and try again.");
+      setSending(false);
     }
   };
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="absolute inset-x-0 top-8 bottom-6 flex items-center justify-center overflow-hidden bg-black">
+    <PhoneFrame bg="bg-black">
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-black">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
+          aria-label="Camera viewfinder"
           className={`size-full object-cover ${state === "ready" ? "" : "hidden"}`}
         />
         {state === "requesting" && (
-          <p className="px-10 text-center text-[12px] text-white/40">Starting camera…</p>
+          <p className="px-10 text-center text-[12px] text-white/50">Starting camera…</p>
         )}
         {(state === "denied" || state === "unsupported") && (
-          <div className="px-10 text-center text-[12px] text-white/70">
+          <div className="px-10 text-center text-[12px] text-white/80">
             <p>
               {state === "denied"
-                ? "Camera access was denied."
-                : "This browser can't access the camera."}
+                ? "Camera access was denied. Allow it in your browser settings, or upload a file instead."
+                : "This browser can't open the camera."}
             </p>
-            <Link href="/upload" className="mt-2 inline-block underline">
+            <Link href="/upload" className={`${btn.primary} mt-4`}>
               Upload from device instead
+            </Link>
+          </div>
+        )}
+
+        {liveReadAvailable === false && (
+          <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-[15px] bg-black/85 p-4 text-center text-[12px] leading-relaxed text-white/85">
+            <p className="font-bold text-white">Nothing here could read the photo</p>
+            <p className="mt-1.5">
+              The model that reads a sheet isn&apos;t installed on this server, so a picture
+              wouldn&apos;t get you a plan.
+            </p>
+            <Link href="/upload" className={`${btn.primary} mt-3`}>
+              Use a sample sheet instead
             </Link>
           </div>
         )}
       </div>
 
-      <Link
-        href="/upload"
-        className="absolute left-[30px] top-[61px] flex size-8 items-center justify-center rounded-full bg-white shadow-md"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt="Back" className="size-[18px]" src={imgBack} />
-      </Link>
+      <BackButton href="/upload" className="absolute left-[31px] top-[48px] z-10" />
 
-      <div className="absolute left-[61px] top-[562px] flex h-[53px] w-[280px] items-center justify-center rounded-[15px] border border-[#309487] bg-[#117d6999] px-4">
+      {/* Bottom control tray */}
+      <div className="absolute inset-x-0 bottom-0 h-[234px] bg-gradient-to-t from-black/80 to-black/30" />
+
+      <div className="absolute left-1/2 top-[562px] flex h-[53px] w-[280px] -translate-x-1/2 items-center justify-center rounded-[15px] bg-[#117d69]/70 px-4 backdrop-blur-sm">
         <p className="text-center text-[12px] font-bold tracking-[0.02em] text-white">
           Make sure the report is well-lit, fully visible, and easy to read.
         </p>
       </div>
 
-      <div className="absolute inset-x-0 bottom-[52px] flex items-center justify-center">
+      <div className="absolute inset-x-0 top-[682px] flex items-center justify-center">
         <Link
           href="/upload"
           aria-label="Upload from device instead"
-          className="absolute left-[62px] size-[42px]"
+          className="absolute left-[62px] flex size-[42px] items-center justify-center rounded-full bg-white/25 text-white hover:bg-white/35"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-full" src={imgGallery} />
+          <Icon name="image" size={24} />
         </Link>
 
         <button
           type="button"
-          aria-label="Capture photo"
+          aria-label="Take photo"
           onClick={handleCapture}
-          disabled={state !== "ready"}
-          className="relative block disabled:opacity-40"
+          disabled={state !== "ready" || liveReadAvailable !== true}
+          className="flex size-[85px] items-center justify-center rounded-full border-4 border-white disabled:opacity-40 focus:outline-none focus-visible:ring-4 focus-visible:ring-[#7ee0cf]"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-[85px]" src={imgShutterOuter} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            alt=""
-            className="absolute left-1/2 top-1/2 size-[61px] -translate-x-1/2 -translate-y-1/2"
-            src={imgShutterInner}
-          />
+          <span className="size-[61px] rounded-full bg-white" />
         </button>
 
-        <button
-          type="button"
-          aria-label="Toggle flash"
-          disabled
-          className="absolute right-[62px] size-[42px] opacity-40"
-          title="Flash control isn't supported across browsers yet"
+        {/* Torch control isn't supported consistently across browsers. */}
+        <span
+          aria-hidden="true"
+          title="Flash isn't supported in browsers yet"
+          className="absolute right-[62px] flex size-[42px] items-center justify-center rounded-full bg-white/15 text-white/50"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="size-full" src={imgFlash} />
-        </button>
+          <Icon name="flash" size={24} />
+        </span>
       </div>
+
+      {captured && (
+        <PhotoConfirm
+          photo={captured}
+          busy={sending}
+          error={sendError}
+          onBack={handleRetake}
+          alternateLabel="Retake"
+          alternateIcon="camera"
+          onAlternate={handleRetake}
+          onConfirm={handleConfirm}
+        />
+      )}
     </PhoneFrame>
   );
 }

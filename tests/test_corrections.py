@@ -3,6 +3,7 @@ from inform.corrections import (
     FIELD_SPECS,
     CorrectionValue,
     CrossCheckFlaggedError,
+    ImplausibleConfirmationError,
     UnreadFieldsError,
     UnresolvedFlaggedFieldsError,
     apply_corrections,
@@ -307,3 +308,50 @@ def test_field_specs_bundle_constraints():
     assert spec.min_value == 20.0
     assert spec.max_value == 300.0
     assert "kg" in spec.allowed_units
+
+
+def test_confirming_implausible_value_is_rejected():
+    """A confirmed value still has to be plausible: confirming is not a bypass of
+    the range check a typed value gets (real_270_clean's misread 7 kg LBM)."""
+    measured = _partial_inbody(
+        weight_kg=86.9,
+        percent_body_fat=29.5,
+        lean_body_mass_kg=7.0,
+        basal_metabolic_rate_kcal=1693.0,
+    )
+    flagged = ["weight_kg", "percent_body_fat", "lean_body_mass_kg", "basal_metabolic_rate_kcal"]
+
+    with pytest.raises(ImplausibleConfirmationError) as exc_info:
+        apply_corrections(measured, confirmations=flagged)
+
+    assert exc_info.value.field == "lean_body_mass_kg"
+    assert exc_info.value.value == 7.0
+    assert "not physiologically plausible" in str(exc_info.value)
+    assert "correct it" in str(exc_info.value)
+
+
+def test_correcting_the_implausible_value_lets_plan_proceed():
+    """The escape hatch is correction, not confirmation: the same sheet proceeds
+    once the misread field is typed in correctly."""
+    measured = _partial_inbody(
+        weight_kg=86.9,
+        percent_body_fat=29.5,
+        lean_body_mass_kg=7.0,
+        basal_metabolic_rate_kcal=1693.0,
+    )
+
+    payload, corrected, confirmed = apply_corrections(
+        measured,
+        corrections={"lean_body_mass_kg": 61.3},
+        confirmations=["weight_kg", "percent_body_fat", "basal_metabolic_rate_kcal"],
+        initial_flagged=[
+            "weight_kg",
+            "percent_body_fat",
+            "lean_body_mass_kg",
+            "basal_metabolic_rate_kcal",
+        ],
+    )
+
+    assert payload.lean_body_mass_kg == 61.3
+    assert corrected == ["lean_body_mass_kg"]
+    assert sorted(confirmed) == ["basal_metabolic_rate_kcal", "percent_body_fat", "weight_kg"]

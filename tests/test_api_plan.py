@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app, get_llm_client
+from inform.extract import _cross_check
 from inform.master import CoachingDraft
 from inform.samples import load_extractions
 from tests.test_master import _inbody
@@ -20,6 +21,12 @@ PROFILE = {
 
 def _post_clean_sample():
     return client.post("/plan", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
+
+
+def _flagged_fields(sample_id: str) -> list[str]:
+    extraction = load_extractions().extractions[sample_id]
+    assert extraction.data is not None
+    return sorted(set(extraction.flagged) | set(_cross_check(extraction.data)))
 
 
 def _llm_returning(draft: CoachingDraft) -> MagicMock:
@@ -170,7 +177,7 @@ def test_flagged_sample_is_not_planned_without_a_person(use_llm):
 
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert set(detail["flagged"]) == set(_flagged_fields("real_270_flagged"))
     assert detail["unread"] == []
 
 
@@ -194,21 +201,24 @@ def test_unknown_sample_returns_404(use_llm):
 def test_corrections_allow_flagged_or_unread_sample_to_proceed(use_llm):
     """AC: A typed value lets the plan proceed; corrected fields are recorded alongside measured fields."""
     use_llm(_llm_raising())
+    confirmations = [
+        field for field in _flagged_fields("real_270_flagged") if field != "lean_body_mass_kg"
+    ]
     response = client.post(
         "/plan",
         json={
             "user": PROFILE,
             "sample_id": "real_270_flagged",
-            "corrections": {"segmental_lean.right_arm_kg": 3.53},
-            "confirmations": [],
+            "corrections": {"lean_body_mass_kg": 62.5},
+            "confirmations": confirmations,
         },
     )
 
     assert response.status_code == 200
     plan = response.json()
-    assert plan["corrected_fields"] == ["segmental_lean.right_arm_kg"]
-    assert plan["confirmed_fields"] == []
-    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1691.92)
+    assert plan["corrected_fields"] == ["lean_body_mass_kg"]
+    assert plan["confirmed_fields"] == confirmations
+    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(1720.0)
 
 
 def test_out_of_range_correction_returns_422(use_llm):
@@ -307,7 +317,7 @@ def test_plan_with_measured_and_corrections_proceeds(use_llm):
 def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
     """ADR-0008 §2: Unresolved cross-check violations are rejected with 409."""
     use_llm(_llm_raising())
-    # real_270_flagged has single-decimal arm. Correcting only visceral fat leaves it flagged.
+    flagged = _flagged_fields("real_270_flagged")
     response = client.post(
         "/plan",
         json={
@@ -318,13 +328,13 @@ def test_unresolved_cross_check_flags_rejected_by_plan(use_llm):
     )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert set(detail["flagged"]) == set(flagged)
 
 
 def test_confirming_unchanged_flagged_sample_lets_plan_proceed(use_llm):
     """AC: Confirming an unchanged flagged value lets the plan proceed; value stays measured."""
     use_llm(_llm_raising())
-    flagged = ["segmental_lean.right_arm_kg"]
+    flagged = _flagged_fields("real_270_flagged")
     response = client.post(
         "/plan",
         json={
@@ -337,8 +347,7 @@ def test_confirming_unchanged_flagged_sample_lets_plan_proceed(use_llm):
     data = response.json()
     assert sorted(data["confirmed_fields"]) == sorted(flagged)
     assert data["corrected_fields"] == []
-    # Value stays measured (3.5 kg)
-    assert data["measured"]["segmental_lean"]["right_arm_kg"] == 3.5
+    assert data["measured"]["lean_body_mass_kg"] == 76.0
 
 
 def test_partially_confirmed_flagged_sample_returns_409(use_llm):
@@ -354,7 +363,7 @@ def test_partially_confirmed_flagged_sample_returns_409(use_llm):
     )
     assert response.status_code == 409
     detail = response.json()["detail"]
-    assert "segmental_lean.right_arm_kg" in detail["flagged"]
+    assert "lean_body_mass_kg" in detail["flagged"]
 
 
 def test_inbody_with_unresolved_flags_rejected_with_409(use_llm):
@@ -381,7 +390,7 @@ def test_inbody_with_confirmed_flags_proceeds_with_200(use_llm):
     use_llm(_llm_raising())
     flagged_read = load_extractions().extractions["real_270_flagged"]
     inbody_data = flagged_read.data.model_dump()
-    flagged = flagged_read.flagged
+    flagged = _flagged_fields("real_270_flagged")
 
     response = client.post(
         "/plan",
@@ -397,3 +406,168 @@ def test_inbody_with_confirmed_flags_proceeds_with_200(use_llm):
     assert data["corrected_fields"] == []
 
 
+
+def test_confirming_implausible_sample_value_returns_422(use_llm):
+    """The real_270_clean sheet's misread 7 kg LBM cannot be confirmed into a plan."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_clean",
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "lean_body_mass_kg",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "not physiologically plausible" in response.text
+
+
+def test_correcting_implausible_sample_value_produces_a_sane_plan(use_llm):
+    """Correcting the misread LBM yields a plan consistent with the sheet's own
+    printed BMR, instead of the ~308 kcal target the 7 kg misread produced."""
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_clean",
+            "corrections": {"lean_body_mass_kg": 61.3},
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    plan = response.json()
+    assert plan["corrected_fields"] == ["lean_body_mass_kg"]
+    # Katch-McArdle on the corrected LBM, which agrees with the sheet's printed 1693 kcal.
+    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(370 + 21.6 * 61.3)
+    assert plan["nutrition"]["target_calories_kcal"] > 1500
+
+
+# --- One submit resolves every flagged field (Requirement 4.4) --------------
+#
+# The correction UX collapsed from a tap per field to a single submit, so the
+# shape the frontend now sends is one request mixing corrections with the review
+# of whatever was left unchanged. The backend contract did not change to allow
+# this — these assert that it already did, and keeps doing it.
+
+
+def test_one_request_mixing_corrections_and_reviews_resolves_every_flagged_field(use_llm):
+    """The `real_270_clean` demo: correct the misread value, review the rest, once.
+
+    The cross-check also flags both one-decimal arms on this two-decimal sheet.
+    The lean body mass is the misread one; correcting it and reviewing everything
+    else in one request matches the correction page's single-submit behavior.
+    """
+    use_llm(_llm_raising())
+    assert set(_flagged_fields("real_270_clean")) == {
+        "weight_kg",
+        "percent_body_fat",
+        "lean_body_mass_kg",
+        "basal_metabolic_rate_kcal",
+        "segmental_lean.left_arm_kg",
+        "segmental_lean.right_arm_kg",
+    }, "fixture guard: this sample's flagged set is what the test is built around"
+
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_clean",
+            # One typed correction...
+            "corrections": {"lean_body_mass_kg": 64.6},
+            # ...and review the other flagged fields as measured.
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
+        },
+    )
+    assert response.status_code == 200
+    plan = response.json()
+
+    # Katch-McArdle on the corrected lean mass, not the misread one.
+    assert plan["nutrition"]["bmr_kcal"] == pytest.approx(370 + 21.6 * 64.6)
+    assert plan["nutrition"]["target_calories_kcal"] > 1000
+
+    # The correction is recorded as human-supplied; the reviewed values stay measured.
+    assert "lean_body_mass_kg" in plan["corrected_fields"]
+    for reviewed in (
+        "weight_kg",
+        "percent_body_fat",
+        "basal_metabolic_rate_kcal",
+        "segmental_lean.left_arm_kg",
+        "segmental_lean.right_arm_kg",
+    ):
+        assert reviewed not in plan["corrected_fields"], reviewed
+
+
+def test_leaving_one_flagged_field_out_of_the_submit_still_blocks_the_plan(use_llm):
+    """The gate is unchanged: every flagged field, or no plan (issue #39, ADR-0008).
+
+    Simplifying the UX must not create a route around this, so a submit that
+    misses one flagged field is refused exactly as before.
+    """
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_clean",
+            "corrections": {"lean_body_mass_kg": 64.6},
+            # basal_metabolic_rate_kcal deliberately omitted.
+            "confirmations": ["weight_kg", "percent_body_fat"],
+        },
+    )
+    assert response.status_code == 409
+    assert "basal_metabolic_rate_kcal" in response.text
+
+
+def test_a_single_submit_cannot_review_an_implausible_value_through(use_llm):
+    """Requirement 4.7: out of range can only be corrected, never accepted as-is.
+
+    Reviewing everything in one go must not become a way to wave through a value
+    no real measurement could take. The server-side guard is the backstop the
+    correction page's inline check sits in front of.
+    """
+    use_llm(_llm_raising())
+    response = client.post(
+        "/plan",
+        json={
+            "user": PROFILE,
+            "sample_id": "real_270_clean",
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "lean_body_mass_kg",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
+        },
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    # Names the field in plain language and says what to do about it, rather than
+    # just refusing.
+    assert "Lean Body Mass" in detail
+    assert "correct it" in detail.lower()

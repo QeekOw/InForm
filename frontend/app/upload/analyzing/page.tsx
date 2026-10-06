@@ -1,12 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import BackButton from "@/components/BackButton";
 import PhoneFrame from "@/components/PhoneFrame";
 import ReportPhoto from "@/components/ReportPhoto";
 import { API_URL } from "@/lib/config";
-import { isCleanRead, type ReadJob } from "@/lib/inbody";
-import type { SheetSource } from "@/lib/photo";
+import { type ReadJob } from "@/lib/inbody";
+import { isSubmittableImageData } from "@/lib/photo";
 import { loadJSON, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgScanLine = "/icons/scan/scan-line.svg";
@@ -19,6 +20,11 @@ function AnalyzingContent() {
   const isUpload = searchParams.get("upload") === "1";
 
   const [readId, setReadId] = useState<string | null>(null);
+  // Whether the read id has been looked for yet. Without this, the polling
+  // effect below runs once with readId still null â€” before the session lookup
+  // has committed â€” and takes the no-read-id branch for a read that is in fact
+  // perfectly recoverable.
+  const [readIdResolved, setReadIdResolved] = useState(false);
   const [progress, setProgress] = useState<number>(0);
   const [message, setMessage] = useState<string>("Initializing analysis...");
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +32,10 @@ function AnalyzingContent() {
 
   useEffect(() => {
     // sessionStorage is a browser-only external store, unreadable during SSR.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setReadId(paramReadId || loadJSON<string>(SESSION_KEYS.readId));
+    setReadIdResolved(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [paramReadId]);
 
   // Elapsed seconds timer for honest feedback
@@ -41,15 +49,21 @@ function AnalyzingContent() {
   useEffect(() => {
     let cancelled = false;
 
+    // Wait for the read id lookup above rather than acting on a stale null.
+    if (!readIdResolved) return;
+
     if (!readId) {
+      // No read to resume: not in the query param, not in session. The only
+      // remaining option is to start a fresh read â€” and only from something
+      // that is actually image data. The session photo may be a sample sheet's
+      // server URL (stored for side-by-side display), which decodes to garbage
+      // and comes back as an unreadable photo (Requirement 1.5).
       const photo = loadJSON<string>(SESSION_KEYS.photo);
-      if (photo) {
-        // Automatically start reading the uploaded sheet in session if read_id is missing
-        const source = loadJSON<SheetSource>(SESSION_KEYS.sheetSource) ?? "photo";
+      if (isSubmittableImageData(photo)) {
         fetch(`${API_URL}/reads`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_data: photo, live: true, source }),
+          body: JSON.stringify({ image_data: photo, live: true }),
         })
           .then((res) => {
             if (!res.ok) throw new Error("Failed to start reading");
@@ -62,20 +76,29 @@ function AnalyzingContent() {
             }
           })
           .catch((err) => {
-            console.error("Failed to start read from the sheet in session:", err);
-            if (!cancelled) router.push("/preview");
+            console.error("Failed to start read from photo in session:", err);
+            if (!cancelled) {
+              saveJSON(
+                SESSION_KEYS.notice,
+                "We couldn't reach the server to start reading your sheet. Nothing was read, so nothing was guessed. Try again when you're back online.",
+              );
+              router.replace("/upload");
+            }
           });
         return () => {
           cancelled = true;
         };
       }
 
-      const timer = setTimeout(() => {
-        if (!cancelled) router.push("/preview");
-      }, 3000);
+      // Say what happened instead of inventing a refusal for a sheet that was
+      // never read.
+      saveJSON(
+        SESSION_KEYS.notice,
+        "That read was interrupted and couldn't be picked back up — the page lost track of it. Nothing was read, so nothing was guessed. Pick a sheet to start again.",
+      );
+      router.replace("/upload");
       return () => {
         cancelled = true;
-        clearTimeout(timer);
       };
     }
 
@@ -109,10 +132,8 @@ function AnalyzingContent() {
             // Brief pause at 100% so user sees completion before transition
             await new Promise((r) => setTimeout(r, 600));
             if (!cancelled) {
-              // Uploaded photos MUST go to preview for side-by-side review (ADR-0011)
-              const sampleId = loadJSON<string>(SESSION_KEYS.sampleId);
-              const isUserUpload = isUpload || !sampleId;
-              router.push(isUserUpload || !extraction || !isCleanRead(extraction) ? "/preview" : "/result");
+              // Under Choice 1, all sheets route to /preview for side-by-side review & clarification
+              router.push("/preview");
             }
             break;
           } else if (job.status === "refused") {
@@ -145,62 +166,57 @@ function AnalyzingContent() {
     return () => {
       cancelled = true;
     };
-  }, [readId, router, isUpload]);
+  }, [readId, readIdResolved, router, isUpload]);
 
   const percent = Math.min(100, Math.max(0, Math.round(progress * 100)));
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      <div className="flex h-full flex-col justify-between px-6 pt-12 pb-8">
-        <div>
-          <h1 className="text-center text-[22px] font-bold text-[#fcfcfc]">
-            {isUpload
-              ? "Analyzing your uploaded sheet..."
-              : isLive
-              ? "Running Live Inference..."
-              : "Analyzing your sheet..."}
-          </h1>
-          <p className="mt-1 text-center text-[12px] text-white/70">
-            {isUpload
-              ? "Extracting body composition parameters from your sheet"
-              : isLive
-              ? "Self-hosted Donut model running on CPU (~45s expected)"
-              : "Extracting body composition parameters"}
-          </p>
+      {/* Also the way out of a read taking longer than someone wants to wait;
+          the job keeps running server-side either way. */}
+      <BackButton href="/upload" label="Stop waiting and go back" className="absolute left-[31px] top-[48px] z-10" />
 
-          <div className="relative mx-auto mt-6 h-[260px] w-[210px] overflow-hidden rounded-[15px] border-4 border-[#117d69] bg-[#1f1f1f] shadow-lg">
+      <div className="flex min-h-[874px] flex-col items-center px-[30px] pb-[40px] pt-[160px] text-[#fcfcfc]">
+        <h1
+          className="max-w-[240px] text-center text-[24px] font-bold leading-[1.2] tracking-[0.02em]"
+          aria-live="polite"
+        >
+          Analyzing your body composition...
+        </h1>
+        <p className="mt-[8px] text-center text-[12px] text-[#fcfcfc]/70">
+          {isUpload
+            ? "Reading the numbers off your photo"
+            : isLive
+              ? "Reading the sample sheet with the model"
+              : "Reading your sheet"}
+        </p>
+
+        <div className="relative mt-[34px] h-[370px] w-[265px] overflow-hidden rounded-[15px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] p-[10px] shadow-[0_4px_16px_rgba(0,0,0,0.25)]">
+          <div className="relative size-full overflow-hidden rounded-[8px] bg-[#1f1f1f]">
             <ReportPhoto />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img alt="" className="absolute inset-x-0 w-full animate-scan" src={imgScanLine} />
           </div>
         </div>
 
-        {/* Honest Progress Display (No indeterminate spinner) */}
-        <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-4 backdrop-blur-xs">
+        {/* Honest progress: a real percentage, not an endless spinner */}
+        <div className="mt-[30px] w-full" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Reading progress">
           <div className="flex items-center justify-between text-[12px]">
-            <span className="font-semibold text-emerald-400">{message}</span>
-            <span className="font-mono font-bold text-white">{percent}%</span>
+            <span className="font-bold text-[#7ee0cf]">{message}</span>
+            <span className="font-mono font-bold">{percent}%</span>
           </div>
-
-          {/* Real linear progress bar */}
-          <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/15">
+          <div className="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-white/15">
             <div
-              className="h-full rounded-full bg-[#117d69] transition-all duration-300 ease-out"
+              className="h-full rounded-full bg-gradient-to-r from-[#117d69] to-[#2dd4bf] transition-all duration-300 ease-out"
               style={{ width: `${percent}%` }}
             />
           </div>
-
-          <div className="mt-3 flex items-center justify-between text-[10px] text-white/50">
-            <span>Elapsed: {elapsed}s</span>
-            <span>{isLive ? "Estimated progress (~45s on CPU)" : "Instant"}</span>
-          </div>
+          <p className="mt-2 text-[10px] text-white/50">
+            {elapsed}s elapsed{isLive || isUpload ? " · usually 10–45 seconds" : ""}
+          </p>
         </div>
 
-        {error && (
-          <div className="mt-2 text-center text-[11px] text-rose-300">
-            {error}
-          </div>
-        )}
+        {error && <p className="mt-2 text-center text-[11px] text-rose-300">{error}</p>}
       </div>
     </PhoneFrame>
   );

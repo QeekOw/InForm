@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from inform.samples import load_extractions
 
 client = TestClient(app)
 
@@ -71,7 +72,9 @@ def test_get_flagged_sample_returns_stored_flags():
     result = response.json()
 
     assert result["status"] == "complete"
-    assert "segmental_lean.right_arm_kg" in result["flagged"]
+    assert set(result["flagged"]) == set(
+        load_extractions().extractions["real_270_flagged"].flagged
+    )
 
 
 def test_get_refused_sample_returns_refusal():
@@ -85,7 +88,7 @@ def test_get_refused_sample_returns_refusal():
     assert result["error"] == "not_an_inbody_sheet"
     assert result["unread"] == []
     assert "This image does not appear to be an InBody result sheet" in result["message"]
-    assert "Please upload a clear photo of your InBody 270 sheet" in result["message"]
+    assert "Please upload a clear photo of your InBody 270 or 570 sheet" in result["message"]
 
 
 def test_get_unknown_sample_returns_404():

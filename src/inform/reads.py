@@ -19,6 +19,7 @@ from typing import Any, Callable, Literal
 import uuid
 
 from inform.errors import (
+    DonutCheckpointError,
     InBodyExtractionError,
     MissingRequiredFieldsError,
     NotAnInBodySheetError,
@@ -35,6 +36,44 @@ from inform.samples import (
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _EXPECTED_CPU_INFERENCE_SECONDS = 45.0
 
+# Three read failures with three distinct causes, kept distinguishable so the
+# frontend can attribute each one honestly:
+#
+#   engine_unavailable   the extraction model could not be constructed on this
+#                        server (the Donut checkpoint is absent, ADR-0010). A
+#                        server-side configuration fact.
+#   unreadable_photo     the image reached the engine and could not be read.
+#                        The person's photo.
+#   not_an_inbody_sheet  the image is a document, just not an InBody sheet.
+#
+# Collapsing the first into the second is the bug this fixes: it blamed a
+# person's photo for a missing checkpoint, and told them to retake a photo
+# that no retake could ever make readable.
+ENGINE_UNAVAILABLE_ERROR = "engine_unavailable"
+ENGINE_UNAVAILABLE_MESSAGE = (
+    "Live reading is unavailable on this server: the extraction model is not "
+    "installed here. This is not a problem with your photo. Pick a sheet from "
+    "the sample gallery to see a stored read instead."
+)
+
+
+def _engine_unavailable_extraction() -> ExtractionItem:
+    """The refusal for a read that never reached the model (ADR-0010)."""
+    return ExtractionItem(
+        status="refused",
+        error=ENGINE_UNAVAILABLE_ERROR,
+        message=ENGINE_UNAVAILABLE_MESSAGE,
+    )
+
+
+def _mark_engine_unavailable(job: ReadJob) -> None:
+    """Settle a job as refused because the model could not be built here."""
+    job.status = "refused"
+    job.progress = 1.0
+    job.error = ENGINE_UNAVAILABLE_ERROR
+    job.message = ENGINE_UNAVAILABLE_MESSAGE
+    job.extraction = _engine_unavailable_extraction()
+
 # Honest progress milestones for live Donut execution
 _STAGES: list[tuple[float, float, str]] = [
     (0.0, 0.15, "Loading model checkpoint and tokenizer..."),
@@ -43,37 +82,6 @@ _STAGES: list[tuple[float, float, str]] = [
     (0.75, 0.90, "Extracting segmental lean and fat parameters..."),
     (0.90, 0.96, "Evaluating Katch–McArdle and LBM cross-checks..."),
 ]
-
-# What the person actually picked. A PDF is rendered to page 1 in the browser
-# and submitted like any photo (issue #81), so without this every refusal below
-# told PDF uploaders to retake a photo in good lighting — advice about a camera
-# they never used. Absent from an older client's request, which still means
-# "photo".
-SheetSource = Literal["photo", "pdf"]
-
-# What an uploaded sheet is called, per source. Same refusal either way
-# (ADR-0008 stays fail-closed and no number is invented); only the attribution
-# and the suggested next step differ. This is the wording the API hands a
-# client in `message`; the Preview screen adds its own explanation beside it.
-_UPLOAD_COPY: dict[SheetSource, dict[str, str]] = {
-    "photo": {
-        "pending": "Analyzing uploaded photo...",
-        "undecodable": "Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
-        "missing_fields": "The photo is too blurry or unclear to read your measurements. Please retake the photo in good lighting.",
-        "unreadable": "The photo could not be read clearly. Please retake the photo with steady focus and good lighting.",
-        # The error's own wording is already written for a photo.
-        "not_a_sheet": str(NotAnInBodySheetError()),
-    },
-    "pdf": {
-        "pending": "Analyzing uploaded PDF page...",
-        "undecodable": "That PDF page could not be read. Upload a PDF whose first page is the results sheet, or a photo of the sheet instead.",
-        "missing_fields": "That PDF page does not show your measurements. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
-        "unreadable": "That PDF page could not be read clearly. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
-        # The likely path: an emailed InBody PDF that leads with a cover or
-        # summary page. Page 1 opened fine, it just is not the results sheet.
-        "not_a_sheet": "That PDF page does not look like an InBody result sheet. InForm reads the first page, so upload a PDF that starts with the results sheet, or a photo of it instead.",
-    },
-}
 
 
 @dataclass
@@ -137,7 +145,6 @@ class ReadManager:
         sample_id: str | None = None,
         image_data: str | None = None,
         live: bool = False,
-        source: SheetSource = "photo",
         engine_factory: Callable[[], Engine | None] | None = None,
     ) -> ReadJob:
         """Create a new read job for either a Sample sheet or an uploaded photo (Issue #45).
@@ -145,7 +152,6 @@ class ReadManager:
         If sample_id is given and live=False, completes immediately from the pre-computed extractions.
         If live=True (or image_data is provided), launches background inference with honest progress updates.
         Uploaded images are processed transiently in memory and never written to disk or logs (ADR-0011).
-        `source` names what the person picked, so a refusal is worded for the photo or the PDF they actually have.
         """
         if (sample_id is None and image_data is None) or (sample_id is not None and image_data is not None):
             raise ValueError("Provide either sample_id or image_data, not both or neither")
@@ -197,7 +203,16 @@ class ReadManager:
             if not img_path.is_absolute():
                 img_path = repo_root / img_path
 
-            engine = engine_factory() if engine_factory else None
+            # A factory that builds the engine eagerly (rather than deferring to
+            # extract_inbody's default_engine()) fails here, on the request
+            # thread, before any worker starts. Same cause, same answer.
+            try:
+                engine = engine_factory() if engine_factory else None
+            except DonutCheckpointError:
+                _mark_engine_unavailable(job)
+                job.completed_at = datetime.now(timezone.utc)
+                job._event.set()
+                return job
 
             def _sample_worker():
                 try:
@@ -213,6 +228,12 @@ class ReadManager:
                     else:
                         job.message = extraction.message or "Sheet was refused."
                         job.error = extraction.error
+                except DonutCheckpointError:
+                    # The model was never built, so nothing about this sheet was
+                    # judged. Report the server, not the sheet — and do NOT fall
+                    # back to the stored extraction, which is the only thing the
+                    # live read exists to be checked against (issue #29).
+                    _mark_engine_unavailable(job)
                 except Exception as exc:
                     job.status = "refused"
                     job.progress = 1.0
@@ -232,7 +253,6 @@ class ReadManager:
             return job
 
         # Uploaded image branch (Issue #45 / ADR-0011 zero persistence)
-        wording = _UPLOAD_COPY[source]
         b64_str = image_data
         if "," in b64_str:
             b64_str = b64_str.split(",", 1)[1]
@@ -250,11 +270,11 @@ class ReadManager:
                 live=True,
                 status="refused",
                 progress=1.0,
-                message=wording["undecodable"],
+                message="Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
                 extraction=ExtractionItem(
                     status="refused",
                     error="unreadable_photo",
-                    message=wording["undecodable"],
+                    message="Could not read this photo. Please retake or upload a clear photo (JPG or PNG).",
                 ),
                 completed_at=datetime.now(timezone.utc),
             )
@@ -269,12 +289,18 @@ class ReadManager:
             live=True,
             status="pending",
             progress=0.0,
-            message=wording["pending"],
+            message="Analyzing uploaded photo...",
         )
         with self._lock:
             self._jobs[read_id] = job
 
-        engine = engine_factory() if engine_factory else None
+        try:
+            engine = engine_factory() if engine_factory else None
+        except DonutCheckpointError:
+            _mark_engine_unavailable(job)
+            job.completed_at = datetime.now(timezone.utc)
+            job._event.set()
+            return job
 
         def _upload_worker():
             try:
@@ -289,34 +315,39 @@ class ReadManager:
                 job.status = "complete"
                 job.progress = 1.0
                 job.message = "Sheet analysis completed successfully."
+            except DonutCheckpointError:
+                # Raised by extract_inbody's default_engine() before the image is
+                # looked at, so this says nothing about the photo's quality. It
+                # used to land in the broad handler below and come back as
+                # "too blurry", sending people off to retake a photo that was
+                # never the problem.
+                _mark_engine_unavailable(job)
             except MissingRequiredFieldsError as exc:
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "unreadable_photo"
-                job.message = wording["missing_fields"]
+                job.message = "The photo is too blurry or unclear to read your measurements. Please retake the photo in good lighting."
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="unreadable_photo",
                     unread=list(exc.fields),
                     message=job.message,
                 )
-            except NotAnInBodySheetError:
-                # The error code is unchanged, so Preview still routes this to
-                # its "Not an InBody sheet" panel; only the wording varies.
+            except NotAnInBodySheetError as exc:
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "not_an_inbody_sheet"
-                job.message = wording["not_a_sheet"]
+                job.message = str(exc)
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="not_an_inbody_sheet",
-                    message=job.message,
+                    message=str(exc),
                 )
             except Exception as exc:
                 job.status = "refused"
                 job.progress = 1.0
                 job.error = "unreadable_photo"
-                job.message = wording["unreadable"]
+                job.message = "The photo could not be read clearly. Please retake the photo with steady focus and good lighting."
                 job.extraction = ExtractionItem(
                     status="refused",
                     error="unreadable_photo",

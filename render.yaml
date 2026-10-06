@@ -14,3 +14,13 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      # Accounts & History (issues #41-#44). DATABASE_URL and SESSION_SECRET
+      # hold secrets and are set directly in the Render dashboard, not here
+      # (this file is committed). ALLOWED_ORIGINS is not secret but is listed
+      # here only as documentation — the live dashboard-created service
+      # (see backend/README.md) is configured independently of this
+      # Blueprint file and must have all four set there directly.
+      - key: ALLOWED_ORIGINS
+        value: https://in-form-chi.vercel.app
+      - key: ALLOW_INSECURE_COOKIES
+        value: "false"

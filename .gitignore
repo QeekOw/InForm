@@ -43,3 +43,7 @@ models/
 # crops) are one consenting subject's health data; generated datasets are large.
 data/*
 !data/samples/
+
+# Binaries and local IDE specs
+*.exe
+.kiro/
