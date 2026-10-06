@@ -46,7 +46,7 @@ def test_delete_account_requires_sign_in(client: TestClient):
 def test_delete_account_removes_account_and_scans(client: TestClient, db: Session):
     client.post("/auth/signup", json={"email": "leaving@example.com", "password": "password123"})
     client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
-    client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_570_clean"})
+    client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
 
     account_id = db.query(Account).filter_by(email="leaving@example.com").one().id
     assert db.query(Scan).filter_by(account_id=account_id).count() == 2

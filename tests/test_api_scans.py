@@ -80,13 +80,25 @@ def test_save_scan_with_corrections_records_corrected_fields(signed_in_client: T
             "user": PROFILE,
             "sample_id": "real_270_flagged",
             "corrections": {"lean_body_mass_kg": 62.5},
-            "confirmations": ["weight_kg", "percent_body_fat", "basal_metabolic_rate_kcal"],
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
         },
     )
     assert resp.status_code == 201
     body = resp.json()
     assert body["corrected_fields"] == ["lean_body_mass_kg"]
-    assert sorted(body["confirmed_fields"]) == ["basal_metabolic_rate_kcal", "percent_body_fat", "weight_kg"]
+    assert sorted(body["confirmed_fields"]) == [
+        "basal_metabolic_rate_kcal",
+        "percent_body_fat",
+        "segmental_lean.left_arm_kg",
+        "segmental_lean.right_arm_kg",
+        "weight_kg",
+    ]
 
 
 def test_save_scan_refuses_flagged_sample_without_resolution(signed_in_client: TestClient):
@@ -96,7 +108,7 @@ def test_save_scan_refuses_flagged_sample_without_resolution(signed_in_client: T
 
 def test_scanning_again_appends_rather_than_replaces(signed_in_client: TestClient, db: Session):
     first = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
-    second = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_570_clean"})
+    second = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
 
     assert first.status_code == 201
     assert second.status_code == 201
@@ -112,7 +124,7 @@ def test_scan_survives_a_later_profile_change_unchanged(signed_in_client: TestCl
     assert first.status_code == 201
 
     newer_profile = {**PROFILE, "fitness_goal": "hypertrophy"}
-    second = signed_in_client.post("/scans", json={"user": newer_profile, "sample_id": "synthetic_570_clean"})
+    second = signed_in_client.post("/scans", json={"user": newer_profile, "sample_id": "synthetic_270_clean"})
     assert second.status_code == 201
 
     # The first Scan's frozen profile is untouched by the "Profile change"
@@ -137,7 +149,7 @@ def test_list_scans_requires_sign_in(client: TestClient):
 
 def test_list_scans_orders_newest_first_with_headline_numbers(signed_in_client: TestClient):
     first = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
-    second = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_570_clean"})
+    second = signed_in_client.post("/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"})
     assert first.status_code == 201
     assert second.status_code == 201
 
@@ -163,7 +175,13 @@ def test_list_scans_marks_corrected_fields_row(signed_in_client: TestClient):
             "user": PROFILE,
             "sample_id": "real_270_flagged",
             "corrections": {"lean_body_mass_kg": 62.5},
-            "confirmations": ["weight_kg", "percent_body_fat", "basal_metabolic_rate_kcal"],
+            "confirmations": [
+                "weight_kg",
+                "percent_body_fat",
+                "basal_metabolic_rate_kcal",
+                "segmental_lean.left_arm_kg",
+                "segmental_lean.right_arm_kg",
+            ],
         },
     )
     assert clean.status_code == 201
@@ -363,7 +381,7 @@ def test_summary_metrics_come_from_the_scans_own_frozen_snapshot(signed_in_clien
     agreeing rather than about one particular sample's numbers.
     """
     created = signed_in_client.post(
-        "/scans", json={"user": PROFILE, "sample_id": "synthetic_570_clean"}
+        "/scans", json={"user": PROFILE, "sample_id": "synthetic_270_clean"}
     )
     assert created.status_code == 201
     detail = created.json()

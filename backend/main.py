@@ -96,6 +96,7 @@ from inform.samples import (
     load_manifest,
 )
 from inform.synthesis.generate import OpenAIClientProtocol, synthesize_plan
+from inform.synthesis.validate import generate_fallback_plan
 from inform.user import UserProfile
 
 app = FastAPI(title="InForm API")
