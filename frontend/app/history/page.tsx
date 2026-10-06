@@ -39,7 +39,7 @@ export default function History() {
   }, [account, authLoading, router]);
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <header className="flex h-[120px] items-start justify-between bg-gradient-to-b from-black/60 to-transparent px-[30px] pt-[60px]">
         <BackButton href="/dashboard" label="Back to dashboard" />
         <h1 className="text-[24px] font-bold tracking-[0.02em] text-[#fcfcfc]">History</h1>

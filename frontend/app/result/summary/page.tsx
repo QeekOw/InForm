@@ -42,7 +42,7 @@ export default function ResultSummary() {
   }, []);
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <div className="flex items-center gap-3 px-[30px] pt-3">
         <BackButton href="/result" label="Back to your results" />
         <h1 className="text-[24px] font-bold text-[#fcfcfc]">Your plan, in words</h1>

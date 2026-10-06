@@ -30,11 +30,11 @@ export default function Home() {
   const startHref = account ? "/dashboard" : "/sign-in";
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <div id="top" />
 
       {/* First screen: photo, brand, headline, CTA */}
-      <section className="relative h-[874px] overflow-hidden">
+      <section className="relative h-full overflow-hidden">
         <div aria-hidden="true" className="absolute inset-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt="" src="/bg/hero.jpg" className="size-full object-cover" />

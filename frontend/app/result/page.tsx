@@ -345,7 +345,7 @@ function ResultContent() {
   const sheetImage = sampleId ? `${API_URL}/samples/${sampleId}/image` : null;
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       {/* Header photo */}
       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[218px] overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}

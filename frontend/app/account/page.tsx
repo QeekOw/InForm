@@ -197,7 +197,7 @@ export default function AccountSettings() {
   }
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       {mode === "view" || !draft ? (
         <>
           <Header title="Profile" back={<BackButton href="/dashboard" label="Back to dashboard" />} />
