@@ -94,7 +94,7 @@ function AnalyzingContent() {
       // never read.
       saveJSON(
         SESSION_KEYS.notice,
-        "That read was interrupted and couldn't be picked back up â€” the page lost track of it. Nothing was read, so nothing was guessed. Pick a sheet to start again.",
+        "That read was interrupted and couldn't be picked back up — the page lost track of it. Nothing was read, so nothing was guessed. Pick a sheet to start again.",
       );
       router.replace("/upload");
       return () => {
@@ -154,7 +154,7 @@ function AnalyzingContent() {
           // If still pending, loop continues next poll immediately
         } catch (err) {
           console.error("Polling error, retrying...", err);
-          setError("Reconnecting to inference workerâ€¦");
+          setError("Reconnecting to inference worker…");
           // Wait 2 seconds before retry on network error
           await new Promise((r) => setTimeout(r, 2000));
         }
@@ -228,7 +228,7 @@ export default function Analyzing() {
       fallback={
         <PhoneFrame bg="bg-[#3e3e3e]">
           <div className="flex h-full items-center justify-center text-white text-[14px]">
-            Loadingâ€¦
+            Loading…
           </div>
         </PhoneFrame>
       }

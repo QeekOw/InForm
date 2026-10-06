@@ -122,7 +122,7 @@ export default function Dashboard() {
             ))}
           </dl>
           <p className="mt-[6px] flex items-baseline justify-end gap-[6px] text-[8px] text-black/70">
-            Total Scan <span className="text-[14px] font-bold text-[#117d69]">{scanCount ?? "…"}</span>
+            Total Scans <span className="text-[14px] font-bold text-[#117d69]">{scanCount ?? "…"}</span>
           </p>
           <Link href="/upload" className={`${btn.primary} mt-[8px]`}>
             <Icon name="fileAdd" size={16} />

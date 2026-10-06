@@ -64,12 +64,12 @@ export default function BackButton({
   const pathname = usePathname();
   const { canGoBack } = useBackTrail(pathname);
 
-  // Figma "back" pill: 75x28, light gradient, arrow + lowercase label.
+  // Figma "back" pill: 75x28, light gradient, arrow + label.
   const shell = `inline-flex h-[28px] w-[75px] shrink-0 items-center justify-center gap-[5px] rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69] ${className}`;
   const content = (
     <>
       <Icon name="arrowLeft" size={16} />
-      <span aria-hidden="true">back</span>
+      <span aria-hidden="true">Back</span>
     </>
   );
 

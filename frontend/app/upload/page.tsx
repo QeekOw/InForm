@@ -258,8 +258,8 @@ export default function Upload() {
           <div className={`${cardClass} mt-[24px] p-[20px] text-[12px] leading-relaxed`}>
             <p className="font-bold">Reading your own sheet isn&apos;t available here yet</p>
             <p className="mt-1.5 text-black/75">
-              Your own sheet has to be read by the model, and it isn&apos;t installed on this
-              server. Rather than let you take a photo nothing can read, we&apos;re telling you now.
+              The model needed to read your sheet isn&apos;t installed on this server. Rather than
+              let you take a photo that nothing can read, we&apos;re telling you now.
             </p>
             <p className="mt-2 text-black/60">
               The sample sheets below give the full experience: flagged values, corrections,
@@ -313,7 +313,7 @@ export default function Upload() {
         )}
 
         <div className="my-[32px] text-[#fcfcfc]">
-          <OrDivider label="or use" />
+          <OrDivider label="Or use" />
         </div>
 
         <h2 className="text-[24px] font-bold tracking-[0.02em]">Sample Gallery</h2>
