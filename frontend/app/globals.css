@@ -25,6 +25,80 @@ body {
   display: none;
 }
 
+.sign-in-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  padding: clamp(10px, 2dvh, 18px) clamp(14px, 7vw, 30px)
+    clamp(10px, 2dvh, 16px);
+}
+
+.sign-in-title {
+  margin-top: clamp(8px, 2dvh, 16px);
+  font-size: clamp(30px, 5dvh, 40px);
+  line-height: 1.1;
+}
+
+.sign-in-card {
+  flex: 0 0 auto;
+  margin-top: clamp(8px, 1.5dvh, 14px);
+  padding: clamp(12px, 2.6dvh, 20px);
+}
+
+.sign-in-form {
+  display: grid;
+  row-gap: clamp(8px, 1.3dvh, 12px);
+}
+
+.sign-in-submit {
+  margin-top: clamp(10px, 2dvh, 16px) !important;
+}
+
+.sign-in-divider {
+  margin-block: clamp(8px, 1.5dvh, 14px);
+}
+
+.sign-in-footer {
+  margin-top: auto;
+  padding-top: clamp(8px, 1.5dvh, 14px);
+  font-size: clamp(12px, 2.3dvh, 14px);
+}
+
+@media (max-height: 440px) {
+  .sign-in-layout {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .sign-in-title {
+    margin-top: 0;
+    font-size: 26px;
+  }
+
+  .sign-in-card {
+    margin-top: 2px;
+    padding: 8px;
+  }
+
+  .sign-in-form {
+    row-gap: 3px;
+  }
+
+  .sign-in-submit {
+    margin-top: 2px !important;
+  }
+
+  .sign-in-divider {
+    margin-block: 3px;
+  }
+
+  .sign-in-footer {
+    padding-top: 2px;
+    font-size: 11px;
+  }
+}
+
 @keyframes scan {
   0% {
     top: 0;

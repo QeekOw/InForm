@@ -9,6 +9,7 @@ export default function PhoneFrame({
   children,
   bg = "bg-white",
   showNav = false,
+  scrollable = true,
 }: {
   children: React.ReactNode;
   bg?: string;
@@ -18,6 +19,7 @@ export default function PhoneFrame({
    * their own branding instead of a shared logo bar.
    */
   showNav?: boolean;
+  scrollable?: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center bg-[#0a0a0a]">
@@ -25,7 +27,9 @@ export default function PhoneFrame({
         className="relative h-full max-h-[874px] w-[min(430px,49.2dvh)] overflow-hidden rounded-[48px] border-[8px] border-[#252525] bg-[#050505] p-[4px] shadow-[0_24px_80px_rgba(0,0,0,0.65)] max-[430px]:max-h-none max-[430px]:w-full max-[430px]:rounded-none max-[430px]:border-0 max-[430px]:p-0 max-[430px]:shadow-none"
       >
         <div
-          className={`phone-screen relative h-full w-full overflow-x-hidden overflow-y-auto overscroll-contain rounded-[38px] max-[430px]:rounded-none ${bg}`}
+          className={`phone-screen relative h-full w-full overflow-x-hidden ${
+            scrollable ? "overflow-y-auto overscroll-contain" : "overflow-y-hidden"
+          } rounded-[38px] max-[430px]:rounded-none ${bg}`}
         >
           {/* Global Navigation Bar: persists across all views so the user is never trapped */}
           {showNav && (
