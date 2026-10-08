@@ -70,13 +70,13 @@ function SignInContent() {
     : "/sign-up";
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]">
-      <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0 min-h-full" />
+    <PhoneFrame bg="bg-[#3e3e3e]" scrollable={false}>
+      <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0" />
 
-      <div className="relative flex min-h-full flex-col px-[30px] pb-[40px] pt-[48px]">
+      <div className="sign-in-layout relative z-10">
         <BackButton href={redirectParam || "/"} />
 
-        <h1 className="mt-[72px] text-center text-[40px] font-bold tracking-[0.02em] text-[#fcfcfc]">
+        <h1 className="sign-in-title text-center font-bold tracking-[0.02em] text-[#fcfcfc]">
           Login
         </h1>
         {isSavingScan && (
@@ -85,8 +85,8 @@ function SignInContent() {
           </p>
         )}
 
-        <Card className="mt-[36px] p-[30px]">
-          <form noValidate onSubmit={handleLogIn} className="space-y-[15px]">
+        <Card className="sign-in-card">
+          <form noValidate onSubmit={handleLogIn} className="sign-in-form">
             <TextField
               label="Email Address"
               icon="email"
@@ -120,7 +120,11 @@ function SignInContent() {
                 </button>
               }
             />
-            <button type="submit" disabled={submitting} className={`${btn.primary} !mt-[26px]`}>
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`${btn.primary} sign-in-submit`}
+            >
               {submitting ? "Signing in…" : "Log In"}
             </button>
           </form>
@@ -134,7 +138,7 @@ function SignInContent() {
             </p>
           )}
 
-          <div className="my-[30px] text-black">
+          <div className="sign-in-divider text-black">
             <OrDivider />
           </div>
 
@@ -156,7 +160,7 @@ function SignInContent() {
           </Link>
         </Card>
 
-        <p className="mt-auto pt-[26px] text-center text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]">
+        <p className="sign-in-footer text-center font-bold tracking-[0.02em] text-[#fcfcfc]">
           Need an account?{" "}
           <Link href={signUpHref} className="underline">
             Sign Up
@@ -171,7 +175,7 @@ export default function SignIn() {
   return (
     <Suspense
       fallback={
-        <PhoneFrame bg="bg-[#3e3e3e]">
+        <PhoneFrame bg="bg-[#3e3e3e]" scrollable={false}>
           <div className="flex h-full items-center justify-center text-[14px] text-white">
             Loading…
           </div>
