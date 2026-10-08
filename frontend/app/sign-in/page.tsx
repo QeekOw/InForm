@@ -73,7 +73,7 @@ function SignInContent() {
     <PhoneFrame bg="bg-[#3e3e3e]">
       <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0 min-h-full" />
 
-      <div className="relative px-[30px] pb-[40px] pt-[48px]">
+      <div className="relative flex min-h-full flex-col px-[30px] pb-[40px] pt-[48px]">
         <BackButton href={redirectParam || "/"} />
 
         <h1 className="mt-[72px] text-center text-[40px] font-bold tracking-[0.02em] text-[#fcfcfc]">
@@ -156,7 +156,7 @@ function SignInContent() {
           </Link>
         </Card>
 
-        <p className="mt-[26px] text-center text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]">
+        <p className="mt-auto pt-[26px] text-center text-[14px] font-bold tracking-[0.02em] text-[#fcfcfc]">
           Need an account?{" "}
           <Link href={signUpHref} className="underline">
             Sign Up
