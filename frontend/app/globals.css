@@ -27,64 +27,226 @@ body {
 
 .sign-in-layout {
   display: flex;
-  height: 100%;
-  min-height: 0;
+  min-height: 100%;
   flex-direction: column;
   padding: clamp(10px, 2dvh, 18px) clamp(14px, 7vw, 30px)
-    clamp(10px, 2dvh, 16px);
+    calc(clamp(10px, 2dvh, 16px) + env(safe-area-inset-bottom));
 }
 
 .sign-in-title {
-  margin-top: clamp(8px, 2dvh, 16px);
+  margin-top: auto;
+  padding-top: clamp(12px, 2dvh, 18px);
   font-size: clamp(30px, 5dvh, 40px);
   line-height: 1.1;
 }
 
 .sign-in-card {
   flex: 0 0 auto;
-  margin-top: auto;
-  padding: clamp(12px, 2.6dvh, 20px);
-  transform: translateY(clamp(0px, 1.5dvh, 12px));
+  margin-top: clamp(12px, 2dvh, 18px);
+  padding: clamp(16px, 3dvh, 24px);
+  border-radius: 20px;
+  background: #fcfcfc;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+}
+
+.sign-in-card label {
+  margin-bottom: 6px;
+  color: #282d2b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sign-in-card input {
+  height: 44px;
+  border: 1px solid #e2e6e4;
+  border-radius: 10px;
+  background: #f7f8f7;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 14px;
+}
+
+.sign-in-card input[aria-invalid="true"] {
+  border-color: #b42318;
+}
+
+.sign-in-card input[aria-invalid="true"]:focus {
+  --tw-ring-color: #b42318;
+}
+
+.sign-in-card input::placeholder {
+  color: #737a77;
+}
+
+.sign-in-card .pointer-events-none {
+  color: #68716d;
+}
+
+.sign-in-notice {
+  background: #f5f7f6;
+  color: #303633;
+}
+
+.sign-in-card [role="alert"] {
+  font-size: 12px;
 }
 
 .sign-in-form {
   display: grid;
-  row-gap: clamp(8px, 1.3dvh, 12px);
+  row-gap: clamp(12px, 1.8dvh, 16px);
+}
+
+.sign-in-forgot {
+  min-height: 28px;
+  margin-top: 4px;
+  color: #555d59;
+  font-size: 12px;
+  text-underline-offset: 2px;
+}
+
+.sign-in-forgot:hover {
+  color: #117d69;
+}
+
+.sign-in-card button[aria-label^="Show "],
+.sign-in-card button[aria-label^="Hide "] {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+}
+
+.sign-in-submit,
+.sign-in-google,
+.sign-in-guest {
+  min-height: 44px;
+  height: 44px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .sign-in-submit {
-  margin-top: clamp(10px, 2dvh, 16px) !important;
+  margin-top: clamp(4px, 1dvh, 8px) !important;
+  background: #117d69;
+  box-shadow: 0 2px 5px rgba(17, 125, 105, 0.2);
+}
+
+.sign-in-submit:hover:not(:disabled) {
+  background: #0d6e5c;
+  filter: none;
+}
+
+.sign-in-submit:active:not(:disabled) {
+  background: #0b5c4d;
 }
 
 .sign-in-divider {
-  margin-block: clamp(8px, 1.5dvh, 14px);
+  margin-block: clamp(14px, 2dvh, 20px);
+  color: #636b67;
+}
+
+.sign-in-google {
+  border: 1px solid #e6e9e7;
+  background: #f7f8f7;
+}
+
+.sign-in-google:hover {
+  background: #eef1ef;
+  filter: none;
+}
+
+.sign-in-guest {
+  margin-top: 10px !important;
+  border: 1px solid rgba(17, 125, 105, 0.18);
+  background: #e8f3f0;
+  color: #0b6f5d;
+}
+
+.sign-in-guest:hover {
+  background: #dceee9;
+  filter: none;
+}
+
+.sign-in-notice {
+  border: 1px solid rgba(17, 125, 105, 0.16);
+  font-size: 12px;
 }
 
 .sign-in-footer {
   margin-top: auto;
-  padding-top: clamp(8px, 1.5dvh, 14px);
-  font-size: clamp(12px, 2.3dvh, 14px);
+  padding-top: clamp(14px, 2dvh, 20px);
+  font-size: clamp(13px, 2.3dvh, 15px);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+
+.sign-in-footer a {
+  text-underline-offset: 3px;
+}
+
+@media (max-height: 560px) {
+  .sign-in-title {
+    margin-top: 0;
+    padding-top: 8px;
+  }
+
+  .sign-in-card {
+    padding: 10px;
+  }
+
+  .sign-in-card input {
+    height: 40px;
+  }
+
+  .sign-in-form {
+    row-gap: 7px;
+  }
+
+  .sign-in-submit,
+  .sign-in-google,
+  .sign-in-guest {
+    min-height: 40px;
+    height: 40px;
+  }
+
+  .sign-in-divider {
+    margin-block: 8px;
+  }
+
+  .sign-in-footer {
+    padding-top: 8px;
+  }
 }
 
 @media (max-height: 440px) {
   .sign-in-layout {
     padding-top: 4px;
-    padding-bottom: 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom));
   }
 
   .sign-in-title {
-    margin-top: 0;
+    padding-top: 4px;
     font-size: 26px;
   }
 
   .sign-in-card {
-    margin-top: 2px;
+    margin-top: 6px;
     padding: 8px;
-    transform: none;
+    border-radius: 16px;
+  }
+
+  .sign-in-card input {
+    height: 38px;
   }
 
   .sign-in-form {
-    row-gap: 3px;
+    row-gap: 4px;
+  }
+
+  .sign-in-submit,
+  .sign-in-google,
+  .sign-in-guest {
+    min-height: 40px;
+    height: 40px;
   }
 
   .sign-in-submit {
@@ -92,11 +254,11 @@ body {
   }
 
   .sign-in-divider {
-    margin-block: 3px;
+    margin-block: 5px;
   }
 
   .sign-in-footer {
-    padding-top: 2px;
+    padding-top: 6px;
     font-size: 11px;
   }
 }
