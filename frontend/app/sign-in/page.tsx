@@ -144,8 +144,15 @@ function SignInContent() {
 
           <a
             href={googleSignInUrl(
-              redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth),
+              redirectParam,
             )}
+            onClick={(event) => {
+              if (redirectParam) return;
+              const next = loadJSON<string>(SESSION_KEYS.nextAfterAuth);
+              if (!next) return;
+              event.preventDefault();
+              window.location.assign(googleSignInUrl(next));
+            }}
             className={`${btn.secondary} font-medium`}
           >
             <GoogleLogo />

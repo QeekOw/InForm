@@ -42,8 +42,9 @@ body {
 
 .sign-in-card {
   flex: 0 0 auto;
-  margin-top: clamp(8px, 1.5dvh, 14px);
+  margin-top: auto;
   padding: clamp(12px, 2.6dvh, 20px);
+  transform: translateY(clamp(0px, 1.5dvh, 12px));
 }
 
 .sign-in-form {
@@ -79,6 +80,7 @@ body {
   .sign-in-card {
     margin-top: 2px;
     padding: 8px;
+    transform: none;
   }
 
   .sign-in-form {
