@@ -41,8 +41,13 @@ function SignInContent() {
 
   const handleLogIn = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitting) return;
     const next: FieldErrors = {};
-    if (!email.trim()) next.email = "Email address can't be empty.";
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) next.email = "Email address can't be empty.";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      next.email = "Enter a valid email address.";
+    }
     if (!password) next.password = "Password can't be empty.";
     setErrors(next);
     setNotice(null);
@@ -50,7 +55,7 @@ function SignInContent() {
 
     setSubmitting(true);
     try {
-      await signIn(email, password);
+      await signIn(normalizedEmail, password);
       const target = redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth) || "/dashboard";
       removeSessionItem(SESSION_KEYS.nextAfterAuth);
       router.push(target);
@@ -70,7 +75,7 @@ function SignInContent() {
     : "/sign-up";
 
   return (
-    <PhoneFrame bg="bg-[#3e3e3e]" scrollable={false}>
+    <PhoneFrame bg="bg-[#3e3e3e]">
       <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0" />
 
       <div className="sign-in-layout relative z-10">
@@ -92,6 +97,10 @@ function SignInContent() {
               icon="email"
               type="email"
               autoComplete="email"
+              autoCapitalize="none"
+              inputMode="email"
+              enterKeyHint="next"
+              required
               placeholder="Enter your email address"
               value={email}
               error={errors.email}
@@ -103,6 +112,8 @@ function SignInContent() {
             <PasswordField
               label="Password"
               autoComplete="current-password"
+              enterKeyHint="go"
+              required
               placeholder="Enter your password"
               value={password}
               error={errors.password}
@@ -114,7 +125,7 @@ function SignInContent() {
                 <button
                   type="button"
                   onClick={() => setNotice(RESET_UNAVAILABLE)}
-                  className="mt-[5px] text-[9px] text-[#464646] underline hover:text-black"
+                  className="sign-in-forgot underline"
                 >
                   Forgot Password?
                 </button>
@@ -124,6 +135,7 @@ function SignInContent() {
               type="submit"
               disabled={submitting}
               className={`${btn.primary} sign-in-submit`}
+              aria-busy={submitting}
             >
               {submitting ? "Signing in…" : "Log In"}
             </button>
@@ -132,7 +144,8 @@ function SignInContent() {
           {notice && (
             <p
               role="status"
-              className="mt-3 rounded-[8px] bg-[#117d69]/10 px-3 py-2 text-center text-[11px] text-[#0b5c4d]"
+              aria-live="polite"
+              className="sign-in-notice mt-3 rounded-[8px] bg-[#117d69]/10 px-3 py-2 text-center text-[#0b5c4d]"
             >
               {notice}
             </p>
@@ -153,7 +166,7 @@ function SignInContent() {
               event.preventDefault();
               window.location.assign(googleSignInUrl(next));
             }}
-            className={`${btn.secondary} font-medium`}
+            className={`${btn.secondary} sign-in-google font-medium`}
           >
             <GoogleLogo />
             Continue with Google
@@ -161,7 +174,7 @@ function SignInContent() {
 
           <Link
             href={redirectParam || "/upload"}
-            className={`${btn.soft} mt-[8px]`}
+            className={`${btn.soft} sign-in-guest`}
           >
             {redirectParam ? "Return to your scan" : "Continue as a Guest"}
           </Link>
