@@ -169,7 +169,7 @@ export default function Capture() {
         )}
       </div>
 
-      <BackButton href="/upload" className="absolute left-[31px] top-[48px] z-10" />
+      <BackButton href="/upload" screenAligned />
 
       {/* Bottom control tray */}
       <div className="absolute inset-x-0 bottom-0 h-[234px] bg-gradient-to-t from-black/80 to-black/30" />

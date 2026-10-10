@@ -45,7 +45,7 @@ function formatDob(iso: string | null): string {
 /** Screen header shared by the view and edit modes. */
 function Header({ title, back }: { title: string; back: React.ReactNode }) {
   return (
-    <header className="flex h-[120px] items-start justify-between bg-gradient-to-b from-black/60 to-transparent px-[30px] pt-[60px]">
+    <header className="flex h-[120px] items-start justify-between bg-gradient-to-b from-black/60 to-transparent px-[30px] pt-[48px]">
       {back}
       <h1 className="text-[24px] font-bold tracking-[0.02em] text-[#fcfcfc]">{title}</h1>
     </header>

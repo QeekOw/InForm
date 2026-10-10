@@ -51,6 +51,8 @@ export default function BackButton({
   fallbackHref = "/",
   label = "Back",
   className = "",
+  screenAligned = false,
+  onClick,
 }: {
   /** Explicit in-app destination. Preferred: it can never escape the app. */
   href?: string;
@@ -59,19 +61,25 @@ export default function BackButton({
   /** Accessible name, for screens where "Back" is ambiguous. */
   label?: string;
   className?: string;
+  /** Anchor to the shared top-left position within the phone screen. */
+  screenAligned?: boolean;
+  /** Custom in-screen action when there is no navigation destination. */
+  onClick?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const { canGoBack } = useBackTrail(pathname);
 
   // Figma "back" pill: 75x28, light gradient, arrow + label.
-  const shell = `inline-flex h-[28px] w-[75px] shrink-0 items-center justify-center gap-[5px] rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69] ${className}`;
+  const position = screenAligned ? "absolute left-[30px] top-[48px] z-20" : "";
+  const shell = `inline-flex h-[28px] w-[75px] shrink-0 items-center justify-center gap-[5px] rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69] ${position} ${className}`;
   const content = (
     <>
       <Icon name="arrowLeft" size={16} />
       <span aria-hidden="true">Back</span>
     </>
   );
+  const handleBack = onClick ?? (() => (canGoBack ? router.back() : router.push(fallbackHref)));
 
   if (href) {
     return (
@@ -85,7 +93,7 @@ export default function BackButton({
     <button
       type="button"
       aria-label={label}
-      onClick={() => (canGoBack ? router.back() : router.push(fallbackHref))}
+      onClick={handleBack}
       className={shell}
     >
       {content}

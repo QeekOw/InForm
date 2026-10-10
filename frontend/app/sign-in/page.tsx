@@ -79,7 +79,7 @@ function SignInContent() {
       <PhotoBackdrop src="/bg/login.jpg" className="absolute inset-0" />
 
       <div className="sign-in-layout relative z-10">
-        <BackButton href={redirectParam || "/"} />
+        <BackButton href={redirectParam || "/"} screenAligned />
 
         <h1 className="sign-in-title text-center font-bold tracking-[0.02em] text-[#fcfcfc]">
           Login

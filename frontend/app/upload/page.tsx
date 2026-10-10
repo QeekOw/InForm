@@ -178,7 +178,7 @@ export default function Upload() {
 
   return (
     <PhoneFrame bg="bg-gradient-to-b from-[#3e3e3e] to-[#222]">
-      <div className="px-[30px] pb-[60px] pt-[54px] text-[#fcfcfc]">
+      <div className="px-[30px] pb-[60px] pt-[48px] text-[#fcfcfc]">
         <BackButton fallbackHref={account ? "/dashboard" : "/"} />
 
         <h1 className="mt-[26px] text-[24px] font-bold">Upload your InBody 270</h1>

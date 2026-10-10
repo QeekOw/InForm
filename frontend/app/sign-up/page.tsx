@@ -4,7 +4,6 @@ import { useEffect, useState, Suspense, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import BackButton from "@/components/BackButton";
-import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
 import {
   btn,
@@ -151,21 +150,20 @@ function SignUpContent() {
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
-      <PhotoBackdrop src="/bg/signup.jpg" className="absolute inset-0 min-h-full" />
+      <PhotoBackdrop
+        src="/bg/signup.jpg"
+        className="sticky top-0 -mb-[100dvh] h-[100dvh]"
+      />
 
-      <div className="relative px-[30px] pb-[40px] pt-[48px]">
+      <div className="relative z-10 px-[30px] pb-[40px] pt-[48px]">
         {step === "account" ? (
-          <BackButton href={signInHref} />
+          <BackButton href={signInHref} className="sticky top-[48px] z-20" />
         ) : (
-          <button
-            type="button"
+          <BackButton
             onClick={() => setStep("account")}
-            aria-label="Back to account details"
-            className="inline-flex h-[28px] w-[75px] items-center justify-center gap-[5px] rounded-[60px] bg-gradient-to-b from-[#fcfcfc] to-[#f3f3f3] text-[12px] font-bold tracking-[0.04em] text-black shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#117d69]"
-          >
-            <Icon name="arrowLeft" size={16} />
-            <span aria-hidden="true">Back</span>
-          </button>
+            label="Back to account details"
+            className="sticky top-[48px] z-20"
+          />
         )}
 
         <h1 className="mt-[72px] text-center text-[40px] font-bold tracking-[0.02em] text-[#fcfcfc]">
