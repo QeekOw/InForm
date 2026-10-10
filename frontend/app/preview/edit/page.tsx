@@ -332,7 +332,7 @@ export default function PreviewEdit() {
           />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#3e3e3e] from-[7%] to-[rgba(62,62,62,0.3)]" />
-        <BackButton href="/preview" label="Back to the preview" className="absolute left-[31px] top-[48px]" />
+        <BackButton href="/preview" label="Back to the preview" screenAligned />
         {photo && (
           <button
             type="button"

@@ -174,7 +174,7 @@ function AnalyzingContent() {
     <PhoneFrame bg="bg-[#3e3e3e]">
       {/* Also the way out of a read taking longer than someone wants to wait;
           the job keeps running server-side either way. */}
-      <BackButton href="/upload" label="Stop waiting and go back" className="absolute left-[31px] top-[48px] z-10" />
+      <BackButton href="/upload" label="Stop waiting and go back" screenAligned />
 
       <div className="flex min-h-[874px] flex-col items-center px-[30px] pb-[40px] pt-[160px] text-[#fcfcfc]">
         <h1

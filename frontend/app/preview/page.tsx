@@ -97,7 +97,7 @@ function PhotoHeader({ src, height, onView }: { src: string | null; height: numb
         />
       )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-[#3e3e3e]/40 to-[#3e3e3e]" />
-      <BackButton href="/upload" className="absolute left-[31px] top-[48px]" />
+      <BackButton href="/upload" screenAligned />
       {src && onView && (
         <button
           type="button"
