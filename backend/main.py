@@ -494,8 +494,12 @@ def google_sign_in_callback(
         return _google_result_redirect("error", redirect_path)
 
     token = create_session_token(account.id)
+    # The cookie below is third-party to the frontend's origin, so browsers that
+    # block those (Safari, private windows) drop it (issue #108). The fragment
+    # hands the frontend the same token email sign-in returns in its body;
+    # browsers never send a fragment to any server.
     response = RedirectResponse(
-        _google_frontend_url("success", redirect_path),
+        f"{_google_frontend_url('success', redirect_path)}#{urlencode({'token': token})}",
         status_code=302,
         headers={"Cache-Control": "no-store"},
     )
