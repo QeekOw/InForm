@@ -9,7 +9,7 @@ import { btn, Card, GoogleLogo, OrDivider, PasswordField, PhotoBackdrop, TextFie
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { googleSignInStatusMessage, googleSignInUrl } from "@/lib/googleAuth";
-import { loadJSON, removeSessionItem, SESSION_KEYS } from "@/lib/session";
+import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const RESET_UNAVAILABLE =
   "Password reset isn't available yet. If you're stuck, continue as a guest — no account is needed to get a plan.";
@@ -21,7 +21,7 @@ function SignInContent() {
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
   const googleStatus = searchParams.get("google");
-  const { signIn } = useAuth();
+  const { signIn, refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -34,10 +34,14 @@ function SignInContent() {
 
   useEffect(() => {
     if (googleStatus !== "success") return;
+    // The session cookie is third-party here and often blocked, so use the token
+    // the callback put in the fragment, as email sign-in does (issue #108).
+    const token = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    if (token) saveJSON(SESSION_KEYS.authToken, token);
     const target = redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth) || "/dashboard";
     removeSessionItem(SESSION_KEYS.nextAfterAuth);
-    router.replace(target);
-  }, [googleStatus, redirectParam, router]);
+    refresh().then(() => router.replace(target));
+  }, [googleStatus, redirectParam, router, refresh]);
 
   const handleLogIn = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

@@ -235,6 +235,25 @@ def test_google_sign_in_creates_google_only_account_and_reuses_stable_subject(
     assert db.query(Account).filter_by(google_sub="google-subject-1").one().id == account_id
 
 
+def test_google_success_hands_the_token_over_without_relying_on_the_cookie(
+    client: TestClient, db: _MemoryDB, google_config, monkeypatch
+):
+    # Issue #108: the session cookie is third-party to the frontend and blocked by
+    # Safari and private windows, so the token must also arrive in the fragment.
+    _install_verified_claims(monkeypatch)
+    state = _start_google_sign_in(client, "/history")
+
+    response = _finish_google_sign_in(client, state)
+
+    location = urlsplit(response.headers["location"])
+    assert parse_qs(location.query)["google"] == ["success"]
+    token = parse_qs(location.fragment)["token"][0]
+    client.cookies.clear()  # what a third-party-cookie-blocking browser sends
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["id"] == str(db.accounts[0].id)
+
+
 def test_google_email_change_keeps_the_account_matched_by_subject(
     client: TestClient, db: _MemoryDB, google_config, monkeypatch
 ):
