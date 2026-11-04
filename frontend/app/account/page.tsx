@@ -360,7 +360,7 @@ export default function AccountSettings() {
       <ConfirmDialog
         open={dialog === "delete"}
         title="Delete Account?"
-        body={`This permanently deletes your account (${account.email}) and every saved report and result. It can't be undone, and nothing is kept.`}
+        body={`This permanently deletes your account (${account.email}) and every saved scan, result and plan. It can't be undone, and nothing is kept.`}
         confirmLabel="Delete Account"
         confirmIcon="trash"
         busy={busy}
