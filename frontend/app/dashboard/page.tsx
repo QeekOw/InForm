@@ -45,6 +45,10 @@ function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
+function formatLongDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { account, loading: authLoading } = useAuth();
@@ -125,6 +129,17 @@ export default function Dashboard() {
           <p className="mt-[6px] flex items-baseline justify-end gap-[6px] text-[8px] text-black/70">
             Total Scans <span className="text-[14px] font-bold text-[#117d69]">{scanCount ?? "…"}</span>
           </p>
+          {/* Stale is a neutral fact about age, never an error: the plan stays as it was. */}
+          {currentPlan.status === "ready" && (
+            <p className="mt-[12px] text-[11px] leading-relaxed text-black/70">
+              <Link href={`/history/${currentPlan.plan.id}`} className="font-bold text-[#117d69] underline">
+                Current plan
+              </Link>{" "}
+              from {formatLongDate(currentPlan.plan.created_at)}.
+              {currentPlan.plan.is_stale &&
+                ` It's ${currentPlan.plan.age_days} days old: still an accurate record of you then, and due for a fresh scan.`}
+            </p>
+          )}
           <Link href="/upload" className={`${btn.primary} mt-[8px]`}>
             <Icon name="fileAdd" size={16} />
             New Scan
@@ -156,14 +171,6 @@ export default function Dashboard() {
 
         {state.status === "ready" && state.scans.length > 0 && (
           <>
-            {/* A calm note, never a reason to hide or recompute the plan. */}
-            {currentPlan.status === "ready" && currentPlan.plan.is_stale && (
-              <p className="mt-[20px] rounded-[8px] bg-amber-400/15 p-[12px] text-[11px] leading-relaxed text-amber-100">
-                Your latest plan is {currentPlan.plan.age_days} days old. It&apos;s still an accurate
-                record of you then, but a new scan will bring it up to date.
-              </p>
-            )}
-
             <h2 className="mt-[32px] text-[12px] font-bold">
               {state.scans.length === 1 ? "Where you are now" : "How you’ve moved"}
             </h2>
