@@ -399,8 +399,8 @@ def test_summary_metrics_come_from_the_scans_own_frozen_snapshot(signed_in_clien
 def test_a_corrected_value_is_what_the_chart_plots(signed_in_client: TestClient):
     """The trend follows the plan's effective reading, not the raw misread one.
 
-    `real_270_flagged`'s stored lean body mass is the misread value; correcting it
-    is what the plan was computed from, so it must also be what the chart shows.
+    A corrected lean body mass is what the plan was computed from, so it must
+    also be what the chart shows.
     """
     corrected = signed_in_client.post(
         "/scans",
