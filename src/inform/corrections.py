@@ -146,8 +146,8 @@ class ImplausibleConfirmationError(ValueError):
 
     Confirming records that a person checked what the machine read; it is not a
     bypass of the plausibility validation a typed value gets. Without this, an
-    impossible reading — a 7 kg lean body mass on an 86.9 kg person, which the
-    real_270_clean sample sheet actually contains — could be confirmed straight
+    impossible reading — a 7 kg lean body mass on an 86.9 kg person, which
+    donut-both-v3 read off a real sample sheet — could be confirmed straight
     into a plan, while typing that same 7 would be rejected as out of range.
     A value this far off has to be corrected, not confirmed.
     """

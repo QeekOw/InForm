@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from inform.errors import NotAnInBodySheetError
 from inform.samples import load_extractions
 
 client = TestClient(app)
@@ -87,8 +88,7 @@ def test_get_refused_sample_returns_refusal():
     assert result["data"] is None
     assert result["error"] == "not_an_inbody_sheet"
     assert result["unread"] == []
-    assert "This image does not appear to be an InBody result sheet" in result["message"]
-    assert "Please upload a clear photo of your InBody 270 or 570 sheet" in result["message"]
+    assert result["message"] == str(NotAnInBodySheetError())
 
 
 def test_get_unknown_sample_returns_404():

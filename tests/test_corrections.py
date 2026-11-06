@@ -52,7 +52,7 @@ def test_out_of_range_weight_rejected():
 
 def test_out_of_range_lbm_rejected():
     with pytest.raises(ValueError, match="out of plausible range"):
-        validate_correction("lean_body_mass_kg", CorrectionValue(value=7.0))  # slipped decimal like real_270_clean
+        validate_correction("lean_body_mass_kg", CorrectionValue(value=7.0))  # slipped decimal, as donut-both-v3 read one real sheet
 
     with pytest.raises(ValueError, match="out of plausible range"):
         validate_correction("lean_body_mass_kg", CorrectionValue(value=300.0))
@@ -148,7 +148,7 @@ def test_person_corrects_plainly_wrong_field():
 
 
 def test_confirming_unchanged_flagged_value_lets_plan_proceed():
-    # real_270_flagged: weight 84.8, pbf 26.3, lbm 76.0, bmr 1721.0
+    # donut-both-v3's read of a real sheet: weight 84.8, pbf 26.3, lbm 76.0, bmr 1721.0
     measured = _partial_inbody(
         weight_kg=84.8,
         percent_body_fat=26.3,
@@ -287,7 +287,7 @@ def test_missing_source_device_is_unread_not_fabricated():
 
 def test_unresolved_cross_check_flags_raise_error():
     """ADR-0008 §2: Flagged reads cannot proceed until cross-check is satisfied."""
-    # real_270_flagged: weight 84.8, pbf 26.3 -> expected LBM ~62.5kg. But LBM was 76.0kg.
+    # donut-both-v3 read a real sheet as weight 84.8, pbf 26.3 (expected LBM ~62.5kg) but LBM 76.0kg.
     # Correcting only visceral fat leaves the severe LBM/PBF inconsistency intact.
     measured = _partial_inbody(
         weight_kg=84.8,
@@ -312,7 +312,7 @@ def test_field_specs_bundle_constraints():
 
 def test_confirming_implausible_value_is_rejected():
     """A confirmed value still has to be plausible: confirming is not a bypass of
-    the range check a typed value gets (real_270_clean's misread 7 kg LBM)."""
+    the range check a typed value gets (donut-both-v3's misread 7 kg LBM)."""
     measured = _partial_inbody(
         weight_kg=86.9,
         percent_body_fat=29.5,

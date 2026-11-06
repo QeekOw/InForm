@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from inform.extract import _DEFAULT_DONUT_CKPT
 from inform.errors import (
     InBodyExtractionError,
     MissingRequiredFieldsError,
@@ -259,6 +260,16 @@ def test_generate_extractions_wires_checkpoint_to_engine(monkeypatch):
     )
     assert artifact.checkpoint == "custom/checkpoint-v1"
     assert called_with == ["custom/checkpoint-v1"]
+
+
+def test_committed_extractions_come_from_the_default_checkpoint():
+    """The gallery shows reads from the model the app actually runs, for exactly the manifest's sheets.
+
+    Runs without the checkpoint, so CI catches a stale artifact that the live check below skips.
+    """
+    committed = load_extractions()
+    assert committed.checkpoint == _DEFAULT_DONUT_CKPT
+    assert set(committed.extractions) == {s.id for s in load_manifest().samples}
 
 
 def test_committed_extractions_match_live_checkpoint():
