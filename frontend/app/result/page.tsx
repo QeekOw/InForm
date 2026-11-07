@@ -11,6 +11,7 @@ import { btn, cardClass, ConfirmDialog, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { API_URL } from "@/lib/config";
+import { getFieldLabel } from "@/lib/corrections";
 import { type ExercisePlan, type MovementType } from "@/lib/exercise";
 import {
   DEFAULT_READING,
@@ -439,6 +440,12 @@ function ResultContent() {
               {state.kind === "validation" ? "One of the values was rejected" : "Couldn't reach the server"}
             </p>
             <p className="mt-1 whitespace-pre-wrap text-black/70">{state.message}</p>
+            {state.unread.length > 0 && (
+              <p className="mt-2 text-black/70">Enter values for {state.unread.map(getFieldLabel).join(", ")}.</p>
+            )}
+            {state.flagged.length > 0 && (
+              <p className="mt-2 text-black/70">Correct or confirm {state.flagged.map(getFieldLabel).join(", ")}.</p>
+            )}
             {state.kind === "validation" ? (
               <Link href="/preview/edit" className={`${btn.primary} mt-3`}>
                 Check the values

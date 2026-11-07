@@ -1,3 +1,6 @@
+import { normalizeFieldKey } from "./corrections";
+import type { SampleExtraction } from "./inbody";
+
 export type PlanReviewError = {
   message: string;
   unread: string[];
@@ -16,11 +19,19 @@ export function parsePlanReviewError(detail: unknown, status: number): PlanRevie
     }).join("\n");
   }
   else if (detail && typeof detail === "object" && "message" in detail) message = String(detail.message);
-  return { message, unread: [], flagged: [] };
+  const unread = detail && typeof detail === "object" && "unread" in detail ? detail.unread : [];
+  const flagged = detail && typeof detail === "object" && "flagged" in detail ? detail.flagged : [];
+  return {
+    message,
+    unread: Array.isArray(unread) ? unread.filter((key): key is string => typeof key === "string") : [],
+    flagged: Array.isArray(flagged) ? flagged.filter((key): key is string => typeof key === "string") : [],
+  };
 }
-import type { SampleExtraction } from "./inbody";
 
-
-export function mergeReviewRequirements(extraction: SampleExtraction, _review: PlanReviewError): SampleExtraction {
-  return extraction;
+export function mergeReviewRequirements(extraction: SampleExtraction, review: PlanReviewError): SampleExtraction {
+  return {
+    ...extraction,
+    unread: [...new Set([...extraction.unread, ...review.unread].map(normalizeFieldKey))],
+    flagged: [...new Set([...extraction.flagged, ...review.flagged].map(normalizeFieldKey))],
+  };
 }

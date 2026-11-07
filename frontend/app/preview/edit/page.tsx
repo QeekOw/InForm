@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import BackButton from "@/components/BackButton";
-import { EditedMarker, FlagDot, FlagMarker, MarkerLegend, NoteBubble } from "@/components/FieldStatus";
+import { CheckedMarker, EditedMarker, FlagDot, FlagMarker, MarkerLegend, NoteBubble } from "@/components/FieldStatus";
 import Icon from "@/components/Icon";
 import PhoneFrame from "@/components/PhoneFrame";
 import { btn, Modal } from "@/components/ui";
@@ -16,6 +16,7 @@ import {
   normalizeFieldKey,
   parseAndValidateFieldInput,
   validateFieldValue,
+  updateFieldCorrection,
 } from "@/lib/corrections";
 import {
   BMR_FIELD,
@@ -25,6 +26,7 @@ import {
   blankRequiredFields,
   type InBodyDraft,
   type InBodyPayload,
+  type PartialInBody,
   type SampleExtraction,
   type ScalarInBodyField,
   type SegmentalLeanField,
@@ -33,6 +35,10 @@ import { loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/sessi
 
 /** Visceral Fat Level is the one optional field (ADR-0004). */
 const OPTIONAL_FIELD_KEYS = new Set(["visceral_fat_level"]);
+const BALANCE_FIELD_KEYS = new Set([
+  "segmental_lean.left_arm_kg", "segmental_lean.right_arm_kg",
+  "segmental_lean.left_leg_kg", "segmental_lean.right_leg_kg",
+]);
 
 const UNREAD_MESSAGE = "We couldn't read this number. Please type it in from your InBody report.";
 
@@ -48,7 +54,7 @@ function isSegmentField(key: string): key is SegmentalLeanField {
 
 type EditableField = {
   normKey: string;
-  inputKey: string;
+  inputKey: ScalarInBodyField | SegmentalLeanField;
   label: string;
   unit: string;
   value: number | null;
@@ -122,7 +128,8 @@ export default function PreviewEdit() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [unreadKeys, setUnreadKeys] = useState<Set<string>>(new Set());
   const [flaggedKeys, setFlaggedKeys] = useState<Set<string>>(new Set());
-  const [extraction, setExtraction] = useState<SampleExtraction | null>(null);
+  const [measured, setMeasured] = useState<PartialInBody | null>(null);
+  const [confirmedFields, setConfirmedFields] = useState<Set<string>>(new Set());
   const [showErrors, setShowErrors] = useState(false);
 
   useEffect(() => {
@@ -134,13 +141,24 @@ export default function PreviewEdit() {
     const loadedSampleId = loadJSON<string>(SESSION_KEYS.sampleId);
 
     /* eslint-disable react-hooks/set-state-in-effect */
-    setExtraction(loadedExtraction);
+    setMeasured(loadJSON<PartialInBody>(SESSION_KEYS.measured) ?? loadedExtraction?.data ?? null);
+    setConfirmedFields(new Set((loadJSON<string[]>(SESSION_KEYS.confirmations) ?? []).map(normalizeFieldKey)));
     setCorrections(storedCorrections);
     setPhoto(loadedSampleId ? `${API_URL}/samples/${loadedSampleId}/image` : loadJSON<string>(SESSION_KEYS.photo));
     if (loadedExtraction?.flagged) setFlaggedKeys(new Set(loadedExtraction.flagged.map(normalizeFieldKey)));
 
     const source = storedReading ?? loadedExtraction?.data ?? DEFAULT_READING;
-    const base: InBodyDraft = { ...source, segmental_lean: { ...source.segmental_lean } };
+    const base: InBodyDraft = {
+      ...source,
+      segmental_lean: {
+        left_arm_kg: source.segmental_lean?.left_arm_kg ?? null,
+        right_arm_kg: source.segmental_lean?.right_arm_kg ?? null,
+        left_leg_kg: source.segmental_lean?.left_leg_kg ?? null,
+        right_leg_kg: source.segmental_lean?.right_leg_kg ?? null,
+        trunk_kg: source.segmental_lean?.trunk_kg ?? null,
+      },
+    };
+    for (const f of [...BODY_COMPOSITION_FIELDS, BMR_FIELD]) base[f.key] ??= null;
 
     // An unread field has no value and must not be pre-filled with a made-up one (ADR-0008).
     if (loadedExtraction?.unread && loadedExtraction.unread.length > 0) {
@@ -181,30 +199,31 @@ export default function PreviewEdit() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  const updateField = (key: string, value: number | null, unit?: string, error?: string | null) => {
+  const updateField = (key: ScalarInBodyField | SegmentalLeanField, value: number | null, unit?: string, error?: string | null) => {
     if (isSegmentField(key)) {
       setDraft((p) => ({ ...p, segmental_lean: { ...p.segmental_lean, [key]: value } }));
     } else {
-      setDraft((p) => ({ ...p, [key as ScalarInBodyField]: value }));
+      setDraft((p) => ({ ...p, [key]: value }));
     }
     const normKey = normalizeFieldKey(key);
     const resolvedUnit = unit ?? FIELD_CONSTRAINTS[normKey]?.unit;
     if (error !== undefined) setFieldErrors((p) => ({ ...p, [normKey]: error }));
 
-    // A typed value is a correction, recorded alongside the measured one, never merged.
+    setConfirmedFields((prev) => {
+      const next = new Set(prev);
+      next.delete(normKey);
+      return next;
+    });
+
     setCorrections((prev) => {
-      const next = { ...prev };
-      if (value !== null) next[normKey] = { value, ...(resolvedUnit ? { unit: resolvedUnit } : {}) };
-      else {
-        delete next[normKey];
-        delete next[key];
-      }
+      const original = isSegmentField(key) ? measured?.segmental_lean?.[key] : measured?.[key];
+      const next = updateFieldCorrection(prev, key, value, original, resolvedUnit);
       saveJSON(SESSION_KEYS.corrections, next);
       return next;
     });
   };
 
-  const field = (key: string, label: string, unit: string, value: number | null, optional = false): EditableField => ({
+  const field = (key: ScalarInBodyField | SegmentalLeanField, label: string, unit: string, value: number | null, optional = false): EditableField => ({
     normKey: normalizeFieldKey(key),
     inputKey: key,
     label,
@@ -250,8 +269,7 @@ export default function PreviewEdit() {
     .filter((p): p is { f: EditableField; message: string } => p.message !== null);
   const canSubmit = blank.length === 0 && problems.length === 0;
 
-  // Flagged fields left as read: saving records them as checked by the person.
-  const reviewedUnchanged = [...flaggedKeys].filter((nk) => !isCorrected(nk));
+  const reviewedUnchanged = [...confirmedFields].filter((nk) => !isCorrected(nk));
 
   const handleSave = () => {
     if (!canSubmit) {
@@ -267,7 +285,7 @@ export default function PreviewEdit() {
       return;
     }
     saveJSON(SESSION_KEYS.reading, draft);
-    if (extraction?.data) saveJSON(SESSION_KEYS.measured, extraction.data);
+    if (measured) saveJSON(SESSION_KEYS.measured, measured);
     if (Object.keys(corrections).length > 0) saveJSON(SESSION_KEYS.corrections, corrections);
     else removeSessionItem(SESSION_KEYS.corrections);
     if (reviewedUnchanged.length > 0) saveJSON(SESSION_KEYS.confirmations, reviewedUnchanged);
@@ -284,6 +302,8 @@ export default function PreviewEdit() {
       <FlagDot />
     ) : isCorrected(f.normKey) ? (
       <EditedMarker />
+    ) : confirmedFields.has(f.normKey) ? (
+      <CheckedMarker />
     ) : isUnread ? (
       <FlagMarker label={f.label} message={UNREAD_MESSAGE} align={bubbleAlign} />
     ) : flaggedKeys.has(f.normKey) ? (
@@ -309,6 +329,26 @@ export default function PreviewEdit() {
           />
         </div>
         {problem && <NoteBubble id={noteId}>{problem}</NoteBubble>}
+        {!isCorrected(f.normKey) && (flaggedKeys.has(f.normKey) || BALANCE_FIELD_KEYS.has(f.normKey)) && (
+          <label className="my-[6px] flex items-start gap-[6px] text-[10px] leading-[1.5]">
+            <input
+              type="checkbox"
+              checked={confirmedFields.has(f.normKey)}
+              disabled={f.value === null || problem !== null}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setConfirmedFields((prev) => {
+                  const next = new Set(prev);
+                  if (checked) next.add(f.normKey);
+                  else next.delete(f.normKey);
+                  return next;
+                });
+              }}
+              className="mt-[2px] shrink-0 accent-[#117d69]"
+            />
+            Confirm {f.label} unchanged
+          </label>
+        )}
       </div>
     );
   };
@@ -346,7 +386,7 @@ export default function PreviewEdit() {
         <div className="absolute inset-x-[30px] bottom-[20px] text-[#fcfcfc]">
           <h1 className="text-[24px] font-bold">Edit</h1>
           <p className="mt-[5px] text-[12px] leading-[1.5] tracking-[0.02em]">
-            Make sure the flagged numbers match your InBody report.
+            Compare the values with your report. Correct errors or explicitly confirm unchanged readings.
           </p>
         </div>
       </div>
@@ -358,6 +398,7 @@ export default function PreviewEdit() {
         <div className="my-[24px] border-t border-dotted border-[#fcfcfc]/60" aria-hidden="true" />
 
         <h2 className="text-[16px] font-bold">Segmental Lean Analysis</h2>
+        <p className="mt-[5px] text-[11px] leading-[1.5]">Confirm both arms and both legs to get balance advice.</p>
         <div className="mt-[8px] grid grid-cols-2 gap-x-[16px]">
           {segmentColumns.map((col, i) => (
             <div key={i}>{col.map((f) => renderRow(f, i === 0 ? "left" : "right"))}</div>
@@ -368,7 +409,7 @@ export default function PreviewEdit() {
 
         <div className="[&_label]:text-[14px] [&_label]:font-bold">{renderRow(bmrField)}</div>
 
-        <MarkerLegend edited={hasEdited} checked={false} />
+        <MarkerLegend edited={hasEdited} checked={reviewedUnchanged.length > 0} />
 
         {showErrors && problemLabels.length > 0 && (
           <p role="alert" className="mt-[24px] text-center text-[11px] leading-[1.5] text-[#fcfcfc]/80">

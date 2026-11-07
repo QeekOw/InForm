@@ -1230,6 +1230,10 @@ def save_scan(
 
 def _scan_to_detail(scan: Scan) -> ScanDetail:
     fingerprint = _compute_scan_fingerprint(scan.sample_id, scan.effective_inbody)
+    exercises = scan.exercises
+    if "unconfirmed_imbalance_pairs" not in exercises:
+        # Older snapshots did not record whether balance was assessed.
+        exercises = {**exercises, "unconfirmed_imbalance_pairs": ["arm", "leg"]}
     return ScanDetail(
         id=scan.id,
         created_at=scan.created_at,
@@ -1241,7 +1245,7 @@ def _scan_to_detail(scan: Scan) -> ScanDetail:
         corrected_fields=scan.corrected_fields,
         confirmed_fields=scan.confirmed_fields,
         nutrition=NutritionTargets.model_validate(scan.nutrition),
-        exercises=ExercisePlan.model_validate(scan.exercises),
+        exercises=ExercisePlan.model_validate(exercises),
         narrative_text=scan.narrative_text,
         narrative_source=scan.narrative_source,
         scan_fingerprint=fingerprint,
