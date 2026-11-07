@@ -27,7 +27,7 @@ export default function Home() {
   const { account, loading } = useAuth();
   // Signed-in people land on their dashboard; everyone else signs in or
   // continues as a guest from there.
-  const startHref = account ? "/dashboard" : "/sign-in";
+  const startHref = account ? "/dashboard" : loading ? "/sign-in?start=1" : "/sign-in";
 
   return (
     <PhoneFrame bg="bg-[#3e3e3e]">
@@ -57,14 +57,10 @@ export default function Home() {
               and fitness goals.
             </p>
 
-            {loading ? (
-              <div className="mt-[18px] h-[40px] w-full animate-pulse rounded-[8px] bg-white/10" />
-            ) : (
-              <Link href={startHref} className={`${btn.primary} mt-[18px]`}>
-                Get Started
-                <Icon name="arrowRight" size={20} />
-              </Link>
-            )}
+            <Link href={startHref} className={`${btn.primary} mt-[18px]`}>
+              Get Started
+              <Icon name="arrowRight" size={20} />
+            </Link>
           </div>
 
           <a

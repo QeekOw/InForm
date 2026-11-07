@@ -4,7 +4,7 @@
 // signed-in Account (or null for a guest) plus signIn/signUp/signOut actions
 // that keep every consumer in sync without each page re-fetching /auth/me.
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import * as authApi from "./auth";
 import type { Account, SignupPayload } from "./auth";
 import { clearAllSession, loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "./session";
@@ -48,20 +48,14 @@ function syncProfileFromAccount(acc: Account | null) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [account, setAccount] = useState<Account | null>(() => {
-    if (typeof window !== "undefined") {
-      const cached = loadJSON<Account>(SESSION_KEYS.account);
-      if (cached) {
-        syncProfileFromAccount(cached);
-        return cached;
-      }
-    }
-    return null;
-  });
+  const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
+  const revision = useRef(0);
 
   const updateAccount = useCallback((nextAccount: Account | null) => {
+    revision.current += 1;
     setAccount(nextAccount);
+    setLoading(false);
     if (nextAccount) {
       saveJSON(SESSION_KEYS.account, nextAccount);
       if (nextAccount.token) {
@@ -85,17 +79,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const initialRevision = revision.current;
+    const cached = loadJSON<Account>(SESSION_KEYS.account);
+    if (cached) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAccount(cached);
+      syncProfileFromAccount(cached);
+    }
     authApi.me().then((result) => {
-      if (active) {
+      if (active && revision.current === initialRevision) {
         updateAccount(result);
-        setLoading(false);
       }
     });
 
     const handleStorage = (e: StorageEvent) => {
       if (e.key === SESSION_KEYS.account || e.key === SESSION_KEYS.authToken) {
         const current = loadJSON<Account>(SESSION_KEYS.account);
+        revision.current += 1;
         setAccount(current);
+        setLoading(false);
         syncProfileFromAccount(current);
       }
     };

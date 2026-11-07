@@ -21,7 +21,8 @@ function SignInContent() {
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
   const googleStatus = searchParams.get("google");
-  const { signIn, refresh } = useAuth();
+  const start = searchParams.get("start") === "1";
+  const { account, loading, signIn, refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -31,6 +32,13 @@ function SignInContent() {
   const [submitting, setSubmitting] = useState(false);
 
   const isSavingScan = redirectParam?.includes("/result") ?? false;
+
+  useEffect(() => {
+    if (!start || !account || loading || submitting) return;
+    const target = redirectParam || loadJSON<string>(SESSION_KEYS.nextAfterAuth) || "/dashboard";
+    removeSessionItem(SESSION_KEYS.nextAfterAuth);
+    router.replace(target);
+  }, [start, account, loading, submitting, redirectParam, router]);
 
   useEffect(() => {
     if (googleStatus !== "success") return;
@@ -69,7 +77,6 @@ function SignInContent() {
       } else {
         setNotice("Something went wrong signing in. Please try again.");
       }
-    } finally {
       setSubmitting(false);
     }
   };
