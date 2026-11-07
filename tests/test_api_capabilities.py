@@ -23,6 +23,11 @@ def unresolved_probe(monkeypatch):
     would inherit whichever answer ran first.
     """
     monkeypatch.setattr(main, "_live_read_probe", None)
+
+    def no_checkpoint():
+        raise DonutCheckpointError("test-checkpoint")
+
+    monkeypatch.setattr(main, "default_engine", no_checkpoint)
     yield
     app.dependency_overrides.clear()
 
@@ -47,6 +52,30 @@ def test_missing_checkpoint_reports_live_read_unavailable(monkeypatch):
     monkeypatch.setattr(main, "default_engine", no_checkpoint)
 
     assert client.get("/capabilities").json()["live_read_available"] is False
+
+
+@pytest.mark.parametrize("contents", [
+    {},
+    {"config.json": "{}"},
+    {"config.json": "{}", "model.safetensors": "unusable weights"},
+], ids=["empty", "incomplete", "unusable"])
+def test_existing_checkpoint_directory_requires_a_working_engine(monkeypatch, tmp_path, contents):
+    for name, value in contents.items():
+        (tmp_path / name).write_text(value)
+    monkeypatch.setenv("INFORM_DONUT_CKPT", str(tmp_path))
+    calls = []
+
+    def cannot_load():
+        calls.append(1)
+        raise RuntimeError("Checkpoint cannot be loaded")
+
+    monkeypatch.setattr(main, "default_engine", cannot_load)
+
+    for endpoint in ("/capabilities", "/api/capabilities"):
+        response = client.get(endpoint)
+        assert response.status_code == 200
+        assert response.json()["live_read_available"] is False
+    assert len(calls) == 1
 
 
 def test_constructible_engine_reports_live_read_available(monkeypatch):

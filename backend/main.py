@@ -789,15 +789,11 @@ def get_live_read_available() -> bool:
     """
     global _live_read_probe
     if _live_read_probe is None:
-        ckpt = os.environ.get("INFORM_DONUT_CKPT", "models/donut-270-v9")
-        if Path(ckpt).exists():
+        try:
+            default_engine()
             _live_read_probe = True
-        else:
-            try:
-                default_engine()
-                _live_read_probe = True
-            except Exception:
-                _live_read_probe = False
+        except Exception:
+            _live_read_probe = False
     return _live_read_probe
 
 
