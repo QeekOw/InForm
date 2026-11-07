@@ -26,8 +26,9 @@ from inform.extract import (
     Engine,
     default_engine,
     extract_inbody,
+    _cross_check,
 )
-from inform.inbody import PartialInBody
+from inform.inbody import PartialInBody, REQUIRED_DOTTED_FIELDS, partial_field_value
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_MANIFEST_PATH = _REPO_ROOT / "data" / "samples" / "manifest.json"
@@ -98,8 +99,15 @@ def load_manifest(path: Path | str | None = None) -> SampleManifest:
 
 
 def load_extractions(path: Path | str | None = None) -> SampleExtractionsArtifact:
-    """Load the pre-computed Sample extractions artifact from disk."""
-    return _load_json_model(SampleExtractionsArtifact, path, default_extractions_path())
+    """Load stored reads with the review requirements enforced by current planning."""
+    artifact = _load_json_model(SampleExtractionsArtifact, path, default_extractions_path())
+    for item in artifact.extractions.values():
+        if item.status != "complete" or item.data is None:
+            continue
+        item.flagged = list(dict.fromkeys([*item.flagged, *_cross_check(item.data)]))
+        missing = [key for key in REQUIRED_DOTTED_FIELDS if partial_field_value(item.data, key) is None]
+        item.unread = list(dict.fromkeys([*item.unread, *missing]))
+    return artifact
 
 
 def extract_sheet_for_sample(

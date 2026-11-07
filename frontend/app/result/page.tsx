@@ -11,6 +11,7 @@ import { btn, cardClass, ConfirmDialog, Modal } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { API_URL } from "@/lib/config";
+import { getFieldLabel } from "@/lib/corrections";
 import { type ExercisePlan, type MovementType } from "@/lib/exercise";
 import {
   DEFAULT_READING,
@@ -21,6 +22,7 @@ import {
   type SampleExtraction,
 } from "@/lib/inbody";
 import { GOAL_LABELS } from "@/lib/profileOptions";
+import { mergeReviewRequirements, parsePlanReviewError, type PlanReviewError } from "@/lib/planReview";
 import {
   computeScanFingerprint,
   listScans,
@@ -61,25 +63,8 @@ type ApiErrorKind = "network" | "validation";
 
 type State =
   | { status: "loading" }
-  | { status: "error"; message: string; kind: ApiErrorKind }
+  | ({ status: "error"; kind: ApiErrorKind } & PlanReviewError)
   | { status: "ready"; plan: PlanResponse };
-
-/** FastAPI's `detail` is a string, a validation list, or {message, unread, flagged}. */
-function describeApiError(detail: unknown, status: number): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail
-      .map(
-        (d: { loc?: (string | number)[]; msg?: string }) =>
-          `${d.loc?.[d.loc.length - 1] ?? "value"}: ${d.msg ?? "invalid"}`,
-      )
-      .join("\n");
-  }
-  if (detail && typeof detail === "object" && "message" in detail) {
-    return String((detail as { message: unknown }).message);
-  }
-  return `API returned ${status}`;
-}
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -230,19 +215,26 @@ function ResultContent() {
     })
       .then(async (res) => {
         if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+          const body: unknown = await res.json().catch(() => null);
+          const detail = body && typeof body === "object" && "detail" in body ? body.detail : body;
           const kind: ApiErrorKind = res.status >= 400 && res.status < 500 ? "validation" : "network";
-          const error = new Error(describeApiError(body?.detail, res.status));
-          Object.assign(error, { kind });
-          throw error;
+          const review = parsePlanReviewError(detail, res.status);
+          if (kind === "validation") {
+            saveJSON(SESSION_KEYS.extraction, mergeReviewRequirements(
+              loadedExtraction ?? { status: "complete", data: loadedReading, unread: [], flagged: [] },
+              review,
+            ));
+          }
+          setState({ status: "error", kind, ...review });
+          return;
         }
         const plan = (await res.json()) as PlanResponse;
         // Also readable on /result/summary without recomputing the plan.
         saveJSON(SESSION_KEYS.narrative, { text: plan.narrative_text, source: plan.narrative_source });
         setState({ status: "ready", plan });
       })
-      .catch((err: Error & { kind?: ApiErrorKind }) => {
-        setState({ status: "error", message: err.message, kind: err.kind ?? "network" });
+      .catch((err: Error) => {
+        setState({ status: "error", message: err.message, kind: "network", unread: [], flagged: [] });
       });
     // Runs once per visit; `account` is read for a pre-fill fallback only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -448,6 +440,12 @@ function ResultContent() {
               {state.kind === "validation" ? "One of the values was rejected" : "Couldn't reach the server"}
             </p>
             <p className="mt-1 whitespace-pre-wrap text-black/70">{state.message}</p>
+            {state.unread.length > 0 && (
+              <p className="mt-2 text-black/70">Enter values for {state.unread.map(getFieldLabel).join(", ")}.</p>
+            )}
+            {state.flagged.length > 0 && (
+              <p className="mt-2 text-black/70">Correct or confirm {state.flagged.map(getFieldLabel).join(", ")}.</p>
+            )}
             {state.kind === "validation" ? (
               <Link href="/preview/edit" className={`${btn.primary} mt-3`}>
                 Check the values

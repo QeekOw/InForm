@@ -34,7 +34,7 @@ function statusOf(opts: {
   if (opts.isCorrected) return "corrected";
   if (opts.isUnread) return "unread";
   if (opts.isFlagged && !opts.isConfirmed) return "flagged";
-  if (opts.isFlagged && opts.isConfirmed) return "confirmed";
+  if (opts.isConfirmed) return "confirmed";
   return null;
 }
 
@@ -180,15 +180,13 @@ export default function Preview() {
     ] as const) {
       if (reading[key] == null) remainingUnread.push(key);
     }
-    if (reading.segmental_lean) {
-      for (const key of ["left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg"] as const) {
-        if (reading.segmental_lean[key] == null) remainingUnread.push(`segmental_lean.${key}`);
-      }
+    for (const key of ["left_arm_kg", "right_arm_kg", "left_leg_kg", "right_leg_kg", "trunk_kg"] as const) {
+      if (reading.segmental_lean?.[key] == null) remainingUnread.push(`segmental_lean.${key}`);
     }
   }
 
   // Everything still needing a person, counted once.
-  const reviewCount = remainingUnread.length + unresolvedFlagged.length;
+  const reviewCount = new Set([...remainingUnread, ...unresolvedFlagged]).size;
   const needsReview = reviewCount > 0;
   const isDemoReading =
     !sampleId && reading !== null && JSON.stringify(reading) === JSON.stringify(DEFAULT_READING);
@@ -301,7 +299,7 @@ export default function Preview() {
       <PhotoHeader src={photo} height={275} onView={() => setViewingPhoto(true)} />
 
       <div className="relative -mt-[90px] px-[30px] pb-[48px] text-[#fcfcfc]">
-        <h1 className="text-[24px] font-bold tracking-[0.02em]">Report scanned successfully</h1>
+        <h1 className="text-[24px] font-bold tracking-[0.02em]">{needsReview ? "Needs review" : "Report scanned successfully"}</h1>
         <p className="mt-[5px] text-[12px] leading-[1.5] text-[#fcfcfc]/90">
           Please review the extracted information below and make sure all details are correct
           before continuing.
@@ -337,7 +335,7 @@ export default function Preview() {
             <div key={column[0].key}>
               {column.map((field) => {
                 const dottedKey = `segmental_lean.${field.key}`;
-                const value = reading.segmental_lean[field.key];
+                const value = reading.segmental_lean?.[field.key] ?? null;
                 return (
                   <Row
                     key={field.key}
@@ -366,7 +364,7 @@ export default function Preview() {
 
         <MarkerLegend
           edited={correctedFields.size > 0}
-          checked={[...confirmedFields].some((k) => flaggedFields.has(k) && !correctedFields.has(k))}
+          checked={[...confirmedFields].some((k) => !correctedFields.has(k))}
         />
 
         {/* One action resolves every flagged and unread field on one page. */}

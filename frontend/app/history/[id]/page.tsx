@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import BackButton from "@/components/BackButton";
 import { NarrativeProvenance, NarrativeText } from "@/components/Narrative";
 import PhoneFrame from "@/components/PhoneFrame";
+import SavedBalance from "@/components/SavedBalance";
 import { CheckedMarker, EditedMarker } from "@/components/FieldStatus";
 import { cardClass } from "@/components/ui";
 import { useAuth } from "@/lib/AuthProvider";
@@ -138,17 +139,7 @@ export default function ScanDetailPage() {
 
             <section className={`${cardClass} p-[20px]`}>
               <h2 className="text-[10px] font-bold">Left / Right Balance</h2>
-              {state.scan.exercises.detected_imbalances.length === 0 ? (
-                <p className="mt-[8px] text-[11px] text-[#0b5e4f]">
-                  Your left and right sides were within 5% of each other at this scan.
-                </p>
-              ) : (
-                <ul className="mt-[8px] list-disc pl-4 text-[11px]">
-                  {state.scan.exercises.detected_imbalances.map((i) => (
-                    <li key={i}>{i}</li>
-                  ))}
-                </ul>
-              )}
+              <SavedBalance plan={state.scan.exercises} />
             </section>
 
             <section className={`${cardClass} p-[20px]`}>
