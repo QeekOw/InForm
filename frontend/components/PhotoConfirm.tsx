@@ -17,6 +17,7 @@ export default function PhotoConfirm({
   onBack,
   busy = false,
   error,
+  notice,
 }: {
   photo: string;
   onConfirm: () => void;
@@ -27,6 +28,7 @@ export default function PhotoConfirm({
   onBack: () => void;
   busy?: boolean;
   error?: string | null;
+  notice?: string | null;
 }) {
   return (
     <div className="fixed inset-y-0 left-1/2 z-40 flex w-full max-w-[402px] -translate-x-1/2 flex-col bg-[#3e3e3e] px-[30px] pb-[48px] pt-[48px]">
@@ -46,6 +48,7 @@ export default function PhotoConfirm({
         <img alt="The photo you're about to send" src={photo} className="size-full object-contain" />
       </div>
 
+      {notice && <p role="status" className="mt-3 text-center text-[12px]">{notice}</p>}
       {error && (
         <p role="alert" className="mt-3 text-center text-[12px] text-rose-300">
           {error}

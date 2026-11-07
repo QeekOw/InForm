@@ -54,22 +54,6 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Generates a visual placeholder for the demo upload flow's PDF preview. */
-export function createPdfDataUrl(fileName: string): string {
-  const cleanName = fileName.replace(/[<>&"]/g, "").slice(0, 30);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500">
-    <rect width="100%" height="100%" fill="#262626"/>
-    <rect x="30" y="30" width="340" height="440" rx="12" fill="#ffffff" fill-opacity="0.06" stroke="#404040" stroke-width="2"/>
-    <rect x="60" y="60" width="60" height="28" rx="6" fill="#e53e3e"/>
-    <text x="90" y="79" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">PDF</text>
-    <path d="M160 190h80v120h-80z" fill="#ffffff" fill-opacity="0.1"/>
-    <path d="M175 220h50M175 245h50M175 270h30" stroke="#117d69" stroke-width="3" stroke-linecap="round"/>
-    <text x="200" y="350" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="600" fill="#fcfcfc" text-anchor="middle">${cleanName}</text>
-    <text x="200" y="375" font-family="system-ui, -apple-system, sans-serif" font-size="11" fill="#a3a3a3" text-anchor="middle">InBody Report Document</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 /** What InForm can do with a file the person picked. */
 export type PickedFileKind = "image" | "pdf" | "unsupported";
 

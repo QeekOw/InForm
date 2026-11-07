@@ -13,7 +13,7 @@ import { btn, Modal } from "@/components/ui";
 import { useAuth } from "@/lib/AuthProvider";
 import { API_URL } from "@/lib/config";
 import { type Capabilities, type ReadJob, type SampleExtraction, type SampleSheetMeta } from "@/lib/inbody";
-import { createPdfDataUrl, fileToDataUrl } from "@/lib/photo";
+import { fileToSheetImage, pagesReadNotice, SheetPickError, type SheetImage } from "@/lib/photo";
 import { clearSheet, loadJSON, removeSessionItem, saveJSON, SESSION_KEYS } from "@/lib/session";
 
 const imgInBody270 = "/upload/inbody-270.png";
@@ -38,7 +38,8 @@ export default function Upload() {
   const [pickError, setPickError] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [stagedPhoto, setStagedPhoto] = useState<string | null>(null);
+  const [stagedSheet, setStagedSheet] = useState<SheetImage | null>(null);
+  const [openingFile, setOpeningFile] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [viewing, setViewing] = useState<SampleSheetMeta | null>(null);
   // null while the probe is in flight; own-photo actions stay off until the
@@ -139,30 +140,30 @@ export default function Upload() {
     e.target.value = "";
     if (!file) return;
     setUploadError(null);
-    if (file.type.startsWith("image/")) {
-      try {
-        setStagedPhoto(await fileToDataUrl(file));
-      } catch {
-        setUploadError("Couldn't open that file. Try a JPG or PNG photo of your sheet.");
-      }
-    } else if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-      setStagedPhoto(createPdfDataUrl(file.name));
-    } else {
-      setUploadError("That file type isn't supported. Use a JPG, PNG or PDF.");
+    setStagedSheet(null);
+    setOpeningFile(true);
+    try {
+      setStagedSheet(await fileToSheetImage(file));
+    } catch (err) {
+      setUploadError(err instanceof SheetPickError ? err.message : "Couldn't open that file. Try another JPG, PNG or PDF.");
+    } finally {
+      setOpeningFile(false);
     }
   };
 
   const handleConfirmUpload = async () => {
-    if (!stagedPhoto) return;
+    if (!stagedSheet) return;
     clearSheet();
-    saveJSON(SESSION_KEYS.photo, stagedPhoto);
+    saveJSON(SESSION_KEYS.photo, stagedSheet.dataUrl);
+    saveJSON(SESSION_KEYS.sheetPages, stagedSheet.pageCount);
+    saveJSON(SESSION_KEYS.sheetSource, stagedSheet.source);
     setUploadingPhoto(true);
     setUploadError(null);
     try {
       const res = await fetch(`${API_URL}/reads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_data: stagedPhoto, live: true }),
+        body: JSON.stringify({ image_data: stagedSheet.dataUrl, live: true }),
       });
       if (!res.ok) throw new Error(res.statusText);
       const job: ReadJob = await res.json();
@@ -197,15 +198,15 @@ export default function Upload() {
         <button
           type="button"
           onClick={() => guard(() => fileInputRef.current?.click())}
-          disabled={ownPhotoOff || uploadingPhoto}
+          disabled={ownPhotoOff || uploadingPhoto || openingFile}
           className={`${tileClass} mt-[24px] flex h-[99px] w-full flex-col items-center justify-center transition-[filter] hover:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7ee0cf] disabled:cursor-not-allowed disabled:opacity-60`}
         >
           <Icon name="upload" size={32} className="text-[#464646]" />
           <span className="mt-[6px] text-[12px] font-medium text-black/50">
-            {liveReadAvailable === null ? "Checking…" : "Upload from device"}
+            {openingFile ? "Opening file…" : liveReadAvailable === null ? "Checking…" : "Upload from device"}
           </span>
         </button>
-        <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileSelected} />
+        <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" disabled={ownPhotoOff || uploadingPhoto || openingFile} onChange={handleFileSelected} />
         <p className="mt-[5px] text-right text-[8px] font-bold tracking-[0.02em] text-white/80">
           Supported formats: JPG, PNG, PDF
         </p>
@@ -213,7 +214,7 @@ export default function Upload() {
         <button
           type="button"
           onClick={() => guard(() => router.push("/upload/capture"))}
-          disabled={ownPhotoOff}
+          disabled={ownPhotoOff || openingFile}
           className={`${btn.primary} mt-[20px]`}
         >
           <Icon name="camera" size={16} />
@@ -226,7 +227,7 @@ export default function Upload() {
             work end to end.
           </p>
         )}
-        {uploadError && !stagedPhoto && (
+        {uploadError && !stagedSheet && (
           <p role="alert" className="mt-[10px] text-[10px] text-[#fcfcfc]/80">
             {uploadError}
           </p>
@@ -339,13 +340,14 @@ export default function Upload() {
       </Modal>
 
       {privacyNotice}
-      {stagedPhoto && (
+      {stagedSheet && (
         <PhotoConfirm
-          photo={stagedPhoto}
+          photo={stagedSheet.dataUrl}
+          notice={pagesReadNotice(stagedSheet.pageCount)}
           busy={uploadingPhoto}
           error={uploadError}
           onBack={() => {
-            setStagedPhoto(null);
+            setStagedSheet(null);
             setUploadError(null);
           }}
           alternateLabel="Choose other file"
